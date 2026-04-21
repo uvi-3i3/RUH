@@ -1,5 +1,6 @@
 import { useRef } from 'react';
-import { CheckCircleIcon } from '../icons/Icons';
+import { BookIcon, CheckCircleIcon, ChevronRightIcon } from '../icons/Icons';
+import { burhanData } from '../../data/burhanData';
 
 const DHIKR_TASKS = [
   { id: 'istighfar', title: 'Istighfar', subtitle: 'Astaghfirullah', target: 100 },
@@ -8,9 +9,10 @@ const DHIKR_TASKS = [
   { id: 'allahu_akbar', title: 'Takbir', subtitle: 'Allahu Akbar', target: 34 }
 ];
 
-export const TasksView = ({ currentView, isLightMode, dailyTasks, incrementTask }) => {
+export const TasksView = ({ currentView, isLightMode, dailyTasks, incrementTask, activeDays, onOpenBurhan }) => {
   const tTextMain = isLightMode ? 'text-[#1a1814]' : 'text-[rgba(245,238,224,0.92)]';
   const tTextSub = isLightMode ? 'text-[#4a453d]' : 'text-[rgba(228,218,200,0.48)]';
+  const accentColor = isLightMode ? '#0d9488' : '#14b8a6'; // Intellectual blue/teal
 
   const longPressTimer = useRef(null);
 
@@ -55,6 +57,7 @@ export const TasksView = ({ currentView, isLightMode, dailyTasks, incrementTask 
            <span className={`font-serif-eng text-[10px] uppercase tracking-widest ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`}>Daily Dhikr</span>
         </div>
 
+        <div className="grid grid-cols-2 gap-3 w-full">
         {DHIKR_TASKS.map(task => {
            const count = dailyTasks[task.id] || 0;
            const progress = Math.min(1, count / task.target);
@@ -105,6 +108,55 @@ export const TasksView = ({ currentView, isLightMode, dailyTasks, incrementTask 
              </div>
            )
         })}
+        </div>
+
+        {/* --- INTELLECTUAL DEVOTION SECTION --- */}
+        <div className="w-full flex justify-between items-center mt-10 mb-2 px-2">
+           <span className={`font-arabic text-[18px] ${tTextMain} opacity-40 transition-colors duration-1000 tracking-wide`}>برهان</span>
+           <span className={`font-serif-eng text-[10px] uppercase tracking-widest`} style={{ color: accentColor }}>Daily Hikmah</span>
+        </div>
+
+        {(() => {
+          const currentBurhan = burhanData[activeDays % burhanData.length];
+          const isBurhanComplete = dailyTasks?.burhanCompleted;
+          
+          return (
+            <div 
+               onClick={onOpenBurhan}
+               className={`relative w-full p-5 rounded-3xl overflow-hidden backdrop-blur-md border transition-all duration-500 ease-out cursor-pointer active:scale-[0.97]
+                 ${isLightMode 
+                   ? (isBurhanComplete ? 'bg-[#0d9488]/10 border-[#0d9488]/30' : 'bg-white/40 hover:bg-white/60 border-white/60') 
+                   : (isBurhanComplete ? 'bg-[#14b8a6]/10 border-[#14b8a6]/30' : 'bg-white/[0.03] hover:bg-white/[0.06] border-white/10')
+                 }`}
+               style={{ touchAction: 'none' }}
+             >
+                <div className="absolute top-4 right-4 opacity-50">
+                   <BookIcon size={120} className={isLightMode ? 'text-black/5' : 'text-white/5'} />
+                </div>
+                
+                <div className="relative z-10 flex flex-col justify-between h-full min-h-[90px]">
+                  <div className="flex flex-col mb-4">
+                    <span className={`font-serif-eng text-lg font-medium tracking-wide leading-snug mb-1 ${tTextMain}`}>{currentBurhan.title}</span>
+                    <span className={`font-serif-eng text-[10px] uppercase tracking-[0.2em] opacity-60 ${tTextMain}`}>— {currentBurhan.scholar}</span>
+                  </div>
+                  
+                  <div className="flex items-center justify-between mt-auto">
+                    {isBurhanComplete ? (
+                      <div className="flex items-center gap-2">
+                        <CheckCircleIcon size={18} className="animate-[checkmarkPop_0.4s_cubic-bezier(0.34,1.56,0.64,1)_forwards]" style={{ color: accentColor }} />
+                        <span className={`font-serif-eng text-[10px] uppercase tracking-widest font-medium`} style={{ color: accentColor }}>Reflected</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
+                        <span className={`font-serif-eng text-[10px] uppercase tracking-widest ${tTextSub}`}>Read Proof</span>
+                        <ChevronRightIcon size={14} className={tTextSub} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+             </div>
+          );
+        })()}
       </div>
     </div>
   )

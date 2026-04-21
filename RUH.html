@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+  <title>رُوح — Ruh</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      background: #060504;
+      overflow: hidden;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: none;
+    }
+
+    /* Custom Inset Shadows */
+    .engraved-dark {
+      box-shadow: inset 0px 2px 4px rgba(0, 0, 0, 0.6), 0px 1px 1px rgba(255, 255, 255, 0.05);
+    }
+
+    .engraved-light {
+      box-shadow: inset 0px 2px 4px rgba(0, 0, 0, 0.1), 0px 1px 1px rgba(255, 255, 255, 0.8);
+    }
+
+    .island-dark {
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05), 0 10px 40px rgba(0, 0, 0, 0.5);
+    }
+
+    .island-light {
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05), 0 10px 40px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Hide scrollbar for sleek profile scrolling */
+    .hide-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+
+    .hide-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // --- ICONS ---
+    const MoonIcon = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>;
+    const SunIcon = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>;
+    const CircleIcon = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10" /></svg>;
+    const CheckCircleIcon = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><path d="m9 11 3 3L22 4" /></svg>;
+    const SparklesIcon = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /></svg>;
+    const ChevronDownIcon = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m6 9 6 6 6-6" /></svg>;
+    const ChevronRightIcon = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m9 18 6-6-6-6" /></svg>;
+    const BookmarkIcon = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" /></svg>;
+    const BellIcon = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></svg>;
+    const SettingsIcon = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg>;
+
+    // Abstract Nav Icons
+    const MainNavIcon = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="3" y="3" width="18" height="18" rx="4" /></svg>;
+    const ProfileNavIcon = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 4-7 8-7s8 3 8 7" /></svg>;
+
+    // --- DATA ---
+    const VERSES = [
+      { a: "وَنَحْنُ أَقْرَبُ إِلَيْهِ مِنْ حَبْلِ الْوَرِيدِ", t: "We are closer to him\nthan his jugular vein.", s: "Qaf · 50:16", c: "A profound reminder of divine proximity. It signifies that God's knowledge and presence are more intimately connected to us than our own lifeblood, offering comfort in moments of intense isolation.", ts: "Tafsir Ibn Kathir" },
+      { a: "إِنَّ مَعَ الْعُسْرِ يُسْرًا", t: "With every hardship\ncomes ease.", s: "Ash-Sharh · 94:6", c: "Grammatically in Arabic, 'the hardship' is definite (singular), while 'ease' is indefinite (plural). This implies that for every one specific difficulty you face, multiple avenues of relief are already unfolding.", ts: "Tafsir Al-Qurtubi" },
+      { a: "وَإِذَا سَأَلَكَ عِبَادِي عَنِّي فَإِنِّي قَرِيبٌ", t: "When My servants ask of Me —\nI am near.", s: "Al-Baqarah · 2:186", c: "Most verses answering a question begin with the command 'Say'. Here, God removes the intermediary entirely. He replies directly to the seeker, emphasizing an unbroken, personal connection.", ts: "Tafsir As-Sa'di" },
+      { a: "فَاذْكُرُونِي أَذْكُرْكُمْ", t: "Remember Me,\nand I will remember you.", s: "Al-Baqarah · 2:152", c: "A reciprocal promise that transcends ritual. Remembrance (Dhikr) here is not merely verbal repetition, but the act of keeping divine consciousness alive in your daily decisions.", ts: "Tafsir At-Tabari" },
+      { a: "وَهُوَ مَعَكُمْ أَيْنَ مَا كُنتُمْ", t: "He is with you\nwherever you are.", s: "Al-Hadid · 57:4", c: "An anchor for the wandering mind. This verse grounds the believer, shifting the perspective from feeling watched to feeling accompanied, turning loneliness into a state of silent companionship.", ts: "Tafsir Ibn Kathir" },
+      { a: "لَا يُكَلِّفُ اللَّهُ نَفْسًا إِلَّا وُسْعَهَا", t: "Allah does not burden a soul\nbeyond that it can bear.", s: "Al-Baqarah · 2:286", c: "A definitive statement on human resilience. It serves as a divine guarantee that the very existence of a trial in your life means you already possess the exact internal architecture required to survive it.", ts: "Tafsir As-Sa'di" },
+      { a: "حَسْبِيَ اللَّهُ وَنِعْمَ الْوَكِيلُ", t: "Allah is enough for me —\nthe best Disposer of affairs.", s: "Al-Imran · 3:173", c: "Historically spoken in moments of overwhelming opposition. This declaration is the ultimate surrender of anxiety; it is the conscious decision to hand the mechanics of an impossible situation over to the Architect.", ts: "Tafsir Al-Jalalayn" },
+      { a: "وَلَسَوْفَ يُعْطِيكَ رَبُّكَ فَتَرْضَىٰ", t: "Your Lord will give to you,\nand you shall be satisfied.", s: "Ad-Duha · 93:5", c: "Revealed after a long period of silence that left the Prophet feeling abandoned. It is a vow that the final state of the believer is not just reward, but deep, psychological contentment.", ts: "Tafsir Ibn Kathir" }
+    ];
+
+    const PRAYERS = [
+      { id: 'fajr', label: 'Fajr', icon: MoonIcon },
+      { id: 'dhuhr', label: 'Dhuhr', icon: SunIcon },
+      { id: 'asr', label: 'Asr', icon: SunIcon },
+      { id: 'maghrib', label: 'Maghrib', icon: SunIcon },
+      { id: 'isha', label: 'Isha', icon: MoonIcon },
+    ];
+
+    const DARK_HIGH = [{ r: 210, g: 162, b: 75, bF: 0.54, rV: 0.10, rS: 0.00028, bA: 0.115, aV: 0.048, aS: 0.00024, xS: 0.00017, yS: 0.00021, xO: 0, yO: 1.1, xA: 0.20, yA: 0.16 }, { r: 215, g: 205, b: 188, bF: 0.46, rV: 0.09, rS: 0.00039, bA: 0.080, aV: 0.035, aS: 0.00033, xS: 0.00025, yS: 0.00019, xO: 2.1, yO: 3.8, xA: 0.17, yA: 0.22 }, { r: 175, g: 115, b: 45, bF: 0.36, rV: 0.07, rS: 0.00051, bA: 0.090, aV: 0.042, aS: 0.00045, xS: 0.00033, yS: 0.00029, xO: 4.7, yO: 1.9, xA: 0.25, yA: 0.19 }];
+    const DARK_LOW = [{ r: 30, g: 35, b: 40, bF: 0.54, rV: 0.05, rS: 0.00014, bA: 0.080, aV: 0.020, aS: 0.00012, xS: 0.00008, yS: 0.00010, xO: 0, yO: 1.1, xA: 0.10, yA: 0.08 }, { r: 40, g: 45, b: 50, bF: 0.46, rV: 0.04, rS: 0.00019, bA: 0.050, aV: 0.015, aS: 0.00016, xS: 0.00012, yS: 0.00009, xO: 2.1, yO: 3.8, xA: 0.08, yA: 0.11 }, { r: 15, g: 18, b: 22, bF: 0.36, rV: 0.03, rS: 0.00025, bA: 0.060, aV: 0.020, aS: 0.00022, xS: 0.00016, yS: 0.00014, xO: 4.7, yO: 1.9, xA: 0.12, yA: 0.09 }];
+    const LIGHT_HIGH = [{ r: 220, g: 180, b: 100, bF: 0.54, rV: 0.10, rS: 0.00028, bA: 0.08, aV: 0.03, aS: 0.00024, xS: 0.00017, yS: 0.00021, xO: 0, yO: 1.1, xA: 0.20, yA: 0.16 }, { r: 200, g: 190, b: 180, bF: 0.46, rV: 0.09, rS: 0.00039, bA: 0.06, aV: 0.02, aS: 0.00033, xS: 0.00025, yS: 0.00019, xO: 2.1, yO: 3.8, xA: 0.17, yA: 0.22 }, { r: 150, g: 100, b: 40, bF: 0.36, rV: 0.07, rS: 0.00051, bA: 0.07, aV: 0.03, aS: 0.00045, xS: 0.00033, yS: 0.00029, xO: 4.7, yO: 1.9, xA: 0.25, yA: 0.19 }];
+    const LIGHT_LOW = [{ r: 180, g: 185, b: 190, bF: 0.54, rV: 0.05, rS: 0.00014, bA: 0.06, aV: 0.02, aS: 0.00012, xS: 0.00008, yS: 0.00010, xO: 0, yO: 1.1, xA: 0.10, yA: 0.08 }, { r: 200, g: 205, b: 210, bF: 0.46, rV: 0.04, rS: 0.00019, bA: 0.04, aV: 0.015, aS: 0.00016, xS: 0.00012, yS: 0.00009, xO: 2.1, yO: 3.8, xA: 0.08, yA: 0.11 }, { r: 160, g: 165, b: 170, bF: 0.36, rV: 0.03, rS: 0.00025, bA: 0.05, aV: 0.02, aS: 0.00022, xS: 0.00016, yS: 0.00014, xO: 4.7, yO: 1.9, xA: 0.12, yA: 0.09 }];
+
+    // --- DEVOTION TIMELINE (THEOLOGICAL GEOMETRY & WATERMARK ANIMATION) ---
+    const DevotionTimeline = React.memo(({ completedCount, isLightMode }) => {
+      const isCompleted = completedCount === 5;
+
+      const baseColor = isLightMode ? 'rgba(74, 69, 61, 0.18)' : 'rgba(228, 218, 200, 0.15)';
+      const activeColor = isLightMode ? '#9c7533' : '#d2a24b';
+      const glowColor = isLightMode ? 'rgba(156,117,51,0.6)' : 'rgba(210,162,75,0.6)';
+
+      let fillHeight = 0;
+      if (completedCount > 0 && completedCount < 5) fillHeight = completedCount * 12;
+      else if (completedCount === 5) fillHeight = 180;
+
+      const wrapperClass = isCompleted
+        ? "left-1/2 scale-[3.5] md:scale-[5] opacity-[0.025] z-0"
+        : "left-[34px] md:left-[90px] scale-100 opacity-80 md:opacity-100 z-20";
+
+      const transitionStyle = { transition: `all 2.8s cubic-bezier(0.16,1,0.3,1) ${isCompleted ? '1.2s' : '0s'}` };
+
+      return (
+        <div
+          className={`fixed top-1/2 -translate-y-1/2 -translate-x-1/2 pointer-events-none mix-blend-normal ${wrapperClass}`}
+          style={transitionStyle}
+        >
+          <svg width="60" height="180" viewBox="0 0 60 180" className="overflow-visible w-[60px] h-[180px]">
+            <rect x="0" y="0" width="60" height="60" fill="none" stroke={isCompleted ? activeColor : baseColor} strokeWidth={isCompleted ? "1.5" : "1.2"} style={{ transition: 'all 1.2s cubic-bezier(0.16,1,0.3,1)' }} />
+            <rect x="0" y="0" width="60" height="60" fill="none" stroke={isCompleted ? glowColor : 'transparent'} strokeWidth="4" style={{ transition: 'all 1.2s cubic-bezier(0.16,1,0.3,1)', filter: 'blur(4px)' }} />
+            <line x1="30" y1="0" x2="30" y2="180" stroke={baseColor} strokeWidth="1.2" />
+            {[1, 2, 3, 4, 5].map((i) => <line key={`base-${i}`} x1="20" y1={i * 10} x2="40" y2={i * 10} stroke={baseColor} strokeWidth="1.2" />)}
+            <line x1="30" y1="0" x2="30" y2={fillHeight} stroke={activeColor} strokeWidth="1.5" style={{ transition: 'all 1.2s cubic-bezier(0.16,1,0.3,1)' }} />
+            <line x1="30" y1="0" x2="30" y2={fillHeight} stroke={glowColor} strokeWidth="4" style={{ transition: 'all 1.2s cubic-bezier(0.16,1,0.3,1)', filter: 'blur(4px)' }} />
+            {[1, 2, 3, 4, 5].map((i) => {
+              const isActive = completedCount >= i;
+              return (
+                <g key={`active-${i}`}>
+                  <line x1="20" y1={i * 10} x2="40" y2={i * 10} stroke={isActive ? activeColor : 'transparent'} strokeWidth="1.5" style={{ transition: 'stroke 0.3s ease 0.6s' }} />
+                  {isActive && <line x1="20" y1={i * 10} x2="40" y2={i * 10} stroke={glowColor} strokeWidth="4" style={{ filter: 'blur(3px)' }} />}
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+      );
+    });
+
+    function App() {
+      // --- APP STATE ---
+      const [currentView, setCurrentView] = useState('main'); // 'main' or 'profile'
+      const viewRef = useRef('main');
+
+      const [verseIndex, setVerseIndex] = useState(0);
+      const [isLightMode, setIsLightMode] = useState(false);
+      const [showContext, setShowContext] = useState(false);
+
+      const [focusedIndex, setFocusedIndex] = useState(0);
+      const [completedPrayers, setCompletedPrayers] = useState([]);
+      const [checkingId, setCheckingId] = useState(null);
+
+      const [inTransit, setInTransit] = useState(false);
+      const [verseStyle, setVerseStyle] = useState({ opacity: 0, transform: 'translateY(14px)' });
+
+      // Profile Mock Data
+      const mockUser = { initials: "AY", name: "Ahmad Yasin", status: "Seeker • Joined 1445" };
+      const mockStats = { streak: 12, prayers: 284, verses: 108 };
+
+      const canvasRef = useRef(null);
+      const verseWrapRef = useRef(null);
+      const engineRef = useRef({});
+
+      const targetHealth = completedPrayers.length / PRAYERS.length;
+      const allCompleted = completedPrayers.length === PRAYERS.length;
+
+      const stateRef = useRef({
+        health: 0, theme: 0,
+        pointerX: typeof window !== 'undefined' ? window.innerWidth / 2 : 0,
+        pointerY: typeof window !== 'undefined' ? window.innerHeight / 2 : 0,
+        currentPointerX: typeof window !== 'undefined' ? window.innerWidth / 2 : 0,
+        currentPointerY: typeof window !== 'undefined' ? window.innerHeight / 2 : 0,
+        isPressing: false, pressProgress: 0, lastPressP: -1,
+        orbX: typeof window !== 'undefined' ? window.innerWidth / 2 : 0,
+        orbY: typeof window !== 'undefined' ? window.innerHeight / 2 : 0,
+        orbVx: 0, orbVy: 0, lastInteractionTime: Date.now()
+      });
+
+      const scrollCooldown = useRef(false);
+      const touchStart = useRef({ y: 0 });
+
+      useEffect(() => {
+        setTimeout(() => setVerseStyle({ opacity: 1, transform: 'translateY(0px)' }), 400);
+      }, []);
+
+      useEffect(() => { viewRef.current = currentView; }, [currentView]);
+
+      const advanceVerse = useCallback((dir = 1) => {
+        if (inTransit || currentView !== 'main') return;
+        setInTransit(true);
+        setShowContext(false);
+
+        setVerseStyle({ opacity: 0, transform: 'translateY(-12px)', transition: 'opacity 1.8s ease, transform 2.0s ease' });
+
+        setTimeout(() => {
+          setVerseIndex(prev => (prev + dir + VERSES.length) % VERSES.length);
+          setVerseStyle({ opacity: 0, transform: 'translateY(14px)', transition: 'none' });
+
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            setVerseStyle({ opacity: 1, transform: 'translateY(0px)', transition: 'opacity 2.6s cubic-bezier(0.16,1,0.3,1), transform 2.8s cubic-bezier(0.16,1,0.3,1)' });
+            setTimeout(() => setInTransit(false), 2200);
+          }));
+        }, 1700);
+      }, [inTransit, currentView]);
+
+      useEffect(() => { engineRef.current.advanceVerse = advanceVerse; }, [advanceVerse]);
+
+      // --- RENDERING ENGINE (ZERO LAG OPTIMIZED) ---
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d', { alpha: false });
+        let animationFrameId;
+        let embers = [];
+
+        const resize = () => {
+          const dpr = window.innerWidth < 768 ? 0.7 : 1;
+          canvas.width = window.innerWidth * dpr;
+          canvas.height = window.innerHeight * dpr;
+          canvas.style.width = window.innerWidth + 'px';
+          canvas.style.height = window.innerHeight + 'px';
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          if (stateRef.current) {
+            stateRef.current.pointerX = window.innerWidth / 2;
+            stateRef.current.pointerY = window.innerHeight / 2;
+          }
+        };
+
+        window.addEventListener('resize', resize);
+        resize();
+
+        const spawnEmbers = (cx, cy, count, forceGold = false, burstSpeed = 1) => {
+          const safeCount = Math.min(count, 35);
+          for (let i = 0; i < safeCount; i++) {
+            const isGold = forceGold || Math.random() < 0.55;
+            embers.push({
+              x: cx + (Math.random() - 0.5) * (count > 10 ? 280 : 30),
+              y: cy + (Math.random() - 0.5) * (count > 10 ? 130 : 30),
+              vx: (Math.random() - 0.5) * 1.5 * burstSpeed,
+              vy: -(Math.random() * 0.8 + 0.2) * burstSpeed,
+              life: Math.random() * 0.75 + 0.3,
+              decay: Math.random() * 0.0035 + 0.0018,
+              r: Math.random() * 1.1 + 0.25,
+              twinkleSpeed: Math.random() * 0.055 + 0.018,
+              twinklePhase: Math.random() * Math.PI * 2,
+              wobble: (Math.random() - 0.5) * 0.007,
+              gold: isGold,
+            });
+          }
+        };
+
+        engineRef.current.triggerTextBurst = () => {
+          const W = window.innerWidth, H = window.innerHeight;
+          spawnEmbers(W / 2, H / 2 - 40, 60, true, 3.0);
+        };
+
+        engineRef.current.triggerButtonBurst = () => {
+          const W = window.innerWidth, H = window.innerHeight;
+          spawnEmbers(W / 2, H - 100, 35, true, 1.5);
+        };
+
+        const lerp = (start, end, t) => start + (end - start) * t;
+
+        const drawLight = (radius, alpha, coreColor, edgeColor) => {
+          if (radius <= 0) return;
+          const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+          grad.addColorStop(0, `rgba(${coreColor.r},${coreColor.g},${coreColor.b},${alpha})`);
+          grad.addColorStop(0.3, `rgba(${edgeColor.r},${edgeColor.g},${edgeColor.b},${alpha * 0.5})`);
+          grad.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(0, 0, radius, 0, Math.PI * 2);
+          ctx.fill();
+        };
+
+        const loop = (time) => {
+          const W = window.innerWidth, H = window.innerHeight;
+          const min = Math.min(W, H);
+
+          stateRef.current.health += (targetHealth - stateRef.current.health) * 0.02;
+          const targetTheme = isLightMode ? 1 : 0;
+          stateRef.current.theme += (targetTheme - stateRef.current.theme) * 0.05;
+
+          const h = stateRef.current.health;
+          const t = stateRef.current.theme;
+
+          if (stateRef.current.isPressing && !inTransit && viewRef.current === 'main') {
+            stateRef.current.pressProgress += 0.035;
+            if (stateRef.current.pressProgress >= 1) {
+              stateRef.current.pressProgress = 0;
+              stateRef.current.isPressing = false;
+              if (engineRef.current.advanceVerse) engineRef.current.advanceVerse(1);
+              if (engineRef.current.triggerTextBurst) engineRef.current.triggerTextBurst();
+            }
+          } else {
+            stateRef.current.pressProgress = Math.max(0, stateRef.current.pressProgress - 0.06);
+          }
+
+          const pressP = stateRef.current.pressProgress;
+
+          if (verseWrapRef.current && !inTransit && Math.abs(stateRef.current.lastPressP - pressP) > 0.005) {
+            verseWrapRef.current.style.transform = `scale(${1 - pressP * 0.02})`;
+            verseWrapRef.current.style.setProperty('--press', pressP.toFixed(3));
+            stateRef.current.lastPressP = pressP;
+          }
+
+          const timeSinceInteraction = Date.now() - stateRef.current.lastInteractionTime;
+          const isIdle = timeSinceInteraction > 2000 && !stateRef.current.isPressing;
+
+          let orbTargetX = stateRef.current.pointerX;
+          let orbTargetY = stateRef.current.pointerY;
+          let springStiffness = 0.04;
+          let springDamping = 0.15;
+
+          // PROFILE PHYSICS: Centers beautifully behind the User Avatar ring
+          if (viewRef.current === 'profile') {
+            orbTargetX = W / 2;
+            orbTargetY = H / 2 - 130; // Aligned perfectly behind the avatar
+            springStiffness = 0.03;
+            springDamping = 0.1;
+          } else if (stateRef.current.isPressing) {
+            orbTargetX = W / 2;
+            orbTargetY = H / 2 - 35;
+            springStiffness = 0.2;
+            springDamping = 0.3;
+          } else if (isIdle) {
+            orbTargetX = W / 2 + Math.sin(time * 0.0008) * (W * 0.3);
+            orbTargetY = H / 2 + Math.cos(time * 0.0011) * (H * 0.2);
+            springStiffness = 0.01;
+            springDamping = 0.05;
+          }
+
+          const ax = (orbTargetX - stateRef.current.orbX) * springStiffness;
+          const ay = (orbTargetY - stateRef.current.orbY) * springStiffness;
+          stateRef.current.orbVx += ax;
+          stateRef.current.orbVy += ay;
+          stateRef.current.orbVx *= (1 - springDamping);
+          stateRef.current.orbVy *= (1 - springDamping);
+
+          stateRef.current.orbX += stateRef.current.orbVx;
+          stateRef.current.orbY += stateRef.current.orbVy;
+
+          stateRef.current.currentPointerX += (stateRef.current.pointerX - stateRef.current.currentPointerX) * 0.03;
+          stateRef.current.currentPointerY += (stateRef.current.pointerY - stateRef.current.currentPointerY) * 0.03;
+          const pX = (stateRef.current.currentPointerX - W / 2) * 0.05;
+          const pY = (stateRef.current.currentPointerY - H / 2) * 0.05;
+          const cx = (W / 2) + pX;
+          const cy = (H / 2) + pY;
+
+          ctx.globalCompositeOperation = 'source-over';
+
+          const bgR = Math.floor(lerp(6, 244, t));
+          const bgG = Math.floor(lerp(5, 240, t));
+          const bgB = Math.floor(lerp(4, 232, t));
+          ctx.fillStyle = `rgb(${bgR},${bgG},${bgB})`;
+          ctx.fillRect(0, 0, W, H);
+
+          for (let i = 0; i < 3; i++) {
+            const finalR = Math.floor(lerp(lerp(DARK_LOW[i].r, DARK_HIGH[i].r, h), lerp(LIGHT_LOW[i].r, LIGHT_HIGH[i].r, h), t));
+            const finalG = Math.floor(lerp(lerp(DARK_LOW[i].g, DARK_HIGH[i].g, h), lerp(LIGHT_LOW[i].g, LIGHT_HIGH[i].g, h), t));
+            const finalB = Math.floor(lerp(lerp(DARK_LOW[i].b, DARK_HIGH[i].b, h), lerp(LIGHT_LOW[i].b, LIGHT_HIGH[i].b, h), t));
+
+            const base = DARK_HIGH[i];
+            const bF = lerp(DARK_LOW[i].bF, base.bF, h);
+            const rV = lerp(DARK_LOW[i].rV, base.rV, h);
+            const bA = lerp(DARK_LOW[i].bA, base.bA, h) * 0.25;
+            const aV = lerp(DARK_LOW[i].aV, base.aV, h) * 0.25;
+            const speedMult = (1 + (h * 0.5)) * 0.35;
+
+            const x = cx + Math.sin(time * base.xS * speedMult + base.xO) * W * base.xA;
+            const y = cy + Math.cos(time * base.yS * speedMult + base.yO) * H * base.yA;
+            const radius = Math.max(min * bF + Math.sin(time * base.rS * speedMult) * min * rV, 1);
+            const alpha = Math.max(0, bA + Math.sin(time * base.aS * speedMult) * aV);
+
+            if (alpha > 0) {
+              const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
+              grad.addColorStop(0, `rgba(${finalR},${finalG},${finalB},${alpha})`);
+              grad.addColorStop(0.5, `rgba(${finalR},${finalG},${finalB},${alpha * 0.4})`);
+              grad.addColorStop(1, 'rgba(0,0,0,0)');
+
+              ctx.fillStyle = grad;
+              ctx.beginPath();
+              ctx.arc(x, y, radius, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+
+          // --- OPTICAL NUR ---
+          const orbSpd = Math.hypot(stateRef.current.orbVx, stateRef.current.orbVy);
+          const chargeScale = 1 + Math.pow(pressP, 2) * 5;
+          const stretchX = stateRef.current.isPressing ? 1 : Math.max(1, 1 + orbSpd * 0.04);
+          const stretchY = stateRef.current.isPressing ? 1 : Math.max(0.5, 1 - orbSpd * 0.02);
+
+          ctx.save();
+          ctx.translate(stateRef.current.orbX, stateRef.current.orbY);
+          if (!stateRef.current.isPressing && orbSpd > 0.5) {
+            ctx.rotate(Math.atan2(stateRef.current.orbVy, stateRef.current.orbVx));
+          }
+          ctx.scale(stretchX, stretchY);
+
+          ctx.globalCompositeOperation = t > 0.5 ? 'source-over' : 'screen';
+
+          const coreC = t > 0.5 ? { r: 255, g: 245, b: 230 } : { r: 255, g: 255, b: 255 };
+          const glowC = t > 0.5 ? { r: 180, g: 130, b: 50 } : { r: 228, g: 182, b: 82 };
+          const coronaC = t > 0.5 ? { r: 150, g: 100, b: 30 } : { r: 180, g: 120, b: 40 };
+
+          const coronaR = (45 + Math.sin(time * 0.002) * 5) * chargeScale;
+          drawLight(coronaR, 0.4 + pressP * 0.2, glowC, coronaC);
+          const glowR = (20 + Math.cos(time * 0.003) * 2) * chargeScale;
+          drawLight(glowR, 0.8, coreC, glowC);
+          const coreR = 6 * chargeScale;
+          drawLight(coreR, 1.0, coreC, coreC);
+
+          if (pressP > 0) {
+            ctx.rotate(time * 0.001);
+            ctx.beginPath();
+            ctx.arc(0, 0, 30 + Math.pow(pressP, 2) * 80, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(${glowC.r},${glowC.g},${glowC.b},${pressP * 0.6})`;
+            ctx.lineWidth = 1 + pressP * 1.5;
+            ctx.stroke();
+          }
+
+          ctx.restore();
+          ctx.globalCompositeOperation = 'source-over';
+
+          if (orbSpd > 2 || stateRef.current.isPressing) {
+            const spawnChance = stateRef.current.isPressing ? (0.2 + pressP) : (0.15 + orbSpd * 0.05);
+            if (Math.random() < spawnChance) {
+              spawnEmbers(stateRef.current.orbX, stateRef.current.orbY, 1, true, 0.4);
+            }
+          }
+
+          for (let i = embers.length - 1; i >= 0; i--) {
+            const e = embers[i];
+            e.x += e.vx + Math.sin(e.twinklePhase) * 0.12 - (pX * 0.01);
+            e.y += e.vy - (pY * 0.01);
+            e.vx += e.wobble;
+            e.twinklePhase += e.twinkleSpeed;
+            e.life -= e.decay;
+
+            if (e.life <= 0) {
+              embers.splice(i, 1);
+            } else {
+              const tw = 0.5 + 0.5 * Math.sin(e.twinklePhase);
+              const alpha = Math.max(0, e.life) * tw;
+              const goldColor = t > 0.5 ? `rgba(180,130,50,${alpha})` : `rgba(228,182,82,${alpha * 0.88})`;
+              const ashColor = t > 0.5 ? `rgba(100,90,80,${alpha * 0.6})` : `rgba(235,225,208,${alpha * 0.62})`;
+
+              ctx.fillStyle = e.gold ? goldColor : ashColor;
+              ctx.beginPath();
+              ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+
+          animationFrameId = requestAnimationFrame(loop);
+        };
+
+        animationFrameId = requestAnimationFrame(loop);
+        return () => {
+          window.removeEventListener('resize', resize);
+          cancelAnimationFrame(animationFrameId);
+        };
+      }, [targetHealth, isLightMode, inTransit]);
+
+      // --- INTERACTION HANDLERS ---
+      const handleTextPointerDown = (e) => {
+        if (inTransit || currentView !== 'main') return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        stateRef.current.pointerStartX = e.clientX || (e.touches && e.touches[0].clientX);
+        stateRef.current.pointerStartY = e.clientY || (e.touches && e.touches[0].clientY);
+        stateRef.current.isPressing = true;
+        stateRef.current.lastInteractionTime = Date.now();
+      };
+
+      const handleTextPointerUp = (e) => {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+        stateRef.current.isPressing = false;
+      };
+
+      const handlePointerMove = (e) => {
+        const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+        const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+        if (!clientX || !clientY) return;
+
+        stateRef.current.pointerX = clientX;
+        stateRef.current.pointerY = clientY;
+        stateRef.current.lastInteractionTime = Date.now();
+
+        if (stateRef.current.isPressing) {
+          const dist = Math.hypot(clientX - stateRef.current.pointerStartX, clientY - stateRef.current.pointerStartY);
+          if (dist > 20) stateRef.current.isPressing = false;
+        }
+      };
+
+      const handleTouchStart = (e) => {
+        touchStart.current = { y: e.touches[0].clientY };
+        stateRef.current.lastInteractionTime = Date.now();
+      };
+
+      const handleTouchEnd = (e) => {
+        if (e.target.closest('button') || currentView !== 'main') return;
+        const dy = touchStart.current.y - e.changedTouches[0].clientY;
+        if (Math.abs(dy) > 30 && !allCompleted) {
+          if (dy > 0) setFocusedIndex(p => Math.min(PRAYERS.length - 1, p + 1));
+          else setFocusedIndex(p => Math.max(0, p - 1));
+        }
+      };
+
+      const handleWheel = (e) => {
+        if (scrollCooldown.current || allCompleted || currentView !== 'main') return;
+        stateRef.current.lastInteractionTime = Date.now();
+        if (Math.abs(e.deltaY) > 20) {
+          scrollCooldown.current = true;
+          setFocusedIndex(p => e.deltaY > 0 ? Math.min(PRAYERS.length - 1, p + 1) : Math.max(0, p - 1));
+          setTimeout(() => scrollCooldown.current = false, 300);
+        }
+      };
+
+      const handleCompletePrayer = (prayerId) => {
+        if (checkingId) return;
+        setCheckingId(prayerId);
+        stateRef.current.lastInteractionTime = Date.now();
+        engineRef.current.triggerButtonBurst();
+
+        setTimeout(() => {
+          setCompletedPrayers(prev => {
+            const next = [...prev, prayerId];
+            const nextIndex = PRAYERS.findIndex(p => !next.includes(p.id));
+            if (nextIndex !== -1) setFocusedIndex(nextIndex);
+            return next;
+          });
+          setCheckingId(null);
+        }, 850);
+      };
+
+      const activeVerse = VERSES[verseIndex];
+
+      const tBg = isLightMode ? 'bg-[#f4f0e8]' : 'bg-[#060504]';
+      const tTextMain = isLightMode ? 'text-[#1a1814]' : 'text-[rgba(245,238,224,0.92)]';
+      const tTextSub = isLightMode ? 'text-[#4a453d]' : 'text-[rgba(228,218,200,0.48)]';
+      const tTextGold = isLightMode ? 'text-[#9c7533]' : 'text-[rgba(210,172,90,0.28)]';
+
+      const glowSub = isLightMode ? '0 1px 1px rgba(255,255,255,0.6)' : '0 1px 1px rgba(0,0,0,0.8)';
+      const glowArabic = isLightMode
+        ? '0 0 40px rgba(180,130,50,0.1), 0 1px 1px rgba(255,255,255,0.8)'
+        : '0 0 100px rgba(210,165,70,0.12), 0 1px 1px rgba(0,0,0,0.9), 0 -1px 0 rgba(255,255,255,0.02)';
+
+      return (
+        <div
+          className={`w-full h-screen ${tBg} overflow-hidden font-sans relative select-none transition-colors duration-1000`}
+          style={{ touchAction: 'none' }}
+          onPointerMove={handlePointerMove}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          onWheel={handleWheel}
+        >
+          <style>{`
+            @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,200;0,300;1,200;1,300&family=Amiri:ital,wght@0,400;1,400&display=swap');
+            .font-arabic { font-family: 'Amiri', serif; }
+            .font-serif-eng { font-family: 'Cormorant Garamond', serif; }
+            @keyframes checkmarkPop { 0% { transform: scale(0.6); opacity: 0; } 50% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+          `}</style>
+
+          <canvas ref={canvasRef} className="absolute inset-0 z-0 pointer-events-none block" />
+
+          {/* Overlays */}
+          <div
+            className={`absolute inset-0 z-10 pointer-events-none transition-opacity duration-1000 ${isLightMode ? 'opacity-[0.04] mix-blend-multiply' : 'opacity-[0.028] mix-blend-overlay'}`}
+            style={{ backgroundImage: "url('data:image/svg+xml,%3Csvg viewBox=%220 0 256 256%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22n%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.88%22 numOctaves=%224%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23n)%22/%3E%3C/svg%3E')" }}
+          />
+          <div
+            className="absolute inset-0 z-10 pointer-events-none transition-all duration-1000"
+            style={{ background: isLightMode ? "radial-gradient(ellipse 70% 70% at 50% 50%, transparent 40%, rgba(244,240,232,0.6) 100%)" : "radial-gradient(ellipse 68% 62% at 50% 50%, transparent 25%, rgba(4,3,2,0.80) 100%)" }}
+          />
+
+          {/* THEOLOGICAL WATERMARK / DEVOTION TIMELINE */}
+          <DevotionTimeline completedCount={completedPrayers.length} isLightMode={isLightMode} />
+
+          {/* Header */}
+          <div className="absolute top-[40px] left-0 right-0 z-30 flex justify-between items-center px-10 pointer-events-none">
+            <div className="w-8" />
+            <div className="text-center mix-blend-normal flex flex-col items-center">
+              <span className={`font-arabic text-[17px] ${tTextMain} opacity-30 block mb-[2px] transition-colors duration-1000`} style={{ textShadow: glowSub, letterSpacing: '0.08em', marginRight: '-0.08em' }}>رُوح</span>
+              <span className={`font-serif-eng text-[8px] uppercase ${tTextSub} opacity-40 block transition-colors duration-1000`} style={{ textShadow: glowSub, letterSpacing: '0.38em', marginRight: '-0.38em' }}>Ruh</span>
+            </div>
+            <button
+              onClick={() => setIsLightMode(!isLightMode)}
+              className={`pointer-events-auto p-2 rounded-full transition-all duration-500 hover:scale-110 ${isLightMode ? 'text-[#9c7533] hover:bg-[#9c7533]/10' : 'text-[#e4dac8] hover:bg-white/5 opacity-40 hover:opacity-100'}`}
+            >
+              {isLightMode ? <SunIcon size={16} /> : <MoonIcon size={16} />}
+            </button>
+          </div>
+
+          {/* 3-COLUMN ARCHITECTURAL LAYOUT */}
+          <div className="absolute inset-0 z-20 flex w-full h-full px-2 md:px-10 pointer-events-none">
+
+            {/* Left Col - Spacer */}
+            <div className="w-[60px] md:w-[140px] flex-shrink-0 h-full pl-2 md:pl-10"></div>
+
+            {/* Center Col - Dynamic Content Area (Swaps between Main and Profile) */}
+            <div className="flex-grow flex flex-col items-center justify-center h-full relative">
+
+              {/* --- VIEW: MAIN (Submersion Engine) --- */}
+              <div
+                className="absolute inset-0 flex items-center justify-center transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] w-full"
+                style={{
+                  opacity: currentView === 'main' ? 1 : 0,
+                  transform: currentView === 'main' ? 'scale(1)' : 'scale(0.95)',
+                  pointerEvents: currentView === 'main' ? 'auto' : 'none'
+                }}
+              >
+                <div
+                  ref={verseWrapRef}
+                  className="w-full max-w-[340px] flex flex-col items-center cursor-pointer rounded-3xl mx-auto"
+                  style={{ touchAction: 'none', WebkitUserSelect: 'none', '--press': '0', willChange: 'transform' }}
+                  onPointerDown={handleTextPointerDown}
+                  onPointerUp={handleTextPointerUp}
+                  onPointerLeave={handleTextPointerUp}
+                  onPointerCancel={handleTextPointerUp}
+                >
+                  <div className="flex flex-col items-center w-full mix-blend-normal py-8 px-4" style={verseStyle}>
+
+                    <div className="relative mb-[16px] w-full flex justify-center">
+                      <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none transition-none" style={{ opacity: 'calc(var(--press) * 0.85)' }}>
+                        <div className="rounded-full blur-2xl transition-none" style={{ width: '120%', height: '80%', background: isLightMode ? '#c28e2b' : '#d2a24b', transform: 'scaleX(calc(0.5 + var(--press) * 0.5))' }} />
+                      </div>
+
+                      <p className={`font-arabic text-[clamp(20px,5vw,28px)] leading-[2.15] text-center ${tTextMain} transition-colors duration-1000 w-full relative z-10`} dir="rtl" style={{ textShadow: glowArabic, letterSpacing: '0.01em', marginRight: '-0.01em' }}>{activeVerse.a}</p>
+                      <p className={`font-arabic text-[clamp(20px,5vw,28px)] leading-[2.15] text-center absolute top-0 pointer-events-none w-full ${isLightMode ? 'text-[#c28e2b]' : 'text-[#e4b85c]'} z-20`} dir="rtl" style={{ clipPath: 'inset(0 0 0 calc(100% - var(--press) * 100%))', letterSpacing: '0.01em', marginRight: '-0.01em' }}>{activeVerse.a}</p>
+                    </div>
+
+                    <div className="w-full h-[1px] flex justify-center mb-[16px]">
+                      <div className="h-full rounded-full" style={{ background: isLightMode ? '#c28e2b' : '#d2a24b', width: 'calc(var(--press) * 85%)', opacity: 'calc(var(--press) * 1.5)', boxShadow: isLightMode ? '0 0 15px rgba(156,117,51,0.9)' : '0 0 20px rgba(210,162,75,0.9), 0 0 40px rgba(255,255,255,0.4)' }} />
+                    </div>
+
+                    <div className="flex flex-col items-center pointer-events-none" style={{ opacity: 'calc(1 - var(--press) * 1.5)', transform: 'translateY(calc(var(--press) * 12px))' }}>
+                      <p className={`font-serif-eng italic font-light text-[clamp(12px,3.2vw,15px)] leading-[2.0] text-center ${tTextSub} whitespace-pre-line w-full mb-[20px] transition-colors duration-1000`} style={{ textShadow: glowSub, letterSpacing: '0.04em', marginRight: '-0.04em' }}>{activeVerse.t}</p>
+
+                      <div className="flex flex-col items-center w-full">
+                        <span className={`font-serif-eng text-[9px] uppercase ${tTextGold} text-center transition-colors duration-1000`} style={{ textShadow: glowSub, letterSpacing: '0.28em', marginRight: '-0.28em' }}>{activeVerse.s}</span>
+                        <button onPointerDown={(e) => e.stopPropagation()} onClick={() => setShowContext(!showContext)} className={`mt-4 flex items-center space-x-1 pointer-events-auto transition-all duration-300 hover:scale-105 ${showContext ? (isLightMode ? 'text-[#9c7533] opacity-100' : 'text-[#d2a24b] opacity-100') : (isLightMode ? 'text-[#4a453d] opacity-40' : 'text-[#e4dac8] opacity-30')}`}>
+                          <span className="font-serif-eng text-[8px] uppercase" style={{ letterSpacing: '0.3em', marginRight: '-0.3em' }}>Context</span>
+                          <ChevronDownIcon size={12} className={`transition-transform duration-500 ml-1 ${showContext ? 'rotate-180' : ''}`} />
+                        </button>
+                        <div className={`overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] flex flex-col items-center justify-start pointer-events-auto w-full`} style={{ maxHeight: showContext ? '220px' : '0px', opacity: showContext ? 1 : 0 }}>
+                          <p className={`font-serif-eng mt-4 text-[12px] leading-[1.8] text-center ${tTextSub} opacity-80 w-full`} style={{ letterSpacing: '0.03em', marginRight: '-0.03em' }}>{activeVerse.c}</p>
+                          {activeVerse.ts && <p className={`font-serif-eng text-[8px] uppercase ${tTextGold} opacity-60 mt-3 text-center transition-colors duration-1000`} style={{ letterSpacing: '0.25em', marginRight: '-0.25em' }}>— {activeVerse.ts}</p>}
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+
+              {/* --- VIEW: PROFILE (The Soul Mirror) --- */}
+              <div
+                className="absolute inset-0 flex flex-col items-center justify-center transition-all duration-1000 ease-[cubic-bezier(0.16,1,0.3,1)] w-full overflow-y-auto hide-scrollbar pt-20 pb-10"
+                style={{
+                  opacity: currentView === 'profile' ? 1 : 0,
+                  transform: currentView === 'profile' ? 'scale(1)' : 'scale(1.02)',
+                  pointerEvents: currentView === 'profile' ? 'auto' : 'none'
+                }}
+              >
+                <div className="flex flex-col items-center justify-start w-full max-w-[340px] px-4 mx-auto min-h-full">
+
+                  {/* Top Anchor */}
+                  <span className={`font-arabic text-[18px] ${tTextMain} opacity-40 mb-1 transition-colors duration-1000 tracking-wide`}>الرحلة</span>
+
+                  {/* Avatar + Streak Integration */}
+                  <div className="relative w-28 h-28 flex items-center justify-center mb-6 mx-auto mt-2">
+
+                    {/* The Streak Orbit (Progress Ring) */}
+                    <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 100 100">
+                      <circle cx="50" cy="50" r="48" fill="none" stroke={isLightMode ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.03)'} strokeWidth="1" strokeDasharray="2 4" />
+                      <circle cx="50" cy="50" r="48" fill="none" stroke={isLightMode ? '#9c7533' : '#d2a24b'} strokeWidth="1.5" strokeDasharray="301.59" strokeDashoffset="180.95" strokeLinecap="round" className="transition-all duration-1000 ease-out" />
+                    </svg>
+
+                    {/* The Frosted Avatar Center */}
+                    <div className={`flex flex-col items-center justify-center w-20 h-20 rounded-full backdrop-blur-xl border transition-all duration-1000 z-10
+                        ${isLightMode ? 'bg-white/40 border-white/60 shadow-[inset_0_2px_10px_rgba(0,0,0,0.05),_0_10px_30px_rgba(0,0,0,0.05)]' : 'bg-white/5 border-white/10 shadow-[inset_0_2px_10px_rgba(255,255,255,0.05),_0_10px_30px_rgba(0,0,0,0.2)]'}
+                    `}>
+                      <span className={`font-serif-eng text-2xl font-light ${tTextMain} transition-colors duration-1000`} style={{ letterSpacing: '0.1em', marginRight: '-0.1em', textShadow: glowSub }}>
+                        {mockUser.initials}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* User Identity */}
+                  <h2 className={`font-serif-eng text-2xl font-medium ${tTextMain} mb-1 transition-colors duration-1000 flex items-center justify-center`} style={{ textShadow: glowSub, letterSpacing: '0.05em', marginRight: '-0.05em' }}>{mockUser.name}</h2>
+                  <p className={`font-serif-eng text-[10px] uppercase ${tTextGold} mb-10 transition-colors duration-1000`} style={{ letterSpacing: '0.2em', marginRight: '-0.2em' }}>{mockUser.status}</p>
+
+                  {/* 3-Pillar Data Grid */}
+                  <div className="grid grid-cols-3 gap-3 w-full mb-10">
+                    <div className={`flex flex-col items-center justify-center py-5 px-2 rounded-[20px] backdrop-blur-md border transition-all duration-1000 ${isLightMode ? 'bg-black/[0.02] border-black/[0.05]' : 'bg-white/[0.02] border-white/[0.05]'}`}>
+                      <span className={`font-serif-eng text-2xl leading-none font-light ${tTextMain} transition-colors duration-1000`}>{mockStats.streak}</span>
+                      <span className={`font-serif-eng text-[8px] uppercase ${tTextSub} mt-3 opacity-80 transition-colors duration-1000`} style={{ letterSpacing: '0.15em', marginRight: '-0.15em' }}>Streak</span>
+                    </div>
+                    <div className={`flex flex-col items-center justify-center py-5 px-2 rounded-[20px] backdrop-blur-md border transition-all duration-1000 ${isLightMode ? 'bg-black/[0.02] border-black/[0.05]' : 'bg-white/[0.02] border-white/[0.05]'}`}>
+                      <span className={`font-serif-eng text-2xl leading-none font-light ${tTextMain} transition-colors duration-1000`}>{mockStats.prayers}</span>
+                      <span className={`font-serif-eng text-[8px] uppercase ${tTextSub} mt-3 opacity-80 transition-colors duration-1000`} style={{ letterSpacing: '0.15em', marginRight: '-0.15em' }}>Prayers</span>
+                    </div>
+                    <div className={`flex flex-col items-center justify-center py-5 px-2 rounded-[20px] backdrop-blur-md border transition-all duration-1000 ${isLightMode ? 'bg-black/[0.02] border-black/[0.05]' : 'bg-white/[0.02] border-white/[0.05]'}`}>
+                      <span className={`font-serif-eng text-2xl leading-none font-light ${tTextMain} transition-colors duration-1000`}>{mockStats.verses}</span>
+                      <span className={`font-serif-eng text-[8px] uppercase ${tTextSub} mt-3 opacity-80 transition-colors duration-1000`} style={{ letterSpacing: '0.15em', marginRight: '-0.15em' }}>Verses</span>
+                    </div>
+                  </div>
+
+                  {/* Actionable Preferences Menu */}
+                  <div className="w-full flex flex-col gap-3 mb-10">
+                    <button className={`w-full flex items-center justify-between p-4 rounded-[20px] backdrop-blur-md border transition-all duration-500 hover:scale-[1.02] ${isLightMode ? 'bg-white/40 border-white/50 shadow-sm' : 'bg-white/5 border-white/10'}`}>
+                      <div className="flex items-center gap-4">
+                        <BookmarkIcon size={16} className={`${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
+                        <span className={`font-serif-eng text-[13px] uppercase ${tTextMain} tracking-widest`}>Saved Verses</span>
+                      </div>
+                      <ChevronRightIcon size={16} className={`${tTextSub} opacity-50`} />
+                    </button>
+
+                    <button className={`w-full flex items-center justify-between p-4 rounded-[20px] backdrop-blur-md border transition-all duration-500 hover:scale-[1.02] ${isLightMode ? 'bg-white/40 border-white/50 shadow-sm' : 'bg-white/5 border-white/10'}`}>
+                      <div className="flex items-center gap-4">
+                        <BellIcon size={16} className={`${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
+                        <span className={`font-serif-eng text-[13px] uppercase ${tTextMain} tracking-widest`}>Prayer Alerts</span>
+                      </div>
+                      <ChevronRightIcon size={16} className={`${tTextSub} opacity-50`} />
+                    </button>
+
+                    <button className={`w-full flex items-center justify-between p-4 rounded-[20px] backdrop-blur-md border transition-all duration-500 hover:scale-[1.02] ${isLightMode ? 'bg-white/40 border-white/50 shadow-sm' : 'bg-white/5 border-white/10'}`}>
+                      <div className="flex items-center gap-4">
+                        <SettingsIcon size={16} className={`${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
+                        <span className={`font-serif-eng text-[13px] uppercase ${tTextMain} tracking-widest`}>Preferences</span>
+                      </div>
+                      <ChevronRightIcon size={16} className={`${tTextSub} opacity-50`} />
+                    </button>
+                  </div>
+
+                </div>
+              </div>
+
+            </div>
+
+            {/* Right Col - The Sleek, Thin Nav Island */}
+            <div className="w-[60px] md:w-[140px] flex-shrink-0 h-full relative pointer-events-none pr-2 md:pr-10">
+              <div
+                className={`absolute right-4 md:right-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-3 py-3 px-1 w-[40px] rounded-full backdrop-blur-xl border pointer-events-auto transition-all duration-1000
+                  ${isLightMode ? 'bg-white/30 border-white/40 engraved-light' : 'bg-[#12100d]/40 border-white/5 engraved-dark island-dark'}`}
+              >
+                {/* Main Nav Button */}
+                <button
+                  onClick={() => setCurrentView('main')}
+                  className={`relative w-8 h-8 rounded-full transition-all duration-500 hover:scale-105 flex items-center justify-center
+                      ${currentView === 'main' ? (isLightMode ? 'text-[#9c7533] shadow-[0_2px_10px_rgba(156,117,51,0.2)] bg-white/50' : 'text-[#d2a24b] shadow-[0_2px_10px_rgba(210,162,75,0.2)] bg-white/5') : (isLightMode ? 'text-[#4a453d] opacity-50 hover:opacity-100' : 'text-[#e4dac8] opacity-30 hover:opacity-100')}
+                    `}
+                >
+                  <MainNavIcon size={16} />
+                </button>
+
+                {/* Profile Nav Button */}
+                <button
+                  onClick={() => setCurrentView('profile')}
+                  className={`relative w-8 h-8 rounded-full transition-all duration-500 hover:scale-105 flex items-center justify-center
+                      ${currentView === 'profile' ? (isLightMode ? 'text-[#9c7533] shadow-[0_2px_10px_rgba(156,117,51,0.2)] bg-white/50' : 'text-[#d2a24b] shadow-[0_2px_10px_rgba(210,162,75,0.2)] bg-white/5') : (isLightMode ? 'text-[#4a453d] opacity-50 hover:opacity-100' : 'text-[#e4dac8] opacity-30 hover:opacity-100')}
+                    `}
+                >
+                  <ProfileNavIcon size={16} />
+                </button>
+              </div>
+            </div>
+
+          </div>
+
+          {/* 5. Focal Stack (Rolodex) - Only show on Main view */}
+          <div
+            className="absolute bottom-[40px] md:bottom-[50px] left-1/2 -translate-x-1/2 z-30 w-full max-w-[280px] h-[70px] flex justify-center items-center pointer-events-none transition-opacity duration-700"
+            style={{ opacity: currentView === 'main' ? 1 : 0 }}
+          >
+            {PRAYERS.map((item, i) => {
+              const offset = i - focusedIndex;
+              const isActive = offset === 0;
+              const isCompletedItem = completedPrayers.includes(item.id);
+              const isChecking = checkingId === item.id;
+
+              let yPos = offset * 56;
+              let scale = 1 - Math.abs(offset) * 0.12;
+              let opacity = isActive ? 1 : Math.max(0, 0.4 - Math.abs(offset) * 0.15);
+
+              if (isLightMode && !isActive && opacity > 0) opacity += 0.1;
+              if (Math.abs(offset) >= 3) opacity = 0;
+              if (allCompleted) { opacity = 0; yPos += 20; }
+
+              return (
+                <div
+                  key={item.id}
+                  className="absolute w-full px-6 transition-all duration-[700ms] ease-[cubic-bezier(0.25,1,0.3,1)]"
+                  style={{
+                    transform: `translateY(${yPos}px) scale(${scale})`,
+                    opacity: opacity,
+                    zIndex: 10 - Math.abs(offset),
+                    pointerEvents: opacity > 0 && !allCompleted && currentView === 'main' ? 'auto' : 'none'
+                  }}
+                >
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (checkingId) return;
+                      if (!isActive) setFocusedIndex(i);
+                      else if (!isCompletedItem) handleCompletePrayer(item.id);
+                    }}
+                    className={`group relative flex items-center justify-between w-full p-4 rounded-2xl backdrop-blur-sm transition-all duration-500 ease-out overflow-hidden border
+                      ${isLightMode
+                        ? (isChecking || isCompletedItem ? 'bg-[#9c7533]/10 border-[#9c7533]/30' : 'bg-black/[0.02] hover:bg-black/[0.04] border-black/[0.05]')
+                        : (isChecking || isCompletedItem ? 'bg-[#d2a24b]/10 border-[#d2a24b]/30' : 'bg-white/[0.03] hover:bg-white/[0.06] border-white/[0.05]')
+                      }`}
+                  >
+                    <div className="flex items-center space-x-4 z-10">
+                      <item.icon
+                        size={16}
+                        className={`transition-all duration-500 
+                          ${isChecking || isCompletedItem ? (isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]')
+                            : (isLightMode ? 'text-[#4a453d] opacity-50 group-hover:opacity-80 group-hover:text-[#9c7533]' : 'text-[#e4dac8] opacity-40 group-hover:opacity-70 group-hover:text-[#d2a24b]')}`}
+                      />
+                      <span
+                        className={`font-serif-eng uppercase text-[11px] transition-all duration-500 
+                          ${isChecking || isCompletedItem ? (isLightMode ? 'text-[#9c7533] font-medium' : 'text-[#d2a24b]')
+                            : (isLightMode ? 'text-[#4a453d] opacity-70 group-hover:opacity-100' : 'text-[#e4dac8] opacity-60 group-hover:opacity-100')}`}
+                        style={{ letterSpacing: '0.1em', marginRight: '-0.1em' }}
+                      >
+                        {item.label}
+                      </span>
+                    </div>
+
+                    <div className="relative w-5 h-5 flex items-center justify-center z-10">
+                      {isChecking ? (
+                        <CheckCircleIcon size={18} className={`absolute animate-[checkmarkPop_0.4s_cubic-bezier(0.34,1.56,0.64,1)_forwards] ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
+                      ) : isCompletedItem ? (
+                        <CheckCircleIcon size={18} className={`absolute ${isLightMode ? 'text-[#9c7533] opacity-80' : 'text-[#d2a24b] opacity-80'}`} />
+                      ) : (
+                        <CircleIcon size={18} className={`absolute transition-all duration-300 ${isLightMode ? 'text-[#4a453d] opacity-20 group-hover:opacity-80 group-hover:text-[#9c7533]' : 'text-[#e4dac8] opacity-20 group-hover:opacity-100 group-hover:text-[#d2a24b]'}`} />
+                      )}
+                    </div>
+                  </button>
+                </div>
+              )
+            })}
+
+            {/* COMPLETION NODE */}
+            <div
+              className="absolute w-full px-6 flex flex-col items-center justify-center transition-all duration-[900ms] ease-[cubic-bezier(0.25,1,0.3,1)] pointer-events-none"
+              style={{
+                transform: `translateY(${allCompleted ? 0 : 30}px) scale(${allCompleted ? 1 : 0.9})`,
+                opacity: allCompleted ? 1 : 0,
+                zIndex: 20
+              }}
+            >
+              <SparklesIcon size={16} className={`${isLightMode ? 'text-[#9c7533] opacity-60' : 'text-[#d2a24b] opacity-40 drop-shadow-[0_0_10px_rgba(210,162,75,0.4)]'} mb-3`} />
+              <span className={`font-serif-eng uppercase text-[10px] ${isLightMode ? 'text-[#4a453d] opacity-50' : 'text-[#e4dac8] opacity-30'}`} style={{ letterSpacing: '0.1em', marginRight: '-0.1em' }}>
+                Daily Devotion Complete
+              </span>
+            </div>
+
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+
+</html>

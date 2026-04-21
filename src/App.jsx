@@ -2,21 +2,27 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useDevotionData } from './hooks/useDevotionData';
 import { useTemporalPhase, rgbToHex } from './hooks/useTemporalPhase';
 import { SavedVersesModal } from './components/layout/SavedVersesModal';
+import { useLocalAI } from './hooks/useLocalAI';
 import { PRAYERS, DARK_HIGH, DARK_LOW, LIGHT_HIGH, LIGHT_LOW } from './data/constants';
 import { 
   MoonIcon, SunIcon, CircleIcon, CheckCircleIcon, SparklesIcon, 
   ChevronDownIcon, ChevronRightIcon, BookmarkIcon, BellIcon, 
-  SettingsIcon, MainNavIcon, ProfileNavIcon, TasksNavIcon 
+  SettingsIcon, MainNavIcon, ProfileNavIcon, TasksNavIcon, ShareIcon
 } from './components/icons/Icons';
 import { DevotionTimeline } from './components/layout/DevotionTimeline';
 import { DevotionHeatmap } from './components/layout/DevotionHeatmap';
 import { TasksView } from './components/layout/TasksView';
 import { TasksSideColumn } from './components/layout/TasksSideColumn';
 import { StationIndicator } from './components/layout/StationIndicator';
-
+import { TafakkurOverlay } from './components/layout/TafakkurOverlay';
+import { BurhanOverlay } from './components/layout/BurhanOverlay';
+import { SettingsModal } from './components/layout/SettingsModal';
+import { RemindersModal } from './components/layout/RemindersModal';
+import { burhanData } from './data/burhanData';
 
 export default function App() {
   const devotionData = useDevotionData();
+  const localAI = useLocalAI();
   // --- APP STATE ---
   const [currentView, setCurrentView] = useState('main'); // 'main' or 'profile'
   const viewRef = useRef('main'); 
@@ -47,6 +53,7 @@ export default function App() {
 
   const [isLightMode, setIsLightMode] = useState(false);
   const [showContext, setShowContext] = useState(false); 
+  const [tafakkurPromptId, setTafakkurPromptId] = useState(null);
   
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [checkingId, setCheckingId] = useState(null);
@@ -55,6 +62,9 @@ export default function App() {
   const [verseStyle, setVerseStyle] = useState({ opacity: 0, transform: 'translateY(14px)' });
   const [showSaveGlow, setShowSaveGlow] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
+  const [showBurhanModal, setShowBurhanModal] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showReminders, setShowReminders] = useState(false);
   const lastTapTime = useRef(0);
 
   // Profile Mock Identity
@@ -445,9 +455,15 @@ export default function App() {
     const now = Date.now();
     if (now - lastTapTime.current < 400) { 
       if (activeVerse) {
-        devotionData.toggleSaveVerse(activeVerse.id);
+        const isCurrentlySaved = devotionData.savedVerses.some(v => v?.id === activeVerse.id);
+        if (!isCurrentlySaved) {
+          devotionData.toggleSaveVerse(activeVerse.id);
+          setTafakkurPromptId(activeVerse.id);
+        } else {
+          devotionData.toggleSaveVerse(activeVerse.id);
+        }
         if (engineRef.current.triggerButtonBurst) engineRef.current.triggerButtonBurst();
-        setShowSaveGlow(true);
+        setShowSaveGlow(!isCurrentlySaved);
         setTimeout(() => setShowSaveGlow(false), 1200);
       }
       lastTapTime.current = 0;
@@ -547,16 +563,25 @@ export default function App() {
       setTimeout(() => {
         devotionData.advanceStation();
         setVerseIndex(0);
-        setShowFogWall(false);
         setKashfCeremony(false);
       }, 3500);
     }
   }, [maq.yaqeenProgress, nextStation, kashfCeremony, devotionData]);
 
   const activeVerse = verses ? verses[verseIndex] : null;
-  const isSaved = activeVerse && devotionData.savedVerses.includes(activeVerse.id);
+  const isSaved = activeVerse && devotionData.savedVerses.some(v => v?.id === activeVerse.id);
   const isHikmah = activeVerse?.type === 'hikmah';
   hikmahRef.current = isHikmah;
+
+  const handleShare = (e, verse) => {
+    e.stopPropagation();
+    const textToShare = `${verse.a}\n\n${verse.t}\n\n- ${verse.s}`;
+    if (navigator.share) {
+      navigator.share({ title: 'Ruh', text: textToShare }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(textToShare);
+    }
+  };
 
   // --- RESOLVED VISUAL PALETTE (temporal + hikmah) ---
   const pSide = isLightMode ? palette.light : palette.dark;
@@ -628,6 +653,19 @@ export default function App() {
       </div>
 
       {/* THEOLOGICAL WATERMARK / DEVOTION TIMELINE */}
+      <TafakkurOverlay 
+        isOpen={!!tafakkurPromptId} 
+        verse={verses?.find(v => v.id === tafakkurPromptId)}
+        isLightMode={isLightMode}
+        localAI={localAI}
+        allVerses={stations?.flatMap(s => s.verses) || []}
+        onSave={(id, note) => {
+          if (note.trim()) devotionData.updateVerseNote(id, note.trim());
+          setTafakkurPromptId(null);
+        }}
+        onClose={() => setTafakkurPromptId(null)}
+      />
+
       <DevotionTimeline completedCount={completedPrayers.length} isLightMode={isLightMode} isHikmah={isHikmah} accentColor={accentHex} accentGlow={`${accentRgba},0.6)`} />
 
       {/* Header */}
@@ -731,12 +769,20 @@ export default function App() {
                       <span className={`font-serif-eng text-[9px] uppercase text-center transition-colors duration-1000 mt-1`} style={{ color: accentHex, textShadow: glowSub, letterSpacing: '0.28em', marginRight: '-0.28em' }}>{activeVerse.s}</span>
                     </div>
                     
-                    <button onPointerDown={(e) => e.stopPropagation()} onClick={() => setShowContext(!showContext)} className={`mt-4 flex items-center space-x-1 pointer-events-auto transition-all duration-300 hover:scale-105 ${showContext ? 'opacity-100' : (isLightMode ? 'text-[#4a453d] opacity-40' : 'text-[#e4dac8] opacity-30')}`} style={showContext ? { color: accentHex } : {}}>
-                      <span className="font-serif-eng text-[8px] uppercase" style={{ letterSpacing: '0.3em', marginRight: '-0.3em' }}>Context</span>
-                      <ChevronDownIcon size={12} className={`transition-transform duration-500 ml-1 ${showContext ? 'rotate-180' : ''}`} />
-                    </button>
+                    <div className="flex items-center space-x-6 mt-4">
+                      <button onPointerDown={(e) => e.stopPropagation()} onClick={() => setShowContext(!showContext)} className={`flex items-center space-x-1 pointer-events-auto transition-all duration-300 hover:scale-105 ${showContext ? 'opacity-100' : (isLightMode ? 'text-[#4a453d] opacity-40' : 'text-[#e4dac8] opacity-30')}`} style={showContext ? { color: accentHex } : {}}>
+                        <span className="font-serif-eng text-[8px] uppercase" style={{ letterSpacing: '0.3em', marginRight: '-0.3em' }}>Context</span>
+                        <ChevronDownIcon size={12} className={`transition-transform duration-500 ml-1 ${showContext ? 'rotate-180' : ''}`} />
+                      </button>
+                      
+                      <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => handleShare(e, activeVerse)} className={`flex items-center space-x-1 pointer-events-auto transition-all duration-300 hover:scale-105 ${isLightMode ? 'text-[#4a453d] opacity-40 hover:opacity-100' : 'text-[#e4dac8] opacity-30 hover:opacity-100'}`}>
+                        <span className="font-serif-eng text-[8px] uppercase" style={{ letterSpacing: '0.3em', marginRight: '-0.3em' }}>Share</span>
+                        <ShareIcon size={12} className="ml-1" />
+                      </button>
+                    </div>
+
                     <div className={`overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] flex flex-col items-center justify-start pointer-events-auto w-full`} style={{ maxHeight: showContext ? '220px' : '0px', opacity: showContext ? 1 : 0 }}>
-                      <p className={`font-serif-eng mt-4 text-[12px] leading-[1.8] text-center ${tTextSub} opacity-80 w-full`} style={{ letterSpacing: '0.03em', marginRight: '-0.03em' }}>{activeVerse.c}</p>
+                      <p className={`font-serif-eng mt-4 text-[12px] leading-[1.8] text-center ${tTextSub} opacity-80 w-full`} style={{ letterSpacing: '0.03em', marginRight: '-0.03em' }}>{devotionData.isSimpleMode && activeVerse.simpleC ? activeVerse.simpleC : activeVerse.c}</p>
                       {activeVerse.ts && <p className={`font-serif-eng text-[8px] uppercase opacity-60 mt-3 text-center transition-colors duration-1000`} style={{ color: accentHex, letterSpacing: '0.25em', marginRight: '-0.25em' }}>— {activeVerse.ts}</p>}
                     </div>
                   </div>
@@ -810,10 +856,13 @@ export default function App() {
                  <button onClick={() => setShowArchive(true)} className={`p-3 rounded-full backdrop-blur-md transition-all duration-500 hover:scale-[1.1] ${isLightMode ? 'text-[#4a453d] hover:bg-black/5 hover:text-[#9c7533]' : 'text-[#e4dac8] hover:bg-white/5 hover:text-[#d2a24b]'} opacity-70 hover:opacity-100`}>
                     <BookmarkIcon size={18} />
                  </button>
-                 <button className={`p-3 rounded-full backdrop-blur-md transition-all duration-500 hover:scale-[1.1] ${isLightMode ? 'text-[#4a453d] hover:bg-black/5 hover:text-[#9c7533]' : 'text-[#e4dac8] hover:bg-white/5 hover:text-[#d2a24b]'} opacity-70 hover:opacity-100`}>
+                 <button onClick={() => setShowReminders(true)} className={`p-3 rounded-full backdrop-blur-md transition-all duration-500 hover:scale-[1.1] ${isLightMode ? 'text-[#4a453d] hover:bg-black/5 hover:text-[#9c7533]' : 'text-[#e4dac8] hover:bg-white/5 hover:text-[#d2a24b]'} opacity-70 hover:opacity-100 relative`}>
                     <BellIcon size={18} />
+                    {(Object.values(devotionData.prayers || {}).some(p => p.enabled) || (devotionData.customReminders || []).some(r => r.enabled)) && (
+                       <div className="absolute top-2.5 right-2.5 w-1.5 h-1.5 rounded-full" style={{ backgroundColor: accentHex, boxShadow: `0 0 5px ${accentHex}` }} />
+                    )}
                  </button>
-                 <button className={`p-3 rounded-full backdrop-blur-md transition-all duration-500 hover:scale-[1.1] ${isLightMode ? 'text-[#4a453d] hover:bg-black/5 hover:text-[#9c7533]' : 'text-[#e4dac8] hover:bg-white/5 hover:text-[#d2a24b]'} opacity-70 hover:opacity-100`}>
+                 <button onClick={() => setShowSettings(true)} className={`p-3 rounded-full backdrop-blur-md transition-all duration-500 hover:scale-[1.1] ${isLightMode ? 'text-[#4a453d] hover:bg-black/5 hover:text-[#9c7533]' : 'text-[#e4dac8] hover:bg-white/5 hover:text-[#d2a24b]'} opacity-70 hover:opacity-100`}>
                     <SettingsIcon size={18} />
                  </button>
               </div>
@@ -827,6 +876,8 @@ export default function App() {
              isLightMode={isLightMode}
              dailyTasks={devotionData.dailyTasks}
              incrementTask={devotionData.incrementTask}
+             activeDays={devotionData.activeDays}
+             onOpenBurhan={() => setShowBurhanModal(true)}
           />
 
         </div>
@@ -971,8 +1022,9 @@ export default function App() {
         isOpen={showArchive} 
         onClose={() => setShowArchive(false)} 
         isLightMode={isLightMode} 
-        savedIds={devotionData.savedVerses} 
+        savedVerses={devotionData.savedVerses} 
         allVerses={stations.flatMap(s => s.verses)} 
+        onEditNote={(id) => setTafakkurPromptId(id)}
       />
 
       {/* STATION INDICATOR (bottom center) */}
@@ -981,10 +1033,10 @@ export default function App() {
           <StationIndicator
             stations={stations}
             currentStation={maq.currentStation}
-            unlockedStations={maq.unlockedStations}
+            unlockedStations={maq.unlockedStations || [0]}
             yaqeenProgress={maq.yaqeenProgress}
             accentHex={accentHex}
-            onSelectStation={(idx) => { devotionData.goToStation(idx); setVerseIndex(0); setShowFogWall(false); }}
+            onSelectStation={(idx) => { devotionData.goToStation(idx); setVerseIndex(0); }}
           />
         </div>
       )}
@@ -1003,6 +1055,30 @@ export default function App() {
           </div>
         </div>
       )}
+
+      <BurhanOverlay 
+        isOpen={showBurhanModal}
+        burhan={burhanData[devotionData.activeDays % burhanData.length]}
+        isLightMode={isLightMode}
+        isCompleted={devotionData.dailyTasks?.burhanCompleted}
+        isSimpleMode={devotionData.isSimpleMode}
+        onComplete={devotionData.completeBurhan}
+        onClose={() => setShowBurhanModal(false)}
+      />
+
+      <SettingsModal 
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        isLightMode={isLightMode}
+        devotionData={devotionData}
+      />
+
+      <RemindersModal 
+        isOpen={showReminders}
+        onClose={() => setShowReminders(false)}
+        isLightMode={isLightMode}
+        devotionData={devotionData}
+      />
     </div>
   );
 }

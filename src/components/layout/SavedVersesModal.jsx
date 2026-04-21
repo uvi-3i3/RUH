@@ -1,9 +1,13 @@
-import { ChevronDownIcon, BookmarkIcon } from '../icons/Icons';
+import { ChevronDownIcon, BookmarkIcon, ShareIcon, EditIcon } from '../icons/Icons';
 
-export const SavedVersesModal = ({ isOpen, onClose, isLightMode, savedIds, allVerses }) => {
-  if (!allVerses) return null;
+export const SavedVersesModal = ({ isOpen, onClose, isLightMode, savedVerses, allVerses, isSimpleMode, onEditNote }) => {
+  if (!allVerses || !savedVerses) return null;
 
-  const savedVersesData = allVerses.filter(v => savedIds.includes(v.id));
+  const savedIds = savedVerses.map(v => v.id);
+  const savedVersesData = allVerses.filter(v => savedIds.includes(v.id)).map(v => ({
+    ...v,
+    reflection: savedVerses.find(sv => sv.id === v.id)?.note || ''
+  }));
 
   const tBg = isLightMode ? 'bg-[#f4f0e8]/90' : 'bg-[#060504]/90';
   const tTextMain = isLightMode ? 'text-[#1a1814]' : 'text-[rgba(245,238,224,0.92)]';
@@ -60,13 +64,38 @@ export const SavedVersesModal = ({ isOpen, onClose, isLightMode, savedIds, allVe
                    <div className="w-[85%] h-[1px] opacity-30" style={{ backgroundColor: isLightMode ? cBaseLight : cBaseDark }} />
                  </div>
                  <p className={`font-serif-eng italic font-light text-[13px] leading-[1.8] text-center mb-6 cursor-text select-text ${tTextSub}`}>{verse.t}</p>
+                 
+                 {verse.reflection && (
+                   <div className={`w-full p-4 mb-6 rounded-[16px] border ${isLightMode ? 'bg-[#1a1814]/5 border-[#1a1814]/10' : 'bg-white/5 border-white/10'}`}>
+                     <p className={`font-serif-eng text-sm leading-relaxed text-center italic opacity-80 ${tTextMain}`}>
+                       "{verse.reflection}"
+                     </p>
+                   </div>
+                 )}
+
                  <div className="flex flex-col items-center gap-2">
                    {verse.type && (
                      <span className={`font-serif-eng text-[7px] border px-1.5 py-0.5 rounded-full uppercase tracking-widest ${tagClass}`}>
                        {verse.type}
                      </span>
                    )}
-                   <span className={`font-serif-eng text-[9px] uppercase tracking-[0.25em] text-center ${tTextCode}`}>{verse.s}</span>
+                   <span className={`font-serif-eng text-[9px] uppercase tracking-[0.25em] text-center mb-2 ${tTextCode}`}>{verse.s}</span>
+                   
+                   <div className="flex items-center gap-4 mt-2">
+                     <button onClick={() => onEditNote && onEditNote(verse.id)} className={`p-2 rounded-full border border-current opacity-40 hover:opacity-100 transition-all ${tTextSub}`}>
+                       <EditIcon size={14} />
+                     </button>
+                     <button onClick={() => {
+                       const textToShare = `${verse.a}\n\n${verse.t}\n\n- ${verse.s}${verse.reflection ? `\n\nReflection:\n${verse.reflection}` : ''}`;
+                       if (navigator.share) {
+                         navigator.share({ title: 'Ruh Reflections', text: textToShare }).catch(() => {});
+                       } else {
+                         navigator.clipboard.writeText(textToShare);
+                       }
+                     }} className={`p-2 rounded-full border border-current opacity-40 hover:opacity-100 transition-all ${tTextSub}`}>
+                       <ShareIcon size={14} />
+                     </button>
+                   </div>
                  </div>
               </div>
             )
