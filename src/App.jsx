@@ -5,6 +5,7 @@ import { SavedVersesModal } from './components/layout/SavedVersesModal';
 import { useLocalAI } from './hooks/useLocalAI';
 import { useHijriDate } from './hooks/useHijriDate';
 import { useCanvasEngine } from './hooks/useCanvasEngine';
+import { usePrayerTimes } from './hooks/usePrayerTimes';
 import { PRAYERS, DARK_HIGH, DARK_LOW, LIGHT_HIGH, LIGHT_LOW, AMBIENT_DHIKR } from './data/constants';
 import { 
   MoonIcon, SunIcon, CircleIcon, CheckCircleIcon, SparklesIcon, 
@@ -26,6 +27,7 @@ export default function App() {
   const devotionData = useDevotionData();
   const localAI = useLocalAI();
   const hijri = useHijriDate();
+  const prayerTimes = usePrayerTimes();
   // --- APP STATE ---
   const [currentView, setCurrentView] = useState('main'); // 'main' or 'profile'
   const viewRef = useRef('main'); 
@@ -63,6 +65,7 @@ export default function App() {
   
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [checkingId, setCheckingId] = useState(null);
+  const prayerFocusedRef = useRef(false); // FEAT-02: Track if we auto-focused
   
   const [inTransit, setInTransit] = useState(false);
   const [verseStyle, setVerseStyle] = useState({ opacity: 0, transform: 'translateY(14px)' });
@@ -106,6 +109,16 @@ export default function App() {
     }
     return () => clearTimeout(timer);
   }, [allCompleted]);
+
+  // FEAT-02: Auto-focus rolodex on next prayer when data loads
+  useEffect(() => {
+    if (prayerFocusedRef.current || !prayerTimes.prayerData?.nextPrayer) return;
+    const nextIdx = PRAYERS.findIndex(p => p.id === prayerTimes.prayerData.nextPrayer);
+    if (nextIdx >= 0) {
+      setFocusedIndex(nextIdx);
+      prayerFocusedRef.current = true;
+    }
+  }, [prayerTimes.prayerData?.nextPrayer]);
 
   const stateRef = useRef({ 
     health: 0, theme: 0, hikmahBlend: 0,
@@ -811,17 +824,35 @@ export default function App() {
                       ${isChecking || isCompletedItem ? (isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]') 
                                       : (isLightMode ? 'text-[#4a453d] opacity-50 group-hover:opacity-80 group-hover:text-[#9c7533]' : 'text-[#e4dac8] opacity-40 group-hover:opacity-70 group-hover:text-[#d2a24b]')}`} 
                   />
-                  <span 
-                    className={`font-serif-eng uppercase text-[11px] transition-all duration-500 
-                      ${isChecking || isCompletedItem ? (isLightMode ? 'text-[#9c7533] font-medium' : 'text-[#d2a24b]') 
-                                      : (isLightMode ? 'text-[#4a453d] opacity-70 group-hover:opacity-100' : 'text-[#e4dac8] opacity-60 group-hover:opacity-100')}`}
-                    style={{ letterSpacing: '0.1em', marginRight: '-0.1em' }}
-                  >
-                    {item.label}
-                  </span>
+                  <div className="flex flex-col">
+                    <span 
+                      className={`font-serif-eng uppercase text-[11px] transition-all duration-500 
+                        ${isChecking || isCompletedItem ? (isLightMode ? 'text-[#9c7533] font-medium' : 'text-[#d2a24b]') 
+                                        : (isLightMode ? 'text-[#4a453d] opacity-70 group-hover:opacity-100' : 'text-[#e4dac8] opacity-60 group-hover:opacity-100')}`}
+                      style={{ letterSpacing: '0.1em', marginRight: '-0.1em' }}
+                    >
+                      {item.label}
+                    </span>
+                    {/* FEAT-02: Arabic prayer name */}
+                    <span className={`font-arabic text-[9px] -mt-0.5 transition-all duration-500 ${isLightMode ? 'text-[#4a453d] opacity-25' : 'text-[#e4dac8] opacity-20'}`}>
+                      {prayerTimes.prayerData?.arabicNames[item.id] || ''}
+                    </span>
+                  </div>
                 </div>
                 
-                <div className="relative w-5 h-5 flex items-center justify-center z-10">
+                {/* FEAT-02: Prayer time + check icon */}
+                <div className="flex items-center gap-3 z-10">
+                  {prayerTimes.prayerData?.formatted[item.id] && (
+                    <span 
+                      className={`font-serif-eng text-[9px] tabular-nums transition-all duration-500
+                        ${prayerTimes.prayerData.nextPrayer === item.id && !isCompletedItem
+                          ? (isLightMode ? 'text-[#9c7533] opacity-80' : 'text-[#d2a24b] opacity-70')
+                          : (isLightMode ? 'text-[#4a453d] opacity-30' : 'text-[#e4dac8] opacity-25')
+                        }`}
+                    >
+                      {prayerTimes.prayerData.formatted[item.id]}
+                    </span>
+                  )}
                   {isChecking ? (
                     <CheckCircleIcon size={18} className={`absolute animate-[checkmarkPop_0.4s_cubic-bezier(0.34,1.56,0.64,1)_forwards] ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
                   ) : isCompletedItem ? (
@@ -909,6 +940,7 @@ export default function App() {
         onClose={() => setShowSettings(false)}
         isLightMode={isLightMode}
         devotionData={devotionData}
+        prayerTimes={prayerTimes}
       />
 
       <RemindersModal 

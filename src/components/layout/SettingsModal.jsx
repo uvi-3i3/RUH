@@ -3,7 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { ChevronDownIcon, SettingsIcon } from '../icons/Icons';
 
-export const SettingsModal = ({ isOpen, onClose, isLightMode, devotionData }) => {
+export const SettingsModal = ({ isOpen, onClose, isLightMode, devotionData, prayerTimes }) => {
   const [confirmingReset, setConfirmingReset] = useState(false); // ARCH-08
   if (!isOpen) return null;
 
@@ -96,6 +96,51 @@ export const SettingsModal = ({ isOpen, onClose, isLightMode, devotionData }) =>
             <p className={`font-serif-eng text-xs leading-relaxed opacity-60 ${tTextSub}`}>
               Transforms deep theological language into accessible English across all verses and proofs.
             </p>
+          </div>
+
+          {/* FEAT-02: Prayer Calculation Method Card */}
+          <div className={`w-full p-6 rounded-[24px] border flex flex-col gap-4 ${isLightMode ? 'bg-white/60 border-white/80 shadow-sm' : 'bg-white/5 border-white/10 shadow-lg'}`}>
+            <div className="flex justify-between items-center">
+              <span className={`font-serif-eng text-lg ${tTextMain}`}>Prayer Times</span>
+              {prayerTimes?.hasLocation && (
+                <span className={`font-serif-eng text-[9px] uppercase tracking-widest ${isLightMode ? 'text-[#0d9488]' : 'text-[#14b8a6]'} opacity-70`}>● Live</span>
+              )}
+            </div>
+            <p className={`font-serif-eng text-xs leading-relaxed opacity-60 ${tTextSub}`}>
+              {prayerTimes?.hasLocation 
+                ? 'Auto-detected from your location. Choose the calculation method used in your region.' 
+                : prayerTimes?.locationLoading 
+                  ? 'Detecting location...' 
+                  : 'Location access needed for prayer times.'}
+            </p>
+            {!prayerTimes?.hasLocation && !prayerTimes?.locationLoading && (
+              <button 
+                onClick={() => prayerTimes?.requestLocation()}
+                className={`font-serif-eng text-[10px] uppercase tracking-widest px-4 py-2 rounded-full border transition-all hover:scale-105 self-start
+                  ${isLightMode ? 'border-[#9c7533]/40 text-[#9c7533]' : 'border-[#d2a24b]/40 text-[#d2a24b]'}`}
+              >
+                Enable Location
+              </button>
+            )}
+            {prayerTimes?.hasLocation && (
+              <select 
+                value={prayerTimes?.method || 'MoonsightingCommittee'} 
+                onChange={(e) => prayerTimes?.setMethod(e.target.value)}
+                className={`font-serif-eng text-xs px-3 py-2 rounded-xl border outline-none transition-all cursor-pointer appearance-none
+                  ${isLightMode ? 'bg-white/80 border-black/10 text-[#1a1814]' : 'bg-white/5 border-white/10 text-white'}`}
+              >
+                <option value="MoonsightingCommittee">Moonsighting Committee</option>
+                <option value="NorthAmerica">ISNA (North America)</option>
+                <option value="MuslimWorldLeague">Muslim World League</option>
+                <option value="Egyptian">Egyptian Authority</option>
+                <option value="UmmAlQura">Umm Al-Qura (Saudi)</option>
+                <option value="Karachi">University of Karachi</option>
+                <option value="Dubai">Dubai / UAE</option>
+                <option value="Qatar">Qatar</option>
+                <option value="Kuwait">Kuwait</option>
+                <option value="Singapore">Singapore / SE Asia</option>
+              </select>
+            )}
           </div>
 
           {/* Reset Progress Card */}
