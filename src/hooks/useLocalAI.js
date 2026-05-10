@@ -1,49 +1,61 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { pipeline, env } from '@xenova/transformers';
+import { useState, useCallback, useRef } from 'react';
 
-// Configure environment to prefer local caching and WebAssembly over network
-env.allowLocalModels = false; // We pull from HF hub on first load, then it caches into IndexedDB natively
-env.useBrowserCache = true;
-
+/**
+ * PERF-01: Lazy-loaded AI hook.
+ * The model is NOT downloaded on mount. Call `initialize()` to begin loading.
+ * This saves ~23MB of bandwidth for users who never open Tafakkur.
+ */
 export function useLocalAI() {
   const [isReady, setIsReady] = useState(false);
   const [progress, setProgress] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   
   // Keep the pipeline instance in a ref to persist across re-renders
   const extractorRef = useRef(null);
+  const initPromiseRef = useRef(null);
 
-  useEffect(() => {
-    let active = true;
+  /**
+   * Begin downloading and initializing the AI model.
+   * Safe to call multiple times — subsequent calls return the same promise.
+   */
+  const initialize = useCallback(async () => {
+    // Already ready
+    if (extractorRef.current) return;
+    
+    // Already loading — return existing promise
+    if (initPromiseRef.current) return initPromiseRef.current;
 
-    async function loadModel() {
+    setIsLoading(true);
+
+    initPromiseRef.current = (async () => {
       try {
-        // Load the feature extraction pipeline, optimized for local inference
+        // Dynamic import so the module isn't bundled into the main chunk
+        const { pipeline, env } = await import('@xenova/transformers');
+        
+        env.allowLocalModels = false;
+        env.useBrowserCache = true;
+
         const extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
           progress_callback: (p) => {
-            if (active && p.status === 'downloading') {
-              // Convert progress to percentage approximation
+            if (p.status === 'downloading') {
               setProgress(Math.round((p.loaded / p.total) * 100));
             }
           }
         });
         
-        if (active) {
-          extractorRef.current = extractor;
-          setIsReady(true);
-          setProgress(100);
-        }
+        extractorRef.current = extractor;
+        setIsReady(true);
+        setProgress(100);
       } catch (error) {
         console.error("Local AI Model failed to load:", error);
+        initPromiseRef.current = null; // Allow retry
+      } finally {
+        setIsLoading(false);
       }
-    }
+    })();
 
-    // Initialize async
-    loadModel();
-
-    return () => {
-      active = false;
-    };
+    return initPromiseRef.current;
   }, []);
 
   // Utility to determine cosine similarity between two vectors
@@ -117,8 +129,10 @@ export function useLocalAI() {
 
   return {
     isReady,
+    isLoading,
     progress,
     isProcessing,
+    initialize,
     findCompanionVerse
   };
 }

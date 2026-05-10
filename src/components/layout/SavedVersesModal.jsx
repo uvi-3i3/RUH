@@ -1,18 +1,75 @@
+import { useState, useMemo } from 'react';
 import { ChevronDownIcon, BookmarkIcon, ShareIcon, EditIcon } from '../icons/Icons';
 
+// UX-04: Search icon component
+const SearchIcon = ({ size = 16, ...props }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </svg>
+);
+
+const FILTER_OPTIONS = ['All', 'Quran', 'Hadith', 'Hikmah'];
+const SORT_OPTIONS = [
+  { key: 'newest', label: 'Newest' },
+  { key: 'oldest', label: 'Oldest' },
+  { key: 'station', label: 'By Station' },
+];
+
 export const SavedVersesModal = ({ isOpen, onClose, isLightMode, savedVerses, allVerses, isSimpleMode, onEditNote }) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState('All');
+  const [sortKey, setSortKey] = useState('newest');
+
   if (!allVerses || !savedVerses) return null;
 
   const savedIds = savedVerses.map(v => v.id);
-  const savedVersesData = allVerses.filter(v => savedIds.includes(v.id)).map(v => ({
-    ...v,
-    reflection: savedVerses.find(sv => sv.id === v.id)?.note || ''
-  }));
+  
+  // Build enriched saved verse data
+  const savedVersesData = useMemo(() => {
+    let results = allVerses.filter(v => savedIds.includes(v.id)).map(v => {
+      const savedEntry = savedVerses.find(sv => sv.id === v.id);
+      return {
+        ...v,
+        reflection: savedEntry?.note || '',
+        timestamp: savedEntry?.timestamp || 0,
+      };
+    });
+
+    // Filter by type
+    if (activeFilter !== 'All') {
+      const filterLower = activeFilter.toLowerCase();
+      results = results.filter(v => (v.type || '').toLowerCase() === filterLower);
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      results = results.filter(v =>
+        (v.a || '').includes(q) ||
+        (v.t || '').toLowerCase().includes(q) ||
+        (v.s || '').toLowerCase().includes(q) ||
+        (v.reflection || '').toLowerCase().includes(q)
+      );
+    }
+
+    // Sort
+    if (sortKey === 'newest') {
+      results.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    } else if (sortKey === 'oldest') {
+      results.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    }
+    // 'station' keeps the natural allVerses order (already grouped by station)
+
+    return results;
+  }, [allVerses, savedVerses, savedIds, activeFilter, searchQuery, sortKey]);
 
   const tBg = isLightMode ? 'bg-[#f4f0e8]/90' : 'bg-[#060504]/90';
   const tTextMain = isLightMode ? 'text-[#1a1814]' : 'text-[rgba(245,238,224,0.92)]';
   const tTextSub = isLightMode ? 'text-[#4a453d]' : 'text-[rgba(228,218,200,0.48)]';
   const glowSub = isLightMode ? '0 1px 1px rgba(255,255,255,0.6)' : '0 1px 1px rgba(0,0,0,0.8)';
+  const accentLight = '#9c7533';
+  const accentDark = '#d2a24b';
+  const accent = isLightMode ? accentLight : accentDark;
 
   return (
     <div 
@@ -23,12 +80,65 @@ export const SavedVersesModal = ({ isOpen, onClose, isLightMode, savedVerses, al
       style={{ transform: isOpen ? 'translateY(0%)' : 'translateY(100%)', pointerEvents: isOpen ? 'auto' : 'none' }}
     >
       {/* Header */}
-      <div className="w-full flex flex-col items-center justify-center pt-6 pb-4 relative cursor-pointer" onClick={onClose}>
-        <div className={`w-12 h-1.5 rounded-full mb-6 opacity-30 ${isLightMode ? 'bg-[#1a1814]' : 'bg-white'}`} />
+      <div className="w-full flex flex-col items-center justify-center pt-6 pb-3 relative cursor-pointer" onClick={onClose}>
+        <div className={`w-12 h-1.5 rounded-full mb-5 opacity-30 ${isLightMode ? 'bg-[#1a1814]' : 'bg-white'}`} />
         <h2 className={`font-serif-eng text-lg font-medium tracking-widest uppercase ${tTextMain}`} style={{ textShadow: glowSub }}>Archived Memories</h2>
         <button onClick={onClose} className={`absolute right-6 top-8 p-2 rounded-full opacity-60 hover:opacity-100 transition-opacity ${tTextMain}`}>
           <ChevronDownIcon size={20} />
         </button>
+      </div>
+
+      {/* UX-04: Search Bar */}
+      <div className="px-6 pb-2" onClick={(e) => e.stopPropagation()}>
+        <div className={`flex items-center gap-3 px-4 py-2.5 rounded-2xl border backdrop-blur-md transition-all duration-500
+          ${isLightMode ? 'bg-white/40 border-white/60' : 'bg-white/5 border-white/10'}
+        `}>
+          <SearchIcon size={14} className={`${tTextSub} opacity-60 flex-shrink-0`} />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search verses, notes..."
+            className={`bg-transparent outline-none w-full font-serif-eng text-[13px] tracking-wide placeholder:opacity-40
+              ${tTextMain}
+            `}
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} className={`${tTextSub} opacity-60 hover:opacity-100 text-xs flex-shrink-0`}>✕</button>
+          )}
+        </div>
+      </div>
+
+      {/* UX-04: Filter Chips + Sort */}
+      <div className="px-6 pb-3 flex items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
+        <div className="flex gap-1.5 overflow-x-auto hide-scrollbar">
+          {FILTER_OPTIONS.map(f => (
+            <button
+              key={f}
+              onClick={() => setActiveFilter(f)}
+              className={`font-serif-eng text-[9px] uppercase tracking-widest px-3 py-1.5 rounded-full border transition-all duration-300 whitespace-nowrap
+                ${activeFilter === f
+                  ? `border-current bg-current/10`
+                  : (isLightMode ? 'border-black/10 hover:border-black/20' : 'border-white/10 hover:border-white/20')
+                }
+              `}
+              style={activeFilter === f ? { color: accent } : { color: isLightMode ? '#4a453d' : 'rgba(228,218,200,0.48)' }}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+        <select
+          value={sortKey}
+          onChange={(e) => setSortKey(e.target.value)}
+          className={`font-serif-eng text-[9px] uppercase tracking-widest px-2 py-1.5 rounded-full border bg-transparent outline-none cursor-pointer
+            ${isLightMode ? 'border-black/10 text-[#4a453d]' : 'border-white/10 text-[rgba(228,218,200,0.48)]'}
+          `}
+        >
+          {SORT_OPTIONS.map(s => (
+            <option key={s.key} value={s.key} className="bg-[#1a1814] text-white">{s.label}</option>
+          ))}
+        </select>
       </div>
 
       {/* List */}
@@ -36,7 +146,11 @@ export const SavedVersesModal = ({ isOpen, onClose, isLightMode, savedVerses, al
         {savedVersesData.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full opacity-40 mt-10">
             <BookmarkIcon size={40} className={`mb-4 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
-            <p className={`font-serif-eng text-sm ${tTextSub} text-center max-w-[200px] leading-relaxed tracking-wide`}>Double tap a verse in the main view to anchor it here forever.</p>
+            <p className={`font-serif-eng text-sm ${tTextSub} text-center max-w-[200px] leading-relaxed tracking-wide`}>
+              {searchQuery || activeFilter !== 'All' 
+                ? 'No matching verses found.' 
+                : 'Double tap a verse in the main view to anchor it here forever.'}
+            </p>
           </div>
         ) : (
           savedVersesData.map((verse) => {

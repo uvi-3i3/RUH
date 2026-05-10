@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-// Generates data beginning from first active day
+// ARCH-06: Updated to support enriched history format { prayers: N, verses: N }
 const generateHeatmapData = (historyMap) => {
   const data = [];
   const today = new Date();
@@ -20,9 +20,28 @@ const generateHeatmapData = (historyMap) => {
     d.setDate(today.getDate() - i);
     const dateStr = d.toISOString().split('T')[0];
     
+    const entry = historyMap[dateStr];
+    let totalActivity = 0;
+    let prayers = 0;
+    let verses = 0;
+    
+    if (entry) {
+      if (typeof entry === 'number') {
+        // Legacy format support
+        totalActivity = entry;
+        prayers = entry;
+      } else {
+        prayers = entry.prayers || 0;
+        verses = entry.verses || 0;
+        totalActivity = prayers + verses;
+      }
+    }
+    
     data.push({
       date: d,
-      count: historyMap[dateStr] || 0
+      count: totalActivity,
+      prayers,
+      verses
     });
   }
   
@@ -70,7 +89,7 @@ export const DevotionHeatmap = ({ isLightMode, historyMap }) => {
                 <div 
                   key={dIndex}
                   className={`w-3 h-3 rounded-[3px] border transition-all duration-1000 ${getCellColor(day.count)}`}
-                  title={`${day.count} prayers on ${day.date.toLocaleDateString()}`}
+                  title={`${day.prayers} prayers, ${day.verses} verses on ${day.date.toLocaleDateString()}`}
                 />
               ))}
             </div>

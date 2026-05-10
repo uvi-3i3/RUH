@@ -6,12 +6,18 @@ export const TafakkurOverlay = ({ isOpen, verse, isLightMode, initialNote = "", 
   const [companionVerse, setCompanionVerse] = useState(null);
   const textareaRef = useRef(null);
 
+  // PERF-01: Trigger AI model loading when the overlay opens
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => textareaRef.current?.focus(), 500);
       setCompanionVerse(null);
+      
+      // Begin lazy-loading the AI model if not ready
+      if (localAI && !localAI.isReady && localAI.initialize) {
+        localAI.initialize();
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, localAI]);
   
   useEffect(() => {
     setNote(initialNote);
@@ -87,6 +93,23 @@ export const TafakkurOverlay = ({ isOpen, verse, isLightMode, initialNote = "", 
               e.target.style.height = e.target.scrollHeight + 'px';
             }}
           />
+
+          {/* PERF-01: Show AI loading progress indicator */}
+          {localAI?.isLoading && !localAI.isReady && (
+            <div className="absolute right-0 bottom-6 flex items-center gap-2 pointer-events-none">
+              <div className="flex flex-col items-end gap-1">
+                <span className={`font-serif-eng text-[8px] uppercase tracking-widest opacity-60 ${isLightMode ? 'text-[#0d9488]' : 'text-[#14b8a6]'}`}>
+                  Preparing AI… {localAI.progress}%
+                </span>
+                <div className={`w-20 h-[2px] rounded-full overflow-hidden ${isLightMode ? 'bg-[#0d9488]/20' : 'bg-[#14b8a6]/20'}`}>
+                  <div 
+                    className={`h-full rounded-full transition-all duration-500 ${isLightMode ? 'bg-[#0d9488]' : 'bg-[#14b8a6]'}`}
+                    style={{ width: `${localAI.progress}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           {localAI?.isReady && note.length > 10 && !companionVerse && (
              <div className="absolute right-0 bottom-6 flex justify-end w-full pointer-events-none">

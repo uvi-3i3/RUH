@@ -1,6 +1,6 @@
 import { memo } from 'react';
 
-export const StationIndicator = memo(({ stations, currentStation, unlockedStations, yaqeenProgress, accentHex, onSelectStation }) => {
+export const StationIndicator = memo(({ stations, currentStation, unlockedStations, yaqeenProgress, accentHex, onSelectStation, fogOpacity, nextStation }) => {
   if (!stations || stations.length === 0) return null;
 
   return (
@@ -67,6 +67,39 @@ export const StationIndicator = memo(({ stations, currentStation, unlockedStatio
                   style={{ opacity: 0.6 }}
                 />
               </svg>
+            )}
+
+            {/* FEAT-03: Fog Lifting — Show next station name with blur/opacity tied to yaqeen */}
+            {isFrontier && nextStation && (
+              <div 
+                className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap pointer-events-none transition-all duration-1000"
+                style={{
+                  opacity: Math.max(0.08, 1 - fogOpacity),
+                  filter: `blur(${fogOpacity * 6}px)`,
+                }}
+              >
+                <span 
+                  className="font-arabic text-[11px] block transition-all duration-1000"
+                  style={{ 
+                    color: accentHex,
+                    textShadow: fogOpacity < 0.3 ? `0 0 ${(1 - fogOpacity) * 20}px ${accentHex}80` : 'none',
+                  }}
+                >
+                  {nextStation.name}
+                </span>
+              </div>
+            )}
+
+            {/* Current station name label */}
+            {isCurrent && (
+              <div className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap pointer-events-none">
+                <span 
+                  className="font-arabic text-[11px] opacity-60 block"
+                  style={{ color: accentHex }}
+                >
+                  {station.name}
+                </span>
+              </div>
             )}
           </button>
         );

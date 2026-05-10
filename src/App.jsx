@@ -66,9 +66,20 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showReminders, setShowReminders] = useState(false);
   const lastTapTime = useRef(0);
+  const doubleTapCooldown = useRef(false); // BUG-06: Cooldown after double-tap
 
-  // Profile Mock Identity
-  const mockUser = { initials: "AY", name: "Ahmad Yasin", status: "Seeker • Joined 1445" };
+  // UX-02: Dynamic profile from devotionData (null = needs onboarding)
+  const userProfile = devotionData.profile;
+  const [showOnboarding, setShowOnboarding] = useState(!userProfile);
+  const [onboardingName, setOnboardingName] = useState('');
+
+  // UX-06: Context button discoverability hint
+  const contextHintShown = useRef(false);
+  const [showContextHint, setShowContextHint] = useState(false);
+
+  // UX-07: Ambient mode dhikr phrases
+  const DHIKR_PHRASES = ['سُبْحَانَ اللَّهِ', 'الْحَمْدُ لِلَّهِ', 'اللَّهُ أَكْبَرُ', 'لَا إِلٰهَ إِلَّا اللَّهُ', 'أَسْتَغْفِرُ اللَّهَ', 'بِسْمِ اللَّهِ'];
+  const [ambientDhikr, setAmbientDhikr] = useState(null);
 
   const canvasRef = useRef(null);
   const verseWrapRef = useRef(null);
@@ -99,11 +110,20 @@ export default function App() {
     isPressing: false, pressProgress: 0, lastPressP: -1,
     orbX: typeof window !== 'undefined' ? window.innerWidth / 2 : 0, 
     orbY: typeof window !== 'undefined' ? window.innerHeight / 2 : 0,
-    orbVx: 0, orbVy: 0, lastInteractionTime: Date.now()
+    orbVx: 0, orbVy: 0, lastInteractionTime: 0  // BUG-01: No Date.now() in render
   });
 
+  // BUG-01: Set the real interaction time in an effect
+  useEffect(() => { stateRef.current.lastInteractionTime = Date.now(); }, []);
+
+  // PERF-04: Refs for values read by the canvas loop to avoid re-init
+  const isLightModeRef = useRef(isLightMode);
+  useEffect(() => { isLightModeRef.current = isLightMode; }, [isLightMode]);
+  const inTransitRef = useRef(inTransit);
+  useEffect(() => { inTransitRef.current = inTransit; }, [inTransit]);
+
   const scrollCooldown = useRef(false);
-  const touchStart = useRef({ y: 0 });
+  const touchStart = useRef({ x: 0, y: 0 }); // UX-03: Track x for horizontal swipe
 
   useEffect(() => {
     setTimeout(() => setVerseStyle({ opacity: 1, transform: 'translateY(0px)' }), 400);
@@ -141,7 +161,7 @@ export default function App() {
     let embers = [];
 
     const resize = () => {
-      const dpr = window.innerWidth < 768 ? 0.7 : 1; 
+      const dpr = Math.min(window.devicePixelRatio || 1, navigator.hardwareConcurrency < 4 ? 1 : 2); // PERF-03: Adaptive DPR
       canvas.width = window.innerWidth * dpr;
       canvas.height = window.innerHeight * dpr;
       canvas.style.width = window.innerWidth + 'px';
@@ -205,7 +225,7 @@ export default function App() {
       const min = Math.min(W, H);
 
       stateRef.current.health += (targetHealth - stateRef.current.health) * 0.02;
-      const targetTheme = isLightMode ? 1 : 0;
+      const targetTheme = isLightModeRef.current ? 1 : 0;  // PERF-04: Read from ref
       stateRef.current.theme += (targetTheme - stateRef.current.theme) * 0.05;
 
       const targetHikmah = hikmahRef.current ? 1 : 0;
@@ -215,7 +235,7 @@ export default function App() {
       const t = stateRef.current.theme;
       const hk = stateRef.current.hikmahBlend;
 
-      if (stateRef.current.isPressing && !inTransit && viewRef.current === 'main') {
+      if (stateRef.current.isPressing && !inTransitRef.current && viewRef.current === 'main') {  // PERF-04: Read from ref
         stateRef.current.pressProgress += 0.035; 
         if (stateRef.current.pressProgress >= 1) {
            stateRef.current.pressProgress = 0;
@@ -229,7 +249,7 @@ export default function App() {
 
       const pressP = stateRef.current.pressProgress;
 
-      if (verseWrapRef.current && !inTransit && Math.abs(stateRef.current.lastPressP - pressP) > 0.005) {
+      if (verseWrapRef.current && !inTransitRef.current && Math.abs(stateRef.current.lastPressP - pressP) > 0.005) {  // PERF-04
         verseWrapRef.current.style.transform = `scale(${1 - pressP * 0.02})`;
         verseWrapRef.current.style.setProperty('--press', pressP.toFixed(3));
         stateRef.current.lastPressP = pressP;
@@ -323,12 +343,15 @@ export default function App() {
         const finalG = Math.floor(lerp(baseG, HIKMAH_CLOUD[i].g, hk));
         const finalB = Math.floor(lerp(baseB, HIKMAH_CLOUD[i].b, hk));
 
-        const base = DARK_HIGH[i]; 
-        const bF = lerp(DARK_LOW[i].bF, base.bF, h);
-        const rV = lerp(DARK_LOW[i].rV, base.rV, h);
-        const bA = lerp(DARK_LOW[i].bA, base.bA, h) * 0.25; 
-        const aV = lerp(DARK_LOW[i].aV, base.aV, h) * 0.25; 
-        const speedMult = (1 + (h * 0.5)) * 0.35;          
+        // BUG-05: Use light or dark cloud constants based on current theme
+        const cloudHigh = t > 0.5 ? LIGHT_HIGH[i] : DARK_HIGH[i];
+        const cloudLow = t > 0.5 ? LIGHT_LOW[i] : DARK_LOW[i];
+        const base = cloudHigh; 
+        const bF = lerp(cloudLow.bF, base.bF, h);
+        const rV = lerp(cloudLow.rV, base.rV, h);
+        const bA = lerp(cloudLow.bA, base.bA, h) * 0.25; 
+        const aV = lerp(cloudLow.aV, base.aV, h) * 0.25; 
+        const speedMult = (1 + (h * 0.5)) * 0.35;
         
         const x = cx + Math.sin(time * base.xS * speedMult + base.xO) * W * base.xA;
         const y = cy + Math.cos(time * base.yS * speedMult + base.yO) * H * base.yA;
@@ -446,7 +469,7 @@ export default function App() {
       window.removeEventListener('resize', resize);
       cancelAnimationFrame(animationFrameId);
     };
-  }, [targetHealth, isLightMode, inTransit]); 
+  }, [targetHealth]); // PERF-04: Removed isLightMode and inTransit — read via refs
 
   // --- INTERACTION HANDLERS ---
   const handleTextPointerDown = (e) => {
@@ -467,9 +490,15 @@ export default function App() {
         setTimeout(() => setShowSaveGlow(false), 1200);
       }
       lastTapTime.current = 0;
+      // BUG-06: Set cooldown to prevent press-advance after double-tap
+      doubleTapCooldown.current = true;
+      setTimeout(() => doubleTapCooldown.current = false, 400);
       return; 
     }
     lastTapTime.current = now;
+
+    // BUG-06: Block pressing during double-tap cooldown
+    if (doubleTapCooldown.current) return;
 
     e.currentTarget.setPointerCapture(e.pointerId);
     stateRef.current.pointerStartX = e.clientX || (e.touches && e.touches[0].clientX);
@@ -499,13 +528,21 @@ export default function App() {
   };
 
   const handleTouchStart = (e) => { 
-      touchStart.current = { y: e.touches[0].clientY }; 
+      touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; // UX-03: Track x
       stateRef.current.lastInteractionTime = Date.now();
   };
 
   const handleTouchEnd = (e) => {
     if (e.target.closest('button') || currentView !== 'main') return; 
+    const dx = touchStart.current.x - e.changedTouches[0].clientX; // UX-03: Horizontal swipe
     const dy = touchStart.current.y - e.changedTouches[0].clientY;
+    
+    // UX-03: Horizontal swipe advances verse
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+      advanceVerse(dx > 0 ? 1 : -1);
+      return;
+    }
+    
     if (Math.abs(dy) > 30 && !allCompleted) {
       if (dy > 0) setFocusedIndex(p => Math.min(PRAYERS.length - 1, p + 1));
       else setFocusedIndex(p => Math.max(0, p - 1));
@@ -572,6 +609,37 @@ export default function App() {
   const isSaved = activeVerse && devotionData.savedVerses.some(v => v?.id === activeVerse.id);
   const isHikmah = activeVerse?.type === 'hikmah';
   hikmahRef.current = isHikmah;
+
+  // UX-06: Context button discoverability pulse — once per session after 4s
+  useEffect(() => {
+    if (activeVerse && !contextHintShown.current && currentView === 'main') {
+      const timer = setTimeout(() => {
+        if (!contextHintShown.current) {
+          setShowContextHint(true);
+          contextHintShown.current = true;
+          setTimeout(() => setShowContextHint(false), 1500);
+        }
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [activeVerse, currentView]);
+
+  // UX-07: Ambient mode — cycle dhikr phrases every 30s
+  useEffect(() => {
+    if (!devotionData.isAmbientEnabled) {
+      setAmbientDhikr(null);
+      return;
+    }
+    let idx = 0;
+    const show = () => {
+      setAmbientDhikr(DHIKR_PHRASES[idx % DHIKR_PHRASES.length]);
+      idx++;
+      setTimeout(() => setAmbientDhikr(null), 5000); // visible for 5s
+    };
+    show(); // Show immediately
+    const interval = setInterval(show, 30000);
+    return () => clearInterval(interval);
+  }, [devotionData.isAmbientEnabled]);
 
   const handleShare = (e, verse) => {
     e.stopPropagation();
@@ -670,20 +738,23 @@ export default function App() {
 
       {/* Header */}
       <div className="absolute top-[40px] left-0 right-0 z-30 flex justify-between items-center px-10 pointer-events-none">
-        <div className="flex gap-1 pointer-events-auto">
-          <button 
-             onClick={devotionData.resetData}
-             className={`font-mono text-[9px] px-2 py-1 rounded border opacity-40 hover:opacity-100 transition-all ${isLightMode ? 'border-black text-black' : 'border-white text-white'}`}
-          >
-            [RESET]
-          </button>
-          <button 
-             onClick={() => setDevTimePhase(p => p === null ? 0 : p >= 4 ? null : p + 1)}
-             className={`font-mono text-[9px] px-2 py-1 rounded border opacity-40 hover:opacity-100 transition-all ${isLightMode ? 'border-black text-black' : 'border-white text-white'}`}
-          >
-            [{devTimePhase === null ? 'AUTO' : palette.name}]
-          </button>
-        </div>
+        {/* ARCH-05: Debug controls only visible in development */}
+        {import.meta.env.DEV ? (
+          <div className="flex gap-1 pointer-events-auto">
+            <button 
+               onClick={devotionData.resetData}
+               className={`font-mono text-[9px] px-2 py-1 rounded border opacity-40 hover:opacity-100 transition-all ${isLightMode ? 'border-black text-black' : 'border-white text-white'}`}
+            >
+              [RESET]
+            </button>
+            <button 
+               onClick={() => setDevTimePhase(p => p === null ? 0 : p >= 4 ? null : p + 1)}
+               className={`font-mono text-[9px] px-2 py-1 rounded border opacity-40 hover:opacity-100 transition-all ${isLightMode ? 'border-black text-black' : 'border-white text-white'}`}
+            >
+              [{devTimePhase === null ? 'AUTO' : palette.name}]
+            </button>
+          </div>
+        ) : <div />}
         <div className="text-center mix-blend-normal flex flex-col items-center">
           <span className={`font-arabic text-[17px] ${tTextMain} opacity-30 block mb-[2px] transition-colors duration-1000`} style={{ textShadow: glowSub, letterSpacing: '0.08em', marginRight: '-0.08em' }}>رُوح</span>
           <span className={`font-serif-eng text-[8px] uppercase ${tTextSub} opacity-40 block transition-colors duration-1000`} style={{ textShadow: glowSub, letterSpacing: '0.38em', marginRight: '-0.38em' }}>Ruh</span>
@@ -696,6 +767,18 @@ export default function App() {
           {isLightMode ? <SunIcon size={16} /> : <MoonIcon size={16} />}
         </button>
       </div>
+
+      {/* UX-07: Ambient Mode Dhikr Overlay */}
+      {ambientDhikr && (
+        <div 
+          className="absolute top-[90px] left-0 right-0 z-20 flex justify-center pointer-events-none"
+          style={{ animation: 'fadeInOut 5s ease-in-out forwards' }}
+        >
+          <span className={`font-arabic text-[14px] transition-colors duration-1000 ${tTextSub} opacity-40`} style={{ letterSpacing: '0.05em' }}>
+            {ambientDhikr}
+          </span>
+        </div>
+      )}
 
       {/* 3-COLUMN ARCHITECTURAL LAYOUT */}
       <div className="absolute inset-0 z-20 flex w-full h-full px-2 md:px-10 pointer-events-none">
@@ -770,7 +853,7 @@ export default function App() {
                     </div>
                     
                     <div className="flex items-center space-x-6 mt-4">
-                      <button onPointerDown={(e) => e.stopPropagation()} onClick={() => setShowContext(!showContext)} className={`flex items-center space-x-1 pointer-events-auto transition-all duration-300 hover:scale-105 ${showContext ? 'opacity-100' : (isLightMode ? 'text-[#4a453d] opacity-40' : 'text-[#e4dac8] opacity-30')}`} style={showContext ? { color: accentHex } : {}}>
+                      <button onPointerDown={(e) => e.stopPropagation()} onClick={() => setShowContext(!showContext)} className={`flex items-center space-x-1 pointer-events-auto transition-all duration-300 hover:scale-105 ${showContext ? 'opacity-100' : showContextHint ? 'opacity-80' : (isLightMode ? 'text-[#4a453d] opacity-40' : 'text-[#e4dac8] opacity-30')}`} style={showContext || showContextHint ? { color: accentHex } : {}}>
                         <span className="font-serif-eng text-[8px] uppercase" style={{ letterSpacing: '0.3em', marginRight: '-0.3em' }}>Context</span>
                         <ChevronDownIcon size={12} className={`transition-transform duration-500 ml-1 ${showContext ? 'rotate-180' : ''}`} />
                       </button>
@@ -823,27 +906,31 @@ export default function App() {
                     ${isLightMode ? 'bg-white/40 border-white/60 shadow-[inset_0_2px_10px_rgba(0,0,0,0.05),_0_10px_30px_rgba(0,0,0,0.05)]' : 'bg-white/5 border-white/10 shadow-[inset_0_2px_10px_rgba(255,255,255,0.05),_0_10px_30px_rgba(0,0,0,0.2)]'}
                 `}>
                   <span className={`font-serif-eng text-xl font-light ${tTextMain} transition-colors duration-1000`} style={{ letterSpacing: '0.1em', marginRight: '-0.1em', textShadow: glowSub }}>
-                    {mockUser.initials}
+                    {userProfile?.initials || '?'}
                   </span>
                 </div>
               </div>
 
               {/* User Identity */}
-              <h2 className={`font-serif-eng text-xl font-medium ${tTextMain} mb-1 transition-colors duration-1000 flex items-center justify-center`} style={{ textShadow: glowSub, letterSpacing: '0.05em', marginRight: '-0.05em' }}>{mockUser.name}</h2>
-              <p className={`font-serif-eng text-[9px] uppercase mb-6 transition-colors duration-1000`} style={{ color: accentHex, letterSpacing: '0.2em', marginRight: '-0.2em' }}>{mockUser.status}</p>
+              <h2 className={`font-serif-eng text-xl font-medium ${tTextMain} mb-1 transition-colors duration-1000 flex items-center justify-center`} style={{ textShadow: glowSub, letterSpacing: '0.05em', marginRight: '-0.05em' }}>{userProfile?.name || 'Seeker'}</h2>
+              <p className={`font-serif-eng text-[9px] uppercase mb-6 transition-colors duration-1000`} style={{ color: accentHex, letterSpacing: '0.2em', marginRight: '-0.2em' }}>{userProfile ? `Seeker • Joined ${userProfile.joinedDate?.slice(0,4)}` : 'Seeker'}</p>
 
-              {/* 3-Pillar Data Grid */}
-              <div className="grid grid-cols-3 gap-3 w-full mb-6">
-                <div className={`flex flex-col items-center justify-center py-3 px-2 rounded-[16px] backdrop-blur-md border transition-all duration-1000 ${isLightMode ? 'bg-black/[0.02] border-black/[0.05]' : 'bg-white/[0.02] border-white/[0.05]'}`}>
-                  <span className={`font-serif-eng text-xl leading-none font-light ${tTextMain} transition-colors duration-1000`}>{devotionData.activeDays}</span>
-                  <span className={`font-serif-eng text-[8px] uppercase ${tTextSub} mt-2 opacity-80 transition-colors duration-1000`} style={{ letterSpacing: '0.15em', marginRight: '-0.15em' }}>Optima</span>
+              {/* 4-Pillar Data Grid — FEAT-01: Added Streak column */}
+              <div className="grid grid-cols-4 gap-2 w-full mb-6">
+                <div className={`flex flex-col items-center justify-center py-3 px-1 rounded-[16px] backdrop-blur-md border transition-all duration-1000 ${isLightMode ? 'bg-black/[0.02] border-black/[0.05]' : 'bg-white/[0.02] border-white/[0.05]'}`}>
+                  <span className={`font-serif-eng text-lg leading-none font-light ${tTextMain} transition-colors duration-1000`}>{devotionData.currentStreak > 0 ? `${devotionData.currentStreak}🔥` : '0'}</span>
+                  <span className={`font-serif-eng text-[7px] uppercase ${tTextSub} mt-2 opacity-80 transition-colors duration-1000`} style={{ letterSpacing: '0.12em', marginRight: '-0.12em' }}>Streak</span>
                 </div>
-                <div className={`flex flex-col items-center justify-center py-3 px-2 rounded-[16px] backdrop-blur-md border transition-all duration-1000 ${isLightMode ? 'bg-black/[0.02] border-black/[0.05]' : 'bg-white/[0.02] border-white/[0.05]'}`}>
-                  <span className={`font-serif-eng text-xl leading-none font-light ${tTextMain} transition-colors duration-1000`}>{devotionData.totalPrayers}</span>
-                  <span className={`font-serif-eng text-[8px] uppercase ${tTextSub} mt-2 opacity-80 transition-colors duration-1000`} style={{ letterSpacing: '0.15em', marginRight: '-0.15em' }}>Prayers</span>
+                <div className={`flex flex-col items-center justify-center py-3 px-1 rounded-[16px] backdrop-blur-md border transition-all duration-1000 ${isLightMode ? 'bg-black/[0.02] border-black/[0.05]' : 'bg-white/[0.02] border-white/[0.05]'}`}>
+                  <span className={`font-serif-eng text-lg leading-none font-light ${tTextMain} transition-colors duration-1000`}>{devotionData.activeDays}</span>
+                  <span className={`font-serif-eng text-[7px] uppercase ${tTextSub} mt-2 opacity-80 transition-colors duration-1000`} style={{ letterSpacing: '0.12em', marginRight: '-0.12em' }}>Presence</span>
                 </div>
-                <div className={`flex flex-col items-center justify-center py-3 px-2 rounded-[16px] backdrop-blur-md border transition-all duration-1000 ${isLightMode ? 'bg-black/[0.02] border-black/[0.05]' : 'bg-white/[0.02] border-white/[0.05]'}`}>
-                  <span className={`font-serif-eng text-xl leading-none font-light ${tTextMain} transition-colors duration-1000`}>{devotionData.totalVerses}</span>
+                <div className={`flex flex-col items-center justify-center py-3 px-1 rounded-[16px] backdrop-blur-md border transition-all duration-1000 ${isLightMode ? 'bg-black/[0.02] border-black/[0.05]' : 'bg-white/[0.02] border-white/[0.05]'}`}>
+                  <span className={`font-serif-eng text-lg leading-none font-light ${tTextMain} transition-colors duration-1000`}>{devotionData.totalPrayers}</span>
+                  <span className={`font-serif-eng text-[7px] uppercase ${tTextSub} mt-2 opacity-80 transition-colors duration-1000`} style={{ letterSpacing: '0.12em', marginRight: '-0.12em' }}>Prayers</span>
+                </div>
+                <div className={`flex flex-col items-center justify-center py-3 px-1 rounded-[16px] backdrop-blur-md border transition-all duration-1000 ${isLightMode ? 'bg-black/[0.02] border-black/[0.05]' : 'bg-white/[0.02] border-white/[0.05]'}`}>
+                  <span className={`font-serif-eng text-lg leading-none font-light ${tTextMain} transition-colors duration-1000`}>{devotionData.totalVerses}</span>
                   <span className={`font-serif-eng text-[8px] uppercase ${tTextSub} mt-2 opacity-80 transition-colors duration-1000`} style={{ letterSpacing: '0.15em', marginRight: '-0.15em' }}>Verses</span>
                 </div>
               </div>
@@ -1036,6 +1123,8 @@ export default function App() {
             unlockedStations={maq.unlockedStations || [0]}
             yaqeenProgress={maq.yaqeenProgress}
             accentHex={accentHex}
+            fogOpacity={fogOpacity}
+            nextStation={nextStation}
             onSelectStation={(idx) => { devotionData.goToStation(idx); setVerseIndex(0); }}
           />
         </div>
@@ -1079,6 +1168,56 @@ export default function App() {
         isLightMode={isLightMode}
         devotionData={devotionData}
       />
+
+      {/* UX-02: Onboarding Modal */}
+      {showOnboarding && !userProfile && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center" style={{ background: 'rgba(4,3,2,0.95)', backdropFilter: 'blur(30px)' }}>
+          <div className="flex flex-col items-center w-full max-w-[320px] px-8">
+            <span className="font-arabic text-[42px] text-[rgba(245,238,224,0.25)] mb-2" style={{ textShadow: '0 0 60px rgba(210,162,75,0.15)' }}>رُوح</span>
+            <span className="font-serif-eng text-[10px] uppercase text-[rgba(228,218,200,0.3)] mb-12" style={{ letterSpacing: '0.4em' }}>Ruh</span>
+            
+            <h2 className="font-serif-eng text-2xl font-light text-[rgba(245,238,224,0.92)] mb-2 text-center" style={{ textShadow: '0 1px 1px rgba(0,0,0,0.8)' }}>
+              What shall we call you?
+            </h2>
+            <p className="font-serif-eng text-[11px] text-[rgba(228,218,200,0.35)] mb-8 text-center">
+              Your name personalizes your spiritual journey.
+            </p>
+            
+            <input
+              type="text"
+              value={onboardingName}
+              onChange={(e) => setOnboardingName(e.target.value)}
+              placeholder="Your name"
+              autoFocus
+              className="w-full bg-transparent border-b border-white/20 outline-none text-center font-serif-eng text-xl text-[rgba(245,238,224,0.92)] pb-3 mb-10 placeholder:text-white/15 focus:border-[#d2a24b]/50 transition-colors"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && onboardingName.trim().length >= 2) {
+                  devotionData.setProfile(onboardingName);
+                  setShowOnboarding(false);
+                }
+              }}
+            />
+            
+            <button
+              onClick={() => {
+                if (onboardingName.trim().length >= 2) {
+                  devotionData.setProfile(onboardingName);
+                  setShowOnboarding(false);
+                }
+              }}
+              disabled={onboardingName.trim().length < 2}
+              className={`w-full py-3.5 rounded-2xl font-serif-eng text-[11px] uppercase tracking-[0.25em] border transition-all duration-500
+                ${onboardingName.trim().length >= 2
+                  ? 'border-[#d2a24b]/40 text-[#d2a24b] hover:bg-[#d2a24b]/10 hover:border-[#d2a24b]/60'
+                  : 'border-white/10 text-white/20 cursor-not-allowed'
+                }
+              `}
+            >
+              Begin Journey
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
