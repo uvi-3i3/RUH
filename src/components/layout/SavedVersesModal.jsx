@@ -15,6 +15,10 @@ const SORT_OPTIONS = [
   { key: 'station', label: 'By Station' },
 ];
 
+// BUG-15: Strip Arabic diacritics (tashkeel) for search comparison
+const stripDiacritics = (str) => str.replace(/[\u0610-\u061A\u064B-\u065F\u0670]/g, '');
+const normalize = (str) => stripDiacritics(str).toLowerCase().trim();
+
 export const SavedVersesModal = ({ isOpen, onClose, isLightMode, savedVerses, allVerses, isSimpleMode, onEditNote }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
@@ -22,7 +26,8 @@ export const SavedVersesModal = ({ isOpen, onClose, isLightMode, savedVerses, al
 
   if (!allVerses || !savedVerses) return null;
 
-  const savedIds = savedVerses.map(v => v.id);
+  // PERF-05: Memoize savedIds from savedVerses
+  const savedIds = useMemo(() => savedVerses.map(v => v.id), [savedVerses]);
   
   // Build enriched saved verse data
   const savedVersesData = useMemo(() => {
@@ -43,9 +48,9 @@ export const SavedVersesModal = ({ isOpen, onClose, isLightMode, savedVerses, al
 
     // Filter by search query
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+      const q = normalize(searchQuery);
       results = results.filter(v =>
-        (v.a || '').includes(q) ||
+        normalize(v.a || '').includes(q) ||
         (v.t || '').toLowerCase().includes(q) ||
         (v.s || '').toLowerCase().includes(q) ||
         (v.reflection || '').toLowerCase().includes(q)

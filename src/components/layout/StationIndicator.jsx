@@ -74,7 +74,7 @@ export const StationIndicator = memo(({ stations, currentStation, unlockedStatio
               <div 
                 className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap pointer-events-none transition-all duration-1000"
                 style={{
-                  opacity: Math.max(0.08, 1 - fogOpacity),
+                  opacity: Math.max(0, 1 - fogOpacity),
                   filter: `blur(${fogOpacity * 6}px)`,
                 }}
               >

@@ -3,7 +3,7 @@ import { useDevotionData } from './hooks/useDevotionData';
 import { useTemporalPhase, rgbToHex } from './hooks/useTemporalPhase';
 import { SavedVersesModal } from './components/layout/SavedVersesModal';
 import { useLocalAI } from './hooks/useLocalAI';
-import { PRAYERS, DARK_HIGH, DARK_LOW, LIGHT_HIGH, LIGHT_LOW } from './data/constants';
+import { PRAYERS, DARK_HIGH, DARK_LOW, LIGHT_HIGH, LIGHT_LOW, AMBIENT_DHIKR } from './data/constants';
 import { 
   MoonIcon, SunIcon, CircleIcon, CheckCircleIcon, SparklesIcon, 
   ChevronDownIcon, ChevronRightIcon, BookmarkIcon, BellIcon, 
@@ -36,11 +36,14 @@ export default function App() {
   const temporalRef = useRef(palette);
   temporalRef.current = palette;
 
+  // UX-09: Content load error state
+  const [contentError, setContentError] = useState(false);
+
   useEffect(() => {
     fetch('/data/content.json')
       .then(r => r.json())
-      .then(data => setContentData(data))
-      .catch(e => console.error("Error loading content:", e));
+      .then(data => { setContentData(data); setContentError(false); })
+      .catch(e => { console.error("Error loading content:", e); setContentError(true); });
   }, []);
 
   // Derive current station's verses
@@ -77,9 +80,9 @@ export default function App() {
   const contextHintShown = useRef(false);
   const [showContextHint, setShowContextHint] = useState(false);
 
-  // UX-07: Ambient mode dhikr phrases
-  const DHIKR_PHRASES = ['سُبْحَانَ اللَّهِ', 'الْحَمْدُ لِلَّهِ', 'اللَّهُ أَكْبَرُ', 'لَا إِلٰهَ إِلَّا اللَّهُ', 'أَسْتَغْفِرُ اللَّهَ', 'بِسْمِ اللَّهِ'];
+  // UX-07: Ambient mode dhikr — uses AMBIENT_DHIKR from constants (ARCH-07 + NEW-02)
   const [ambientDhikr, setAmbientDhikr] = useState(null);
+  const ambientTimeoutsRef = useRef([]); // BUG-14: Track timeouts for cleanup
 
   const canvasRef = useRef(null);
   const verseWrapRef = useRef(null);
@@ -474,6 +477,8 @@ export default function App() {
   // --- INTERACTION HANDLERS ---
   const handleTextPointerDown = (e) => {
     if (inTransit || currentView !== 'main') return;
+    // BUG-08: Check cooldown FIRST, before lastTapTime assignment
+    if (doubleTapCooldown.current) return;
 
     const now = Date.now();
     if (now - lastTapTime.current < 400) { 
@@ -496,9 +501,6 @@ export default function App() {
       return; 
     }
     lastTapTime.current = now;
-
-    // BUG-06: Block pressing during double-tap cooldown
-    if (doubleTapCooldown.current) return;
 
     e.currentTarget.setPointerCapture(e.pointerId);
     stateRef.current.pointerStartX = e.clientX || (e.touches && e.touches[0].clientX);
@@ -580,14 +582,14 @@ export default function App() {
     }, 850); 
   };
 
-  // --- YAQEEN FROM TASKS ---
-  const rewardedTasksRef = useRef(new Set());
+  // --- YAQEEN FROM TASKS (BUG-11: uses persisted rewardedIds) ---
   useEffect(() => {
     const TASK_TARGETS = { istighfar: 100, subhanallah: 33, alhamdulillah: 33, allahu_akbar: 34 };
     const tasks = devotionData.dailyTasks || {};
+    const rewarded = devotionData.rewardedIds || [];
     Object.keys(TASK_TARGETS).forEach(id => {
-      if ((tasks[id] || 0) >= TASK_TARGETS[id] && !rewardedTasksRef.current.has(id)) {
-        rewardedTasksRef.current.add(id);
+      if ((tasks[id] || 0) >= TASK_TARGETS[id] && !rewarded.includes(id)) {
+        devotionData.markTaskRewarded(id);
         devotionData.addYaqeen(5);
       }
     });
@@ -605,7 +607,8 @@ export default function App() {
     }
   }, [maq.yaqeenProgress, nextStation, kashfCeremony, devotionData]);
 
-  const activeVerse = verses ? verses[verseIndex] : null;
+  // BUG-07: Clamp verseIndex defensively to prevent OOB access
+  const activeVerse = verses ? verses[Math.min(verseIndex, verses.length - 1)] : null;
   const isSaved = activeVerse && devotionData.savedVerses.some(v => v?.id === activeVerse.id);
   const isHikmah = activeVerse?.type === 'hikmah';
   hikmahRef.current = isHikmah;
@@ -624,7 +627,15 @@ export default function App() {
     }
   }, [activeVerse, currentView]);
 
-  // UX-07: Ambient mode — cycle dhikr phrases every 30s
+  // BUG-13: Re-trigger onboarding if profile becomes null (e.g. after reset)
+  useEffect(() => {
+    if (!devotionData.profile) {
+      setShowOnboarding(true);
+      setOnboardingName('');
+    }
+  }, [devotionData.profile]);
+
+  // UX-07: Ambient mode — cycle dhikr phrases every 30s (BUG-14: track timeouts)
   useEffect(() => {
     if (!devotionData.isAmbientEnabled) {
       setAmbientDhikr(null);
@@ -632,13 +643,18 @@ export default function App() {
     }
     let idx = 0;
     const show = () => {
-      setAmbientDhikr(DHIKR_PHRASES[idx % DHIKR_PHRASES.length]);
+      setAmbientDhikr(AMBIENT_DHIKR[idx % AMBIENT_DHIKR.length]);
       idx++;
-      setTimeout(() => setAmbientDhikr(null), 5000); // visible for 5s
+      const tid = setTimeout(() => setAmbientDhikr(null), 5000);
+      ambientTimeoutsRef.current.push(tid);
     };
-    show(); // Show immediately
+    show();
     const interval = setInterval(show, 30000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      ambientTimeoutsRef.current.forEach(clearTimeout);
+      ambientTimeoutsRef.current = [];
+    };
   }, [devotionData.isAmbientEnabled]);
 
   const handleShare = (e, verse) => {
@@ -817,7 +833,19 @@ export default function App() {
               <div className="flex flex-col items-center w-full mix-blend-normal py-8 px-4" style={verseStyle}>
                 
                 {!activeVerse ? (
+                  contentError ? (
+                    <div className="flex flex-col items-center my-24 gap-4">
+                      <span className={`font-serif-eng text-xs text-center opacity-60 ${tTextSub}`}>Unable to load content.<br/>Please check your connection.</span>
+                      <button 
+                        onClick={() => { setContentError(false); fetch('/data/content.json').then(r => r.json()).then(data => { setContentData(data); setContentError(false); }).catch(() => setContentError(true)); }}
+                        className={`font-serif-eng text-[10px] uppercase tracking-widest px-5 py-2 rounded-full border transition-all hover:scale-105 ${isLightMode ? 'border-[#9c7533]/40 text-[#9c7533]' : 'border-[#d2a24b]/40 text-[#d2a24b]'}`}
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : (
                    <div className={`font-serif-eng text-xs uppercase tracking-widest animate-pulse ${tTextSub} my-24`} style={{ letterSpacing: '0.2em' }}>Awakening Soul...</div>
+                  )
                 ) : (
                   <>
                     <div className="relative mb-[16px] w-full flex justify-center">
@@ -934,6 +962,13 @@ export default function App() {
                   <span className={`font-serif-eng text-[8px] uppercase ${tTextSub} mt-2 opacity-80 transition-colors duration-1000`} style={{ letterSpacing: '0.15em', marginRight: '-0.15em' }}>Verses</span>
                 </div>
               </div>
+
+              {/* UX-11: Streak zero encouragement */}
+              {devotionData.currentStreak === 0 && devotionData.longestStreak > 0 && (
+                <p className={`font-serif-eng text-[10px] italic text-center opacity-40 -mt-4 mb-4 ${tTextSub} transition-colors duration-1000`}>
+                  Your path continues — {devotionData.longestStreak} days was your milestone.
+                </p>
+              )}
 
               {/* Devotion Heatmap */}
               <DevotionHeatmap isLightMode={isLightMode} historyMap={devotionData.history} />
@@ -1125,7 +1160,7 @@ export default function App() {
             accentHex={accentHex}
             fogOpacity={fogOpacity}
             nextStation={nextStation}
-            onSelectStation={(idx) => { devotionData.goToStation(idx); setVerseIndex(0); }}
+            onSelectStation={(idx) => { setVerseIndex(0); devotionData.goToStation(idx); }}
           />
         </div>
       )}
@@ -1138,7 +1173,7 @@ export default function App() {
             <span className="font-arabic text-[52px] mb-3" style={{ color: accentHex, textShadow: `0 0 60px ${accentRgba},0.5)` }}>
               {nextStation?.name}
             </span>
-            <span className={`font-serif-eng text-[10px] uppercase ${tTextSub}`} style={{ letterSpacing: '0.3em', marginRight: '-0.3em' }}>
+            <span className={`font-serif-eng text-sm uppercase ${tTextSub}`} style={{ letterSpacing: '0.3em', marginRight: '-0.3em' }}>
               {nextStation?.subtitle}
             </span>
           </div>
@@ -1147,9 +1182,9 @@ export default function App() {
 
       <BurhanOverlay 
         isOpen={showBurhanModal}
-        burhan={burhanData[devotionData.activeDays % burhanData.length]}
+        burhan={burhanData[(maq.currentStation * 2 + devotionData.activeDays) % burhanData.length]}
         isLightMode={isLightMode}
-        isCompleted={devotionData.dailyTasks?.burhanCompleted}
+        isCompleted={devotionData.burhanCompleted}
         isSimpleMode={devotionData.isSimpleMode}
         onComplete={devotionData.completeBurhan}
         onClose={() => setShowBurhanModal(false)}

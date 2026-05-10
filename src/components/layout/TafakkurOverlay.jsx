@@ -135,14 +135,20 @@ export const TafakkurOverlay = ({ isOpen, verse, isLightMode, initialNote = "", 
         >
            {companionVerse && (
              <div className={`flex flex-col items-center w-full max-w-[300px] p-6 rounded-[24px] backdrop-blur-md border ${isLightMode ? 'bg-[#0d9488]/5 border-[#0d9488]/20 shadow-md' : 'bg-[#14b8a6]/5 border-[#14b8a6]/20'}`}>
-                <SparklesIcon size={16} className={`mb-4 opacity-50 ${isLightMode ? 'text-[#0d9488]' : 'text-[#14b8a6]'}`} />
+                <SparklesIcon size={16} className={`mb-2 opacity-50 ${isLightMode ? 'text-[#0d9488]' : 'text-[#14b8a6]'}`} />
+                <span className={`font-serif-eng text-[7px] uppercase tracking-widest opacity-50 mb-3 ${isLightMode ? 'text-[#0d9488]' : 'text-[#14b8a6]'}`}>Related reflection</span>
                 <p className={`font-serif-eng italic text-[11px] leading-relaxed text-center opacity-80 ${tTextMain}`}>
-                  "{companionVerse.t}"
+                  {companionVerse.t}
                 </p>
                 <div className={`w-8 h-[1px] my-3 opacity-30 ${isLightMode ? 'bg-[#0d9488]' : 'bg-[#14b8a6]'}`} />
                 <span className={`font-serif-eng text-[8px] uppercase tracking-widest opacity-60 ${isLightMode ? 'text-[#0d9488]' : 'text-[#14b8a6]'}`}>
                   {companionVerse.s}
                 </span>
+                {companionVerse.ts && (
+                  <span className={`font-serif-eng text-[7px] italic opacity-30 mt-1 ${isLightMode ? 'text-[#0d9488]' : 'text-[#14b8a6]'}`}>
+                    Source: {companionVerse.ts}
+                  </span>
+                )}
              </div>
            )}
         </div>

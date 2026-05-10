@@ -14,6 +14,13 @@ export const RemindersModal = ({ isOpen, onClose, isLightMode, devotionData }) =
   const [hasPermission, setHasPermission] = useState(false);
   const [customTitle, setCustomTitle] = useState('');
   const [customTime, setCustomTime] = useState('09:00');
+  // UX-05: Scheduling feedback state
+  const [feedback, setFeedback] = useState({}); // { [prayerId]: 'success' | 'error' }
+
+  const showFeedback = (id, status) => {
+    setFeedback(prev => ({ ...prev, [id]: status }));
+    setTimeout(() => setFeedback(prev => { const n = { ...prev }; delete n[id]; return n; }), 2000);
+  };
 
   // Check hardware permissions when modal opens
   useEffect(() => {
@@ -74,9 +81,13 @@ export const RemindersModal = ({ isOpen, onClose, isLightMode, devotionData }) =
     
     if (isNowEnabled) {
       const p = PRAYERS.find(p => p.id === prayerId);
-      await scheduleNativeNotification(notifId, `${p.label} Prayer`, `It is time to center your soul for ${p.label}.`, currentTime);
+      try {
+        await scheduleNativeNotification(notifId, `${p.label} Prayer`, `It is time to center your soul for ${p.label}.`, currentTime);
+        showFeedback(prayerId, 'success');
+      } catch { showFeedback(prayerId, 'error'); }
     } else {
       await cancelNativeNotification(notifId);
+      showFeedback(prayerId, 'success');
     }
   };
 
@@ -180,12 +191,19 @@ export const RemindersModal = ({ isOpen, onClose, isLightMode, devotionData }) =
                           />
                         </div>
                       </div>
-                      <button 
-                        onClick={() => handlePrayerToggle(p.id, stateObj.enabled, stateObj.time)}
-                        className={`w-12 h-6 rounded-full transition-all duration-500 flex items-center px-1 ${stateObj.enabled ? (isLightMode ? 'bg-[#9c7533]' : 'bg-[#d2a24b]') : (isLightMode ? 'bg-black/10' : 'bg-white/10')}`}
-                      >
-                        <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-500 ${stateObj.enabled ? 'translate-x-6' : 'translate-x-0'}`} />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {feedback[p.id] && (
+                          <span className={`text-xs transition-opacity duration-500 ${feedback[p.id] === 'success' ? 'text-green-500' : 'text-red-400'}`}>
+                            {feedback[p.id] === 'success' ? '✓' : '⚠'}
+                          </span>
+                        )}
+                        <button 
+                          onClick={() => handlePrayerToggle(p.id, stateObj.enabled, stateObj.time)}
+                          className={`w-12 h-6 rounded-full transition-all duration-500 flex items-center px-1 ${stateObj.enabled ? (isLightMode ? 'bg-[#9c7533]' : 'bg-[#d2a24b]') : (isLightMode ? 'bg-black/10' : 'bg-white/10')}`}
+                        >
+                          <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-500 ${stateObj.enabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                        </button>
+                      </div>
                     </div>
                   )
                 })}

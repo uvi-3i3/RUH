@@ -2,15 +2,19 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 
 const STORAGE_KEY = 'ruh_devotion_state';
 
+// BUG-12: Use local timezone for all date keys (not UTC via toISOString)
+const getLocalDateStr = (d = new Date()) => 
+  `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
 const getInitialState = () => {
-  const currentDate = new Date().toISOString().split('T')[0];
+  const currentDate = getLocalDateStr();
   const defaultState = { 
     totalVerses: 0, 
     totalPrayers: 0, 
     history: {}, 
     savedVerses: [], 
     dailyPrayers: { date: currentDate, completed: [] },
-    dailyTasks: { date: currentDate, counters: {}, burhanCompleted: false },
+    dailyTasks: { date: currentDate, counters: {}, burhanCompleted: false, rewardedIds: [] },
     maqamat: { currentStation: 0, yaqeenProgress: 0, unlockedStations: [0], todayYaqeenGiven: 0, yaqeenDate: currentDate },
     settings: { 
       isSimpleMode: false, 
@@ -41,9 +45,10 @@ const getInitialState = () => {
         parsed.dailyPrayers = { date: currentDate, completed: [] };
       }
       if (!parsed.dailyTasks || parsed.dailyTasks.date !== currentDate) {
-        parsed.dailyTasks = { date: currentDate, counters: {}, burhanCompleted: false };
+        parsed.dailyTasks = { date: currentDate, counters: {}, burhanCompleted: false, rewardedIds: [] };
       } else {
         if (parsed.dailyTasks.burhanCompleted === undefined) parsed.dailyTasks.burhanCompleted = false;
+        if (!parsed.dailyTasks.rewardedIds) parsed.dailyTasks.rewardedIds = [];
       }
       if (!parsed.maqamat) {
         parsed.maqamat = { currentStation: 0, yaqeenProgress: 0, unlockedStations: [0], todayYaqeenGiven: 0, yaqeenDate: currentDate };
@@ -118,8 +123,9 @@ function computeStreaks(history) {
   }
 
   // Current streak: count backwards from today
-  const today = new Date().toISOString().split('T')[0];
-  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  const today = getLocalDateStr();
+  const yd = new Date(); yd.setDate(yd.getDate() - 1);
+  const yesterday = getLocalDateStr(yd);
   
   // Streak is active if today or yesterday has activity
   if (!history[today] && !history[yesterday]) {
@@ -129,15 +135,15 @@ function computeStreaks(history) {
     let checkDate = new Date();
     // If today has no activity yet, start checking from yesterday
     if (!history[today]) {
-      checkDate = new Date(Date.now() - 86400000);
+      checkDate = new Date(); checkDate.setDate(checkDate.getDate() - 1);
     }
     while (true) {
-      const dateStr = checkDate.toISOString().split('T')[0];
+      const dateStr = getLocalDateStr(checkDate);
       const entry = history[dateStr];
       const hasActivity = entry && ((entry.prayers || 0) + (entry.verses || 0) > 0);
       if (hasActivity) {
         currentStreak++;
-        checkDate = new Date(checkDate.getTime() - 86400000);
+        checkDate.setDate(checkDate.getDate() - 1);
       } else {
         break;
       }
@@ -157,7 +163,7 @@ export function useDevotionData() {
 
   const logPrayer = useCallback((prayerId) => {
     setData(prev => {
-      const dateStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      const dateStr = getLocalDateStr();
       const currentDayEntry = prev.history[dateStr] || { prayers: 0, verses: 0 };
       
       const completedList = prev.dailyPrayers?.completed || [];
@@ -182,7 +188,7 @@ export function useDevotionData() {
   }, []);
 
   const resetData = useCallback(() => {
-    const currentDate = new Date().toISOString().split('T')[0];
+    const currentDate = getLocalDateStr();
     localStorage.removeItem(STORAGE_KEY);
     setData({
       totalVerses: 0, 
@@ -190,7 +196,7 @@ export function useDevotionData() {
       history: {}, 
       savedVerses: [], 
       dailyPrayers: { date: currentDate, completed: [] },
-      dailyTasks: { date: currentDate, counters: {}, burhanCompleted: false },
+      dailyTasks: { date: currentDate, counters: {}, burhanCompleted: false, rewardedIds: [] },
       maqamat: { currentStation: 0, yaqeenProgress: 0, unlockedStations: [0], todayYaqeenGiven: 0, yaqeenDate: currentDate },
       settings: { 
         isSimpleMode: false, 
@@ -210,7 +216,7 @@ export function useDevotionData() {
 
   const logVerseSwipe = useCallback(() => {
     setData(prev => {
-      const dateStr = new Date().toISOString().split('T')[0];
+      const dateStr = getLocalDateStr();
       const currentDayEntry = prev.history[dateStr] || { prayers: 0, verses: 0 };
       return {
         ...prev,
@@ -225,7 +231,7 @@ export function useDevotionData() {
 
   const incrementTask = useCallback((taskId, amount = 1) => {
     setData(prev => {
-      const dateStr = new Date().toISOString().split('T')[0];
+      const dateStr = getLocalDateStr();
       
       const currentTasks = prev.dailyTasks?.date === dateStr 
          ? { ...prev.dailyTasks.counters }
@@ -246,14 +252,14 @@ export function useDevotionData() {
 
   const completeBurhan = useCallback(() => {
     setData(prev => {
-      const dateStr = new Date().toISOString().split('T')[0];
+      const dateStr = getLocalDateStr();
       const isToday = prev.dailyTasks?.date === dateStr;
       
       if (isToday && prev.dailyTasks.burhanCompleted) return prev;
       
       const updatedTasks = isToday 
          ? { ...prev.dailyTasks, burhanCompleted: true }
-         : { date: dateStr, counters: {}, burhanCompleted: true };
+         : { date: dateStr, counters: {}, burhanCompleted: true, rewardedIds: [] };
          
       // Add a slight Yaqeen bump for intellectual devotion
       const currentYaqeen = prev.maqamat?.yaqeenProgress || 0;
@@ -397,11 +403,26 @@ export function useDevotionData() {
   // UX-02: Profile management
   const setProfile = useCallback((name) => {
     const initials = name.trim().split(/\s+/).map(w => w[0]?.toUpperCase() || '').join('').slice(0, 2);
-    const joinedDate = new Date().toISOString().split('T')[0];
+    const joinedDate = getLocalDateStr();
     setData(prev => ({
       ...prev,
       profile: { name: name.trim(), initials, joinedDate }
     }));
+  }, []);
+
+  // BUG-11: Mark a task as rewarded (persisted so it survives reloads)
+  const markTaskRewarded = useCallback((taskId) => {
+    setData(prev => {
+      const dateStr = getLocalDateStr();
+      const isToday = prev.dailyTasks?.date === dateStr;
+      if (!isToday) return prev;
+      const existing = prev.dailyTasks.rewardedIds || [];
+      if (existing.includes(taskId)) return prev;
+      return {
+        ...prev,
+        dailyTasks: { ...prev.dailyTasks, rewardedIds: [...existing, taskId] }
+      };
+    });
   }, []);
 
   return {
@@ -411,6 +432,8 @@ export function useDevotionData() {
     savedVerses: data.savedVerses,
     dailyCompletedPrayers: data.dailyPrayers?.completed || [],
     dailyTasks: data.dailyTasks?.counters || {},
+    burhanCompleted: data.dailyTasks?.burhanCompleted || false,  // BUG-10: explicit return
+    rewardedIds: data.dailyTasks?.rewardedIds || [],              // BUG-11: persisted rewards
     maqamat: data.maqamat,
     isSimpleMode: data.settings?.isSimpleMode || false,
     isAmbientEnabled: data.settings?.isAmbientEnabled || false,
@@ -426,6 +449,7 @@ export function useDevotionData() {
     updateVerseNote,
     incrementTask,
     completeBurhan,
+    markTaskRewarded,
     addYaqeen,
     advanceStation,
     goToStation,

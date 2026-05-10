@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { ChevronDownIcon, SettingsIcon } from '../icons/Icons';
 
 export const SettingsModal = ({ isOpen, onClose, isLightMode, devotionData }) => {
+  const [confirmingReset, setConfirmingReset] = useState(false); // ARCH-08
   if (!isOpen) return null;
 
   const tTextMain = isLightMode ? 'text-[#1a1814]' : 'text-white';
@@ -76,7 +78,7 @@ export const SettingsModal = ({ isOpen, onClose, isLightMode, devotionData }) =>
               </button>
             </div>
             <p className={`font-serif-eng text-xs leading-relaxed opacity-60 ${tTextSub}`}>
-              Pushes a completely silent, gentle spiritual nudging notification to your lock screen. It makes no sound and casts no vibration, acting purely as an ambient wallpaper proxy.
+              Reveals rotating dhikr phrases softly within the app, and on native platforms, schedules a gentle, silent spiritual nudge on your lock screen at 10 AM.
             </p>
           </div>
           
@@ -106,19 +108,23 @@ export const SettingsModal = ({ isOpen, onClose, isLightMode, devotionData }) =>
             </p>
             <button 
               onClick={() => {
-                if(window.confirm('Are you absolutely sure you want to reset your entire spiritual journey? This cannot be reversed.')) {
+                if (confirmingReset) {
                   devotionData.resetData();
+                  setConfirmingReset(false);
                   onClose();
+                } else {
+                  setConfirmingReset(true);
+                  setTimeout(() => setConfirmingReset(false), 3000);
                 }
               }}
               className={`mt-2 py-3 w-full rounded-xl font-serif-eng uppercase text-[10px] tracking-widest border transition-colors ${isLightMode ? 'text-[#8a0000] border-[#8a0000]/20 hover:bg-[#8a0000]/10' : 'text-[#ff6b6b] border-[#ff6b6b]/20 hover:bg-[#ff6b6b]/10'}`}
             >
-              Wipe Data
+              {confirmingReset ? 'Tap Again to Confirm ⚠️' : 'Wipe Data'}
             </button>
           </div>
 
           <div className="flex justify-center mt-8">
-            <span className={`font-serif-eng text-[10px] uppercase tracking-widest opacity-30 ${tTextSub}`}>Ruh v1.0 • Native Wrapper</span>
+            <span className={`font-serif-eng text-[10px] uppercase tracking-widest opacity-30 ${tTextSub}`}>Ruh v{import.meta.env.VITE_APP_VERSION || '1.0'} • Native Wrapper</span>
           </div>
 
         </div>
