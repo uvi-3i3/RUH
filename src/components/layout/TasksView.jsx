@@ -1,6 +1,7 @@
-import { useRef } from 'react';
+import { useState, useRef } from 'react';
 import { BookIcon, CheckCircleIcon, ChevronRightIcon } from '../icons/Icons';
 import { burhanData } from '../../data/burhanData';
+import { MisbahaMode } from './MisbahaMode';
 
 const DHIKR_TASKS = [
   { id: 'istighfar', title: 'Istighfar', subtitle: 'Astaghfirullah', target: 100 },
@@ -12,20 +13,20 @@ const DHIKR_TASKS = [
 export const TasksView = ({ currentView, isLightMode, dailyTasks, incrementTask, activeDays, onOpenBurhan }) => {
   const tTextMain = isLightMode ? 'text-[#1a1814]' : 'text-[rgba(245,238,224,0.92)]';
   const tTextSub = isLightMode ? 'text-[#4a453d]' : 'text-[rgba(228,218,200,0.48)]';
-  const accentColor = isLightMode ? '#0d9488' : '#14b8a6'; // Intellectual blue/teal
+  const accentColor = isLightMode ? '#0d9488' : '#14b8a6';
 
   const longPressTimer = useRef(null);
+  const [misbahaTask, setMisbahaTask] = useState(null); // FEAT-09
 
   const startPress = (id, current, target) => {
     if (current >= target) return;
-    
-    // Tap feedback immediately
     if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(10);
     
+    // FEAT-09: Long-press opens Misbaha mode instead of auto-fill
     longPressTimer.current = setTimeout(() => {
-      incrementTask(id, target - current);
+      const task = DHIKR_TASKS.find(t => t.id === id);
+      setMisbahaTask(task);
       longPressTimer.current = null;
-      // Auto-fill haptic feedback
       if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(40);
     }, 600);
   };
@@ -157,6 +158,19 @@ export const TasksView = ({ currentView, isLightMode, dailyTasks, incrementTask,
              </div>
           );
         })()}
+        {/* FEAT-09: Full-Screen Misbaha Mode */}
+        {misbahaTask && (
+          <MisbahaMode
+            isOpen={!!misbahaTask}
+            taskId={misbahaTask.id}
+            taskTitle={misbahaTask.title}
+            target={misbahaTask.target}
+            currentCount={dailyTasks[misbahaTask.id] || 0}
+            isLightMode={isLightMode}
+            onIncrement={incrementTask}
+            onClose={() => setMisbahaTask(null)}
+          />
+        )}
       </div>
     </div>
   )
