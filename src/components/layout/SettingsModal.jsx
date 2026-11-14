@@ -3,12 +3,34 @@ import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { ChevronDownIcon, SettingsIcon } from '../icons/Icons';
 
-export const SettingsModal = ({ isOpen, onClose, isLightMode, devotionData, prayerTimes }) => {
-  const [confirmingReset, setConfirmingReset] = useState(false); // ARCH-08
+const TIME_PHASES = [
+  { id: null, label: 'Auto (Solar)' },
+  { id: 0, label: 'Fajr · Dawn' },
+  { id: 1, label: 'Dhuhr · Zenith' },
+  { id: 2, label: 'Asr · Amber' },
+  { id: 3, label: 'Maghrib · Dusk' },
+  { id: 4, label: 'Isha · Night' },
+];
+
+export const SettingsModal = ({
+  isOpen,
+  onClose,
+  isLightMode,
+  devotionData,
+  prayerTimes,
+  devTimePhase,
+  setDevTimePhase,
+  onOpenCityPicker,
+}) => {
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [nameInput, setNameInput] = useState(devotionData.profile?.name || 'Seeker');
+  const [nameSaved, setNameSaved] = useState(false);
+
   if (!isOpen) return null;
 
-  const tTextMain = isLightMode ? 'text-[#1a1814]' : 'text-white';
+  const tTextMain = isLightMode ? 'text-[#1a1814]' : 'text-[rgba(245,238,224,0.94)]';
   const tTextSub = isLightMode ? 'text-[#4a453d]' : 'text-[#e4dac8]';
+  const accentHex = isLightMode ? '#9c7533' : '#d2a24b';
 
   const handleAmbientToggle = async () => {
     devotionData.toggleAmbientMode();
@@ -18,13 +40,15 @@ export const SettingsModal = ({ isOpen, onClose, isLightMode, devotionData, pray
         const p = await LocalNotifications.requestPermissions();
         if (p.display === 'granted') {
           await LocalNotifications.schedule({
-            notifications: [{
-              title: "Ruh Companion",
-              body: "Take a breath. Remember your intention.",
-              id: 99,
-              schedule: { allowWhileIdle: true, on: { hour: 10, minute: 0 } },
-              sound: null
-            }]
+            notifications: [
+              {
+                title: 'Ruh Companion',
+                body: 'Take a breath. Remember your intention.',
+                id: 99,
+                schedule: { allowWhileIdle: true, on: { hour: 10, minute: 0 } },
+                sound: null,
+              },
+            ],
           });
         }
       } else {
@@ -33,125 +57,279 @@ export const SettingsModal = ({ isOpen, onClose, isLightMode, devotionData, pray
     }
   };
 
+  const handleSaveName = (e) => {
+    e.preventDefault();
+    if (nameInput.trim().length >= 2) {
+      devotionData.setProfile(nameInput.trim());
+      setNameSaved(true);
+      setTimeout(() => setNameSaved(false), 2000);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col pointer-events-auto">
-      {/* Heavy Frost Backdrop */}
-      <div 
-        className="absolute inset-0 transition-opacity duration-700"
-        style={{ 
-          background: isLightMode ? 'rgba(255,255,255,0.7)' : 'rgba(10,9,8,0.85)',
-          backdropFilter: 'blur(30px) saturate(1.5)',
-          WebkitBackdropFilter: 'blur(30px) saturate(1.5)',
-          opacity: isOpen ? 1 : 0 
-        }} 
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Sanctuary Settings"
+      className="fixed inset-0 z-[100] flex flex-col pointer-events-auto"
+    >
+      <div
+        className="absolute inset-0 transition-opacity duration-500"
+        style={{
+          background: isLightMode ? 'rgba(244,240,232,0.94)' : 'rgba(8,7,6,0.95)',
+          backdropFilter: 'blur(24px)',
+        }}
         onClick={onClose}
       />
-      
-      {/* Content Container */}
-      <div 
-        className="relative z-10 w-full h-full flex flex-col pt-16 px-6 pb-20 items-center overflow-y-auto hide-scrollbar"
-        style={{
-          transform: isOpen ? 'translateY(0) scale(1)' : 'translateY(20px) scale(0.98)',
-          opacity: isOpen ? 1 : 0,
-          transition: 'all 0.8s cubic-bezier(0.16,1,0.3,1)'
-        }}
-      >
-        {/* Header */}
-        <div className="flex flex-col items-center mb-12">
-          <SettingsIcon size={32} className={`mb-4 opacity-80 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
-          <span className={`font-arabic text-3xl mb-2 opacity-90 ${tTextMain}`}>الإعدادات</span>
-          <span className={`font-serif-eng text-xs uppercase tracking-[0.3em] ${tTextSub} opacity-70`}>Settings</span>
+
+      <div className="relative z-10 w-full max-w-xl mx-auto h-full flex flex-col">
+        {/* Sticky Top Header */}
+        <div className="w-full flex items-center justify-between px-6 pt-8 pb-4 border-b border-current/10 shrink-0">
+          <div className="flex items-center gap-3">
+            <SettingsIcon size={22} style={{ color: accentHex }} />
+            <div>
+              <h2 className={`font-serif-eng text-lg font-medium uppercase tracking-[0.2em] ${tTextMain}`}>
+                Sanctuary Settings
+              </h2>
+              <span className={`font-calligraphy text-sm opacity-70 ${tTextSub}`} dir="rtl">الإعدادات</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            aria-label="Close Settings"
+            onClick={onClose}
+            className={`w-11 h-11 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
+              isLightMode ? 'bg-white/70 border-black/10 text-[#4a453d]' : 'bg-white/5 border-white/10 text-white'
+            }`}
+          >
+            <ChevronDownIcon size={20} />
+          </button>
         </div>
 
-        {/* Options List */}
-        <div className="w-full max-w-[340px] flex flex-col gap-6">
-
-          {/* Ambient Companion Card */}
-          <div className={`w-full p-6 rounded-[24px] border flex flex-col gap-4 ${isLightMode ? 'bg-[#0d9488]/5 border-[#0d9488]/20 shadow-sm' : 'bg-[#14b8a6]/5 border-[#14b8a6]/20 shadow-lg'}`}>
+        {/* Scrollable Content */}
+        <div className="flex-1 w-full overflow-y-auto hide-scrollbar px-6 py-6 flex flex-col gap-5">
+          {/* Seeker Identity Card */}
+          <form
+            onSubmit={handleSaveName}
+            className={`w-full p-5 rounded-3xl border flex flex-col gap-3 ${
+              isLightMode ? 'bg-white/70 border-black/10 shadow-xs' : 'bg-white/[0.03] border-white/10'
+            }`}
+          >
             <div className="flex justify-between items-center">
-              <span className={`font-serif-eng text-lg ${isLightMode ? 'text-[#0d9488]' : 'text-[#14b8a6]'}`}>Ambient OS Companion</span>
-              <button 
-                onClick={handleAmbientToggle}
-                className={`w-12 h-6 rounded-full transition-all duration-500 flex items-center px-1 ${devotionData.isAmbientEnabled ? (isLightMode ? 'bg-[#0d9488]' : 'bg-[#14b8a6]') : (isLightMode ? 'bg-black/10' : 'bg-white/10')}`}
-              >
-                <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-500 ${devotionData.isAmbientEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
-              </button>
-            </div>
-            <p className={`font-serif-eng text-xs leading-relaxed opacity-60 ${tTextSub}`}>
-              Reveals rotating dhikr phrases softly within the app, and on native platforms, schedules a gentle, silent spiritual nudge on your lock screen at 10 AM.
-            </p>
-          </div>
-          
-          {/* Simple Language Card */}
-          <div className={`w-full p-6 rounded-[24px] border flex flex-col gap-4 ${isLightMode ? 'bg-white/60 border-white/80 shadow-sm' : 'bg-white/5 border-white/10 shadow-lg'}`}>
-            <div className="flex justify-between items-center">
-              <span className={`font-serif-eng text-lg ${tTextMain}`}>Simple Language</span>
-              <button 
-                onClick={devotionData.toggleSimpleMode}
-                className={`w-12 h-6 rounded-full transition-all duration-500 flex items-center px-1 ${devotionData.isSimpleMode ? (isLightMode ? 'bg-[#9c7533]' : 'bg-[#d2a24b]') : (isLightMode ? 'bg-black/10' : 'bg-white/10')}`}
-              >
-                <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-500 ${devotionData.isSimpleMode ? 'translate-x-6' : 'translate-x-0'}`} />
-              </button>
-            </div>
-            <p className={`font-serif-eng text-xs leading-relaxed opacity-60 ${tTextSub}`}>
-              Transforms deep theological language into accessible English across all verses and proofs.
-            </p>
-          </div>
-
-          {/* FEAT-02: Prayer Calculation Method Card */}
-          <div className={`w-full p-6 rounded-[24px] border flex flex-col gap-4 ${isLightMode ? 'bg-white/60 border-white/80 shadow-sm' : 'bg-white/5 border-white/10 shadow-lg'}`}>
-            <div className="flex justify-between items-center">
-              <span className={`font-serif-eng text-lg ${tTextMain}`}>Prayer Times</span>
-              {prayerTimes?.hasLocation && (
-                <span className={`font-serif-eng text-[9px] uppercase tracking-widest ${isLightMode ? 'text-[#0d9488]' : 'text-[#14b8a6]'} opacity-70`}>● Live</span>
+              <span className={`font-serif-eng text-base font-medium ${tTextMain}`}>Seeker Identity</span>
+              {nameSaved && (
+                <span className="font-serif-eng text-xs" style={{ color: accentHex }}>
+                  Updated
+                </span>
               )}
             </div>
-            <p className={`font-serif-eng text-xs leading-relaxed opacity-60 ${tTextSub}`}>
-              {prayerTimes?.hasLocation 
-                ? 'Auto-detected from your location. Choose the calculation method used in your region.' 
-                : prayerTimes?.locationLoading 
-                  ? 'Detecting location...' 
-                  : 'Location access needed for prayer times.'}
-            </p>
-            {!prayerTimes?.hasLocation && !prayerTimes?.locationLoading && (
-              <button 
-                onClick={() => prayerTimes?.requestLocation()}
-                className={`font-serif-eng text-[10px] uppercase tracking-widest px-4 py-2 rounded-full border transition-all hover:scale-105 self-start
-                  ${isLightMode ? 'border-[#9c7533]/40 text-[#9c7533]' : 'border-[#d2a24b]/40 text-[#d2a24b]'}`}
+            <div className="flex items-center gap-2.5 w-full">
+              <input
+                type="text"
+                aria-label="Seeker Name"
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                placeholder="Your name"
+                className={`flex-1 min-w-0 w-full bg-transparent border rounded-xl px-3.5 py-2 font-serif-eng text-sm outline-none ${
+                  isLightMode
+                    ? 'border-black/15 text-[#1a1814] focus:border-[#9c7533]'
+                    : 'border-white/15 text-white focus:border-[#d2a24b]'
+                }`}
+              />
+              <button
+                type="submit"
+                className={`px-4 py-2 rounded-xl font-serif-eng text-xs uppercase tracking-wider border transition-colors cursor-pointer shrink-0 ${
+                  isLightMode
+                    ? 'bg-[#9c7533] text-white border-[#9c7533]'
+                    : 'bg-[#d2a24b]/20 text-[#d2a24b] border-[#d2a24b]/40 hover:bg-[#d2a24b]/30'
+                }`}
               >
-                Enable Location
+                Save
+              </button>
+            </div>
+          </form>
+
+          {/* Atmosphere & Temporal Palette Selector */}
+          <div
+            className={`w-full p-5 rounded-3xl border flex flex-col gap-3 ${
+              isLightMode ? 'bg-white/70 border-black/10 shadow-xs' : 'bg-white/[0.03] border-white/10'
+            }`}
+          >
+            <span className={`font-serif-eng text-base font-medium ${tTextMain}`}>
+              Sanctuary Atmosphere
+            </span>
+            <p className={`font-serif-eng text-xs leading-relaxed opacity-70 ${tTextSub}`}>
+              By default, Ruh shifts its ambient light across the five solar prayer phases. You may also lock a specific atmosphere.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+              {TIME_PHASES.map((phase) => {
+                const isSelected = devTimePhase === phase.id;
+                return (
+                  <button
+                    key={String(phase.id)}
+                    type="button"
+                    onClick={() => setDevTimePhase && setDevTimePhase(phase.id)}
+                    className={`px-3 py-2 rounded-xl font-serif-eng text-xs border transition-all cursor-pointer whitespace-nowrap ${
+                      isSelected
+                        ? isLightMode
+                          ? 'bg-[#9c7533] text-white border-[#9c7533] font-medium'
+                          : 'bg-[#d2a24b]/20 text-[#d2a24b] border-[#d2a24b]/50 font-medium'
+                        : isLightMode
+                          ? 'border-black/10 text-[#4a453d] hover:bg-black/5'
+                          : 'border-white/10 text-[#e4dac8]/70 hover:bg-white/5'
+                    }`}
+                  >
+                    {phase.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Ambient Companion Card */}
+          <div
+            className={`w-full p-5 rounded-3xl border flex flex-col gap-3 ${
+              isLightMode
+                ? 'bg-[#0d9488]/5 border-[#0d9488]/20 shadow-xs'
+                : 'bg-[#14b8a6]/5 border-[#14b8a6]/20'
+            }`}
+          >
+            <div className="flex justify-between items-center">
+              <span className={`font-serif-eng text-base font-medium ${isLightMode ? 'text-[#0d9488]' : 'text-[#14b8a6]'}`}>
+                Ambient Dhikr Whisper
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={devotionData.isAmbientEnabled}
+                aria-label="Toggle Ambient Dhikr Whisper"
+                onClick={handleAmbientToggle}
+                className={`w-12 h-6 rounded-full transition-all duration-300 flex items-center px-1 cursor-pointer ${
+                  devotionData.isAmbientEnabled
+                    ? isLightMode
+                      ? 'bg-[#0d9488]'
+                      : 'bg-[#14b8a6]'
+                    : isLightMode
+                      ? 'bg-black/15'
+                      : 'bg-white/15'
+                }`}
+              >
+                <div
+                  className={`w-4 h-4 rounded-full bg-white shadow-xs transition-transform duration-300 ${
+                    devotionData.isAmbientEnabled ? 'translate-x-6' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+            <p className={`font-serif-eng text-xs leading-relaxed opacity-70 ${tTextSub}`}>
+              Softly reveals rotating remembrance phrases in the Sanctuary header every 30 seconds.
+            </p>
+          </div>
+
+          {/* Simple Language Card */}
+          <div
+            className={`w-full p-5 rounded-3xl border flex flex-col gap-3 ${
+              isLightMode ? 'bg-white/70 border-black/10 shadow-xs' : 'bg-white/[0.03] border-white/10'
+            }`}
+          >
+            <div className="flex justify-between items-center">
+              <span className={`font-serif-eng text-base font-medium ${tTextMain}`}>Simple English Translation</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={devotionData.isSimpleMode}
+                aria-label="Toggle Simple English Translation"
+                onClick={devotionData.toggleSimpleMode}
+                className={`w-12 h-6 rounded-full transition-all duration-300 flex items-center px-1 cursor-pointer ${
+                  devotionData.isSimpleMode
+                    ? isLightMode
+                      ? 'bg-[#9c7533]'
+                      : 'bg-[#d2a24b]'
+                    : isLightMode
+                      ? 'bg-black/15'
+                      : 'bg-white/15'
+                }`}
+              >
+                <div
+                  className={`w-4 h-4 rounded-full bg-white shadow-xs transition-transform duration-300 ${
+                    devotionData.isSimpleMode ? 'translate-x-6' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+            <p className={`font-serif-eng text-xs leading-relaxed opacity-70 ${tTextSub}`}>
+              Translates classical theological commentary and proofs into clear, everyday English across all stations.
+            </p>
+          </div>
+
+          {/* Prayer Location & Calculation Method Card */}
+          <div
+            className={`w-full p-5 rounded-3xl border flex flex-col gap-3 ${
+              isLightMode ? 'bg-white/70 border-black/10 shadow-xs' : 'bg-white/[0.03] border-white/10'
+            }`}
+          >
+            <div className="flex justify-between items-center gap-2">
+              <span className={`font-serif-eng text-base font-medium ${tTextMain}`}>Location &amp; Prayer Times</span>
+              {prayerTimes?.hasLocation && (
+                <span className={`font-serif-eng text-[10px] uppercase tracking-widest shrink-0 ${isLightMode ? 'text-[#0d9488]' : 'text-[#14b8a6]'}`}>
+                  {prayerTimes.cityLabel}
+                </span>
+              )}
+            </div>
+            <p className={`font-serif-eng text-xs leading-relaxed opacity-70 ${tTextSub}`}>
+              Choose your city or use GPS for live prayer countdowns and Qibla direction, and pick your regional convention.
+            </p>
+            {onOpenCityPicker && (
+              <button
+                type="button"
+                onClick={onOpenCityPicker}
+                className={`w-full min-h-[42px] px-3.5 py-2 rounded-xl border font-serif-eng text-xs uppercase tracking-[0.14em] flex items-center justify-between cursor-pointer transition-colors ${
+                  isLightMode
+                    ? 'border-black/12 text-[#1a1814] hover:bg-black/5'
+                    : 'border-white/15 text-[#f5eee0] hover:bg-white/5'
+                }`}
+              >
+                <span>{prayerTimes?.hasLocation ? `City: ${prayerTimes.cityLabel}` : 'Choose City or GPS'}</span>
+                <span style={{ color: accentHex }}>Change</span>
               </button>
             )}
-            {prayerTimes?.hasLocation && (
-              <select 
-                value={prayerTimes?.method || 'MoonsightingCommittee'} 
+            <div className="flex items-center gap-2.5 w-full">
+              <select
+                aria-label="Prayer calculation method"
+                value={prayerTimes?.method || 'MoonsightingCommittee'}
                 onChange={(e) => prayerTimes?.setMethod(e.target.value)}
-                className={`font-serif-eng text-xs px-3 py-2 rounded-xl border outline-none transition-all cursor-pointer appearance-none
-                  ${isLightMode ? 'bg-white/80 border-black/10 text-[#1a1814]' : 'bg-white/5 border-white/10 text-white'}`}
+                className={`flex-1 min-w-0 w-full truncate font-serif-eng text-xs px-3 py-2.5 rounded-xl border outline-none transition-all cursor-pointer ${
+                  isLightMode ? 'bg-white border-black/15 text-[#1a1814]' : 'bg-[#12100d] border-white/15 text-white'
+                }`}
               >
                 <option value="MoonsightingCommittee">Moonsighting Committee</option>
                 <option value="NorthAmerica">ISNA (North America)</option>
                 <option value="MuslimWorldLeague">Muslim World League</option>
-                <option value="Egyptian">Egyptian Authority</option>
-                <option value="UmmAlQura">Umm Al-Qura (Saudi)</option>
-                <option value="Karachi">University of Karachi</option>
+                <option value="Egyptian">Egyptian General Authority</option>
+                <option value="UmmAlQura">Umm Al-Qura (Makkah)</option>
+                <option value="Karachi">University of Islamic Sciences, Karachi</option>
                 <option value="Dubai">Dubai / UAE</option>
                 <option value="Qatar">Qatar</option>
                 <option value="Kuwait">Kuwait</option>
-                <option value="Singapore">Singapore / SE Asia</option>
+                <option value="Singapore">MUIS (Singapore / SE Asia)</option>
               </select>
-            )}
+            </div>
           </div>
 
           {/* Reset Progress Card */}
-          <div className={`w-full p-6 rounded-[24px] border flex flex-col gap-4 ${isLightMode ? 'bg-[#4a0000]/5 border-[#4a0000]/10' : 'bg-[#ff4444]/5 border-[#ff4444]/10'}`}>
-            <div className="flex justify-between items-center">
-              <span className={`font-serif-eng text-lg ${isLightMode ? 'text-[#8a0000]' : 'text-[#ff6b6b]'}`}>Reset Journey</span>
-            </div>
-            <p className={`font-serif-eng text-xs leading-relaxed opacity-60 ${tTextSub}`}>
-              Permanently wipe all progress, unlocked stations, saved verses, and daily streaks. This cannot be undone.
+          <div
+            className={`w-full p-5 rounded-3xl border flex flex-col gap-3 ${
+              isLightMode ? 'bg-[#8a0000]/5 border-[#8a0000]/15' : 'bg-[#ff4444]/5 border-[#ff4444]/15'
+            }`}
+          >
+            <span className={`font-serif-eng text-base font-medium ${isLightMode ? 'text-[#8a0000]' : 'text-[#ff6b6b]'}`}>
+              Reset Sanctuary Journey
+            </span>
+            <p className={`font-serif-eng text-xs leading-relaxed opacity-70 ${tTextSub}`}>
+              Permanently clear all progress, unlocked stations, saved reflections, and daily streaks.
             </p>
-            <button 
+            <button
+              type="button"
               onClick={() => {
                 if (confirmingReset) {
                   devotionData.resetData();
@@ -162,26 +340,16 @@ export const SettingsModal = ({ isOpen, onClose, isLightMode, devotionData, pray
                   setTimeout(() => setConfirmingReset(false), 3000);
                 }
               }}
-              className={`mt-2 py-3 w-full rounded-xl font-serif-eng uppercase text-[10px] tracking-widest border transition-colors ${isLightMode ? 'text-[#8a0000] border-[#8a0000]/20 hover:bg-[#8a0000]/10' : 'text-[#ff6b6b] border-[#ff6b6b]/20 hover:bg-[#ff6b6b]/10'}`}
+              className={`mt-1 py-2.5 w-full rounded-xl font-serif-eng uppercase text-xs tracking-widest border transition-colors cursor-pointer ${
+                isLightMode
+                  ? 'text-[#8a0000] border-[#8a0000]/25 hover:bg-[#8a0000]/10'
+                  : 'text-[#ff6b6b] border-[#ff6b6b]/25 hover:bg-[#ff6b6b]/10'
+              }`}
             >
-              {confirmingReset ? 'Tap Again to Confirm ⚠️' : 'Wipe Data'}
+              {confirmingReset ? 'Tap Again to Confirm Reset' : 'Reset All Data'}
             </button>
           </div>
-
-          <div className="flex justify-center mt-8">
-            <span className={`font-serif-eng text-[10px] uppercase tracking-widest opacity-30 ${tTextSub}`}>Ruh v{import.meta.env.VITE_APP_VERSION || '1.0'} • Native Wrapper</span>
-          </div>
-
         </div>
-
-        {/* Floating Close Button */}
-        <button 
-          onClick={onClose}
-          className={`absolute bottom-[50px] w-14 h-14 rounded-full flex items-center justify-center backdrop-blur-md border transition-all duration-500 hover:scale-110
-            ${isLightMode ? 'bg-white/80 border-black/5 text-[#4a453d] shadow-lg' : 'bg-[#1a1c1e]/60 border-white/10 text-white shadow-xl'}`}
-        >
-          <ChevronDownIcon size={24} />
-        </button>
       </div>
     </div>
   );

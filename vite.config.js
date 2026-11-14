@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { readFileSync } from 'fs'
+import { env } from 'node:process'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
 
@@ -33,6 +34,12 @@ export default defineConfig({
       }
     })
   ],
+  server: {
+    port: 3000,
+    host: '0.0.0.0',
+    allowedHosts: true,
+    hmr: env.DISABLE_HMR !== 'true',
+  },
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkg.version),
   },

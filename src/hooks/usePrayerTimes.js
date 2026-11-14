@@ -1,21 +1,15 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Coordinates, CalculationMethod, PrayerTimes, Prayer } from 'adhan';
+import { Coordinates, CalculationMethod, PrayerTimes } from 'adhan';
+import {
+  calculateDistanceToKaabaKm,
+  calculateQiblaBearing,
+  formatCardinalDirection,
+  formatCountdown,
+} from '../utils/devotionLogic';
 
-/**
- * FEAT-02: Auto Prayer Times Hook
- * 
- * Uses the adhan library for high-precision prayer time calculation
- * based on the user's geolocation. Falls back gracefully if
- * location is denied or unavailable.
- */
-
-const PRAYER_MAP = {
-  fajr: 'fajr',
-  dhuhr: 'dhuhr',
-  asr: 'asr',
-  maghrib: 'maghrib',
-  isha: 'isha',
-};
+const LOCATION_STORAGE_KEY = 'ruh_location_v1';
+const LEGACY_COORDS_KEY = 'ruh_coords';
+const METHOD_STORAGE_KEY = 'ruh_prayer_method_v1';
 
 const ARABIC_NAMES = {
   fajr: 'الفجر',
@@ -25,91 +19,168 @@ const ARABIC_NAMES = {
   isha: 'العشاء',
 };
 
-// Formatting helper: "5:23 AM"
 function formatTime(date) {
   if (!date) return '';
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
-// Calculate minutes until a future time
 function minutesUntil(target) {
   if (!target) return Infinity;
   return Math.max(0, Math.round((target.getTime() - Date.now()) / 60000));
 }
 
+function loadSavedLocation() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(LOCATION_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed?.lat === 'number' && typeof parsed?.lng === 'number') {
+        return parsed;
+      }
+    }
+    const legacy = localStorage.getItem(LEGACY_COORDS_KEY);
+    if (legacy) {
+      const parsed = JSON.parse(legacy);
+      if (typeof parsed?.lat === 'number' && typeof parsed?.lng === 'number') {
+        return { lat: parsed.lat, lng: parsed.lng, source: 'gps', cityName: 'Current Location' };
+      }
+    }
+  } catch {}
+  return null;
+}
+
+function loadSavedMethod() {
+  if (typeof window === 'undefined') return 'MoonsightingCommittee';
+  try {
+    return localStorage.getItem(METHOD_STORAGE_KEY) || 'MoonsightingCommittee';
+  } catch {
+    return 'MoonsightingCommittee';
+  }
+}
+
 export function usePrayerTimes() {
-  const [coords, setCoords] = useState(null);
+  const [location, setLocation] = useState(loadSavedLocation);
   const [locationError, setLocationError] = useState(null);
   const [locationLoading, setLocationLoading] = useState(false);
-  const [method, setMethod] = useState('MoonsightingCommittee'); // sensible default
-  const [tick, setTick] = useState(0); // Forces recalc every minute
+  const [method, setMethodState] = useState(loadSavedMethod);
+  const [tick, setTick] = useState(0);
 
-  // Request geolocation
+  const persistLocation = useCallback((nextLoc) => {
+    setLocation(nextLoc);
+    try {
+      if (nextLoc) {
+        localStorage.setItem(LOCATION_STORAGE_KEY, JSON.stringify(nextLoc));
+      } else {
+        localStorage.removeItem(LOCATION_STORAGE_KEY);
+      }
+    } catch {}
+  }, []);
+
+  const setMethod = useCallback((nextMethod) => {
+    setMethodState(nextMethod);
+    try {
+      localStorage.setItem(METHOD_STORAGE_KEY, nextMethod);
+    } catch {}
+  }, []);
+
   const requestLocation = useCallback(() => {
-    if (!navigator.geolocation) {
-      setLocationError('Geolocation not supported');
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setLocationError('Geolocation unavailable — choose your city manually.');
       return;
     }
     setLocationLoading(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        persistLocation({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          source: 'gps',
+          cityName: 'GPS Location',
+        });
         setLocationError(null);
         setLocationLoading(false);
-        // Persist coords
-        try {
-          localStorage.setItem('ruh_coords', JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude }));
-        } catch {}
       },
       (err) => {
-        setLocationError(err.message);
+        setLocationError(err.message || 'Location access declined');
         setLocationLoading(false);
       },
-      { enableHighAccuracy: false, timeout: 10000, maximumAge: 3600000 }
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 3600000 }
     );
+  }, [persistLocation]);
+
+  const selectCity = useCallback(
+    (city) => {
+      if (!city || typeof city.lat !== 'number' || typeof city.lng !== 'number') return;
+      persistLocation({
+        lat: city.lat,
+        lng: city.lng,
+        source: 'city',
+        cityId: city.id,
+        cityName: city.name,
+        country: city.country,
+      });
+      if (city.method) {
+        setMethod(city.method);
+      }
+      setLocationError(null);
+    },
+    [persistLocation, setMethod]
+  );
+
+  // Attempt passive GPS lookup once on initial mount only when no location is saved
+  useEffect(() => {
+    if (!location) {
+      requestLocation();
+    }
   }, []);
 
-  // Load persisted coords on mount, request fresh if none
+  // Update countdown every 30s so minutes stay accurate
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('ruh_coords');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.lat && parsed.lng) {
-          setCoords(parsed);
-          return;
-        }
-      }
-    } catch {}
-    requestLocation();
-  }, [requestLocation]);
-
-  // Tick every 60s to update "next prayer" and countdown
-  useEffect(() => {
-    const interval = setInterval(() => setTick(t => t + 1), 60000);
+    const interval = setInterval(() => setTick((t) => t + 1), 30000);
     return () => clearInterval(interval);
   }, []);
 
-  // Compute prayer times
+  const coords = location ? { lat: location.lat, lng: location.lng } : null;
+
   const prayerData = useMemo(() => {
     if (!coords) return null;
 
     const coordinates = new Coordinates(coords.lat, coords.lng);
     const date = new Date();
-    
-    // Get calculation params from method name
+
     let params;
     switch (method) {
-      case 'MuslimWorldLeague': params = CalculationMethod.MuslimWorldLeague(); break;
-      case 'Egyptian': params = CalculationMethod.Egyptian(); break;
-      case 'Karachi': params = CalculationMethod.Karachi(); break;
-      case 'UmmAlQura': params = CalculationMethod.UmmAlQura(); break;
-      case 'Dubai': params = CalculationMethod.Dubai(); break;
-      case 'Qatar': params = CalculationMethod.Qatar(); break;
-      case 'Kuwait': params = CalculationMethod.Kuwait(); break;
-      case 'Singapore': params = CalculationMethod.Singapore(); break;
-      case 'NorthAmerica': params = CalculationMethod.NorthAmerica(); break;
-      default: params = CalculationMethod.MoonsightingCommittee(); break;
+      case 'MuslimWorldLeague':
+        params = CalculationMethod.MuslimWorldLeague();
+        break;
+      case 'Egyptian':
+        params = CalculationMethod.Egyptian();
+        break;
+      case 'Karachi':
+        params = CalculationMethod.Karachi();
+        break;
+      case 'UmmAlQura':
+        params = CalculationMethod.UmmAlQura();
+        break;
+      case 'Dubai':
+        params = CalculationMethod.Dubai();
+        break;
+      case 'Qatar':
+        params = CalculationMethod.Qatar();
+        break;
+      case 'Kuwait':
+        params = CalculationMethod.Kuwait();
+        break;
+      case 'Singapore':
+        params = CalculationMethod.Singapore();
+        break;
+      case 'NorthAmerica':
+        params = CalculationMethod.NorthAmerica();
+        break;
+      default:
+        params = CalculationMethod.MoonsightingCommittee();
+        break;
     }
 
     const pt = new PrayerTimes(coordinates, date, params);
@@ -122,7 +193,6 @@ export function usePrayerTimes() {
       isha: pt.isha,
     };
 
-    // Determine current and next prayer
     const now = new Date();
     const prayerOrder = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
     let currentPrayer = null;
@@ -140,13 +210,11 @@ export function usePrayerTimes() {
       }
     }
 
-    // If before Fajr, next prayer is Fajr
     if (!currentPrayer) {
       nextPrayer = 'fajr';
       nextPrayerTime = times.fajr;
     }
 
-    // If after Isha, next is tomorrow's Fajr
     if (currentPrayer === 'isha' && !nextPrayer) {
       const tomorrow = new Date(date);
       tomorrow.setDate(tomorrow.getDate() + 1);
@@ -156,6 +224,10 @@ export function usePrayerTimes() {
     }
 
     const countdown = nextPrayerTime ? minutesUntil(nextPrayerTime) : null;
+    const formattedCountdown = countdown !== null ? formatCountdown(countdown) : '';
+    const qiblaBearing = calculateQiblaBearing(coords.lat, coords.lng);
+    const distanceToKaabaKm = calculateDistanceToKaabaKm(coords.lat, coords.lng);
+    const qiblaCardinal = formatCardinalDirection(qiblaBearing);
 
     return {
       times,
@@ -170,6 +242,10 @@ export function usePrayerTimes() {
       nextPrayer,
       nextPrayerTime,
       countdown,
+      formattedCountdown,
+      qiblaBearing,
+      qiblaCardinal,
+      distanceToKaabaKm,
       arabicNames: ARABIC_NAMES,
     };
   }, [coords, method, tick]);
@@ -177,9 +253,12 @@ export function usePrayerTimes() {
   return {
     prayerData,
     coords,
+    location,
+    cityLabel: location?.cityName || (coords ? 'GPS Location' : ''),
     locationError,
     locationLoading,
     requestLocation,
+    selectCity,
     method,
     setMethod,
     hasLocation: !!coords,
