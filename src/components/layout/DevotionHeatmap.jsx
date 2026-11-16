@@ -76,13 +76,13 @@ export const DevotionHeatmap = ({ isLightMode, historyMap }) => {
 
   return (
     <div
-      className={`w-full p-4 rounded-[20px] border transition-all duration-1000 mb-5 ${
+      className={`w-full p-3 rounded-[20px] border transition-all duration-1000 mb-2 ${
         isLightMode
-          ? 'bg-white/45 border-white/70 island-light'
-          : 'bg-white/[0.02] border-white/[0.05] island-dark'
+          ? 'bg-white/62 border-white/80 island-light'
+          : 'bg-[#0b0e16]/68 border-white/[0.09] island-dark'
       }`}
     >
-      <div className="flex items-center justify-between w-full mb-3 px-0.5">
+      <div className="flex items-center justify-between w-full mb-2 px-0.5">
         <span
           className={`font-serif-eng text-[8px] uppercase ${tTextSub} opacity-85`}
           style={{ letterSpacing: '0.2em', textShadow: glowSub }}
@@ -99,11 +99,11 @@ export const DevotionHeatmap = ({ isLightMode, historyMap }) => {
 
       <div className="flex justify-between gap-[3px] sm:gap-1 w-full">
         {weeks.map((week, wIndex) => (
-          <div key={wIndex} className="flex flex-col gap-[3px] sm:gap-1">
+          <div key={wIndex} className="flex flex-col gap-[3px]">
             {week.map((day, dIndex) => (
               <div
                 key={dIndex}
-                className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-[2px] sm:rounded-[2.5px] border transition-colors duration-700 ${getCellColor(
+                className={`w-2 h-2 rounded-[2px] border transition-colors duration-700 ${getCellColor(
                   day.count,
                   day.isToday
                 )}`}

@@ -1,5 +1,15 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { getLocalDateStr, computeStreaks } from '../utils/devotionLogic';
+import { getLocalDateStr, computeStreaks, sanitizeBackupPayload } from '../utils/devotionLogic';
+import { evaluateBadges, getBadgeById } from '../utils/badgeLogic';
+import {
+  cloneDefaultHabits,
+  createHabitEntry,
+  removeHabitFromList,
+  reorderHabitInList,
+  updateHabitInList,
+} from '../utils/habitLogic';
+import { DEFAULT_HABITS } from '../data/duasData';
+import { hydrateMissingFromPreferences, mirroredRemove, mirroredSet } from '../utils/nativeStorage';
 
 const STORAGE_KEY = 'ruh_devotion_state';
 
@@ -18,6 +28,21 @@ const getDefaultDailyTasks = (dateStr) => ({
   rewardedSets: [],
 });
 
+const getDefaultSettings = () => ({
+  isSimpleMode: false,
+  prayers: {
+    fajr: { enabled: false, time: '05:15' },
+    dhuhr: { enabled: false, time: '12:45' },
+    asr: { enabled: false, time: '16:15' },
+    maghrib: { enabled: false, time: '18:30' },
+    isha: { enabled: false, time: '20:00' },
+  },
+  customReminders: [],
+  isAmbientEnabled: false,
+  notificationLeadMinutes: 0,
+  notificationChime: true,
+});
+
 const getInitialState = () => {
   const currentDate = getLocalDateStr();
   const defaultProfile = {
@@ -29,10 +54,23 @@ const getInitialState = () => {
   const defaultState = {
     totalVerses: 0,
     totalPrayers: 0,
+    totalDhikr: 0,
+    maxDailyPrayers: 0,
+    unlockedBadges: {},
     history: {},
     savedVerses: [],
     dailyPrayers: getDefaultDailyPrayers(currentDate),
     dailyTasks: getDefaultDailyTasks(currentDate),
+    habits: cloneDefaultHabits(DEFAULT_HABITS),
+    dailyHabitLogs: { date: currentDate, counts: {} },
+    qada: {
+      prayers: { fajr: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0 },
+      fasts: 0,
+      completedTotal: 0,
+    },
+    favoriteDuaIds: [],
+    streakPausedDates: {},
+    dailyIntention: { date: currentDate, text: '' },
     burhanNotes: {},
     maqamat: {
       currentStation: 0,
@@ -41,18 +79,7 @@ const getInitialState = () => {
       todayYaqeenGiven: 0,
       yaqeenDate: currentDate,
     },
-    settings: {
-      isSimpleMode: false,
-      prayers: {
-        fajr: { enabled: false, time: '05:15' },
-        dhuhr: { enabled: false, time: '12:45' },
-        asr: { enabled: false, time: '16:15' },
-        maghrib: { enabled: false, time: '18:30' },
-        isha: { enabled: false, time: '20:00' },
-      },
-      customReminders: [],
-      isAmbientEnabled: false,
-    },
+    settings: getDefaultSettings(),
     profile: defaultProfile,
   };
 
@@ -61,21 +88,35 @@ const getInitialState = () => {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (!parsed.savedVerses) {
-        parsed.savedVerses = [];
-      } else {
-        parsed.savedVerses = parsed.savedVerses.map((v) =>
-          typeof v === 'string' ? { id: v, note: '', timestamp: Date.now() } : v
-        );
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return defaultState;
       }
 
-      if (!parsed.dailyPrayers || parsed.dailyPrayers.date !== currentDate) {
+      if (typeof parsed.totalVerses !== 'number' || !Number.isFinite(parsed.totalVerses)) {
+        parsed.totalVerses = 0;
+      }
+      if (typeof parsed.totalPrayers !== 'number' || !Number.isFinite(parsed.totalPrayers)) {
+        parsed.totalPrayers = 0;
+      }
+
+      if (!Array.isArray(parsed.savedVerses)) {
+        parsed.savedVerses = [];
+      } else {
+        parsed.savedVerses = parsed.savedVerses
+          .filter((v) => v && (typeof v === 'string' || typeof v?.id === 'string'))
+          .map((v) => (typeof v === 'string' ? { id: v, note: '', timestamp: Date.now() } : v));
+      }
+
+      if (!parsed.dailyPrayers || typeof parsed.dailyPrayers !== 'object' || parsed.dailyPrayers.date !== currentDate) {
         parsed.dailyPrayers = getDefaultDailyPrayers(currentDate);
       } else {
         const completed = Array.isArray(parsed.dailyPrayers.completed)
           ? parsed.dailyPrayers.completed
           : [];
-        const statuses = { ...(parsed.dailyPrayers.statuses || {}) };
+        const statuses =
+          parsed.dailyPrayers.statuses && typeof parsed.dailyPrayers.statuses === 'object'
+            ? { ...parsed.dailyPrayers.statuses }
+            : {};
         for (const id of completed) {
           if (!statuses[id]) statuses[id] = 'ontime';
         }
@@ -87,51 +128,100 @@ const getInitialState = () => {
         };
       }
 
-      if (!parsed.dailyTasks || parsed.dailyTasks.date !== currentDate) {
+      if (!parsed.dailyTasks || typeof parsed.dailyTasks !== 'object' || parsed.dailyTasks.date !== currentDate) {
         parsed.dailyTasks = getDefaultDailyTasks(currentDate);
       } else {
+        if (!parsed.dailyTasks.counters || typeof parsed.dailyTasks.counters !== 'object') {
+          parsed.dailyTasks.counters = {};
+        }
         if (parsed.dailyTasks.burhanCompleted === undefined) {
           parsed.dailyTasks.burhanCompleted = false;
         }
-        if (!parsed.dailyTasks.rewardedIds) parsed.dailyTasks.rewardedIds = [];
-        if (!parsed.dailyTasks.rewardedSets) parsed.dailyTasks.rewardedSets = [];
+        if (!Array.isArray(parsed.dailyTasks.rewardedIds)) parsed.dailyTasks.rewardedIds = [];
+        if (!Array.isArray(parsed.dailyTasks.rewardedSets)) parsed.dailyTasks.rewardedSets = [];
       }
 
-      if (!parsed.burhanNotes || typeof parsed.burhanNotes !== 'object') {
+      if (!parsed.burhanNotes || typeof parsed.burhanNotes !== 'object' || Array.isArray(parsed.burhanNotes)) {
         parsed.burhanNotes = {};
       }
 
-      if (!parsed.maqamat) {
+      if (!parsed.maqamat || typeof parsed.maqamat !== 'object') {
         parsed.maqamat = defaultState.maqamat;
-      } else if (!parsed.maqamat.unlockedStations) {
-        parsed.maqamat.unlockedStations = [0];
+      } else {
+        if (!Array.isArray(parsed.maqamat.unlockedStations) || parsed.maqamat.unlockedStations.length === 0) {
+          parsed.maqamat.unlockedStations = [0];
+        }
+        if (typeof parsed.maqamat.currentStation !== 'number' || parsed.maqamat.currentStation < 0) {
+          parsed.maqamat.currentStation = 0;
+        }
+        if (typeof parsed.maqamat.yaqeenProgress !== 'number') {
+          parsed.maqamat.yaqeenProgress = 0;
+        }
       }
       if (parsed.maqamat.yaqeenDate !== currentDate) {
         parsed.maqamat = { ...parsed.maqamat, todayYaqeenGiven: 0, yaqeenDate: currentDate };
       }
 
-      if (!parsed.settings) {
+      if (!parsed.settings || typeof parsed.settings !== 'object') {
         parsed.settings = defaultState.settings;
       } else {
-        if (!parsed.settings.prayers) {
+        if (!parsed.settings.prayers || typeof parsed.settings.prayers !== 'object') {
           parsed.settings.prayers = defaultState.settings.prayers;
         }
-        if (!parsed.settings.customReminders) {
+        if (!Array.isArray(parsed.settings.customReminders)) {
           parsed.settings.customReminders = [];
+        }
+        if (typeof parsed.settings.notificationLeadMinutes !== 'number') {
+          parsed.settings.notificationLeadMinutes = 0;
+        }
+        if (typeof parsed.settings.notificationChime !== 'boolean') {
+          parsed.settings.notificationChime = true;
         }
       }
 
-      if (parsed.history) {
+      if (!parsed.history || typeof parsed.history !== 'object' || Array.isArray(parsed.history)) {
+        parsed.history = {};
+      } else {
         const keys = Object.keys(parsed.history);
         for (const key of keys) {
           if (typeof parsed.history[key] === 'number') {
             parsed.history[key] = { prayers: parsed.history[key], verses: 0 };
+          } else if (!parsed.history[key] || typeof parsed.history[key] !== 'object') {
+            delete parsed.history[key];
           }
         }
       }
 
-      if (!parsed.profile) {
+      if (!parsed.profile || typeof parsed.profile !== 'object') {
         parsed.profile = defaultProfile;
+      }
+
+      if (typeof parsed.totalDhikr !== 'number') parsed.totalDhikr = 0;
+      if (typeof parsed.maxDailyPrayers !== 'number') parsed.maxDailyPrayers = 0;
+      if (!parsed.unlockedBadges || typeof parsed.unlockedBadges !== 'object' || Array.isArray(parsed.unlockedBadges)) {
+        parsed.unlockedBadges = {};
+      }
+      if (!Array.isArray(parsed.habits)) {
+        parsed.habits = cloneDefaultHabits(DEFAULT_HABITS);
+      }
+      if (!parsed.dailyHabitLogs || typeof parsed.dailyHabitLogs !== 'object' || parsed.dailyHabitLogs.date !== currentDate) {
+        parsed.dailyHabitLogs = { date: currentDate, counts: {} };
+      } else if (!parsed.dailyHabitLogs.counts || typeof parsed.dailyHabitLogs.counts !== 'object') {
+        parsed.dailyHabitLogs.counts = {};
+      }
+      if (!parsed.qada || typeof parsed.qada !== 'object') {
+        parsed.qada = defaultState.qada;
+      } else if (!parsed.qada.prayers || typeof parsed.qada.prayers !== 'object') {
+        parsed.qada.prayers = defaultState.qada.prayers;
+      }
+      if (!Array.isArray(parsed.favoriteDuaIds)) {
+        parsed.favoriteDuaIds = [];
+      }
+      if (!parsed.streakPausedDates || typeof parsed.streakPausedDates !== 'object' || Array.isArray(parsed.streakPausedDates)) {
+        parsed.streakPausedDates = {};
+      }
+      if (!parsed.dailyIntention || typeof parsed.dailyIntention !== 'object' || parsed.dailyIntention.date !== currentDate) {
+        parsed.dailyIntention = { date: currentDate, text: '' };
       }
 
       return parsed;
@@ -144,14 +234,59 @@ const getInitialState = () => {
 
 export function useDevotionData() {
   const [data, setData] = useState(getInitialState);
+  const [pendingBadgeQueue, setPendingBadgeQueue] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    hydrateMissingFromPreferences([STORAGE_KEY]).then((recovered) => {
+      if (cancelled || !recovered[STORAGE_KEY]) return;
+      setData(getInitialState());
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      mirroredSet(STORAGE_KEY, JSON.stringify(data));
     } catch (e) {
       console.warn('Could not save devotion state', e);
     }
   }, [data]);
+
+  const badgeEval = useMemo(
+    () => evaluateBadges(data, data.unlockedBadges),
+    [data]
+  );
+
+  useEffect(() => {
+    if (!badgeEval.newlyUnlocked || badgeEval.newlyUnlocked.length === 0) return;
+    const todayStr = getLocalDateStr();
+    const newlyIds = badgeEval.newlyUnlocked.map((b) => b.id);
+
+    setData((prev) => {
+      const nextUnlocked = { ...(prev.unlockedBadges || {}) };
+      let changed = false;
+      for (const id of newlyIds) {
+        if (!nextUnlocked[id]) {
+          nextUnlocked[id] = { unlockedAt: todayStr };
+          changed = true;
+        }
+      }
+      return changed ? { ...prev, unlockedBadges: nextUnlocked } : prev;
+    });
+
+    setPendingBadgeQueue((prevQueue) => {
+      const existing = new Set(prevQueue);
+      const additions = newlyIds.filter((id) => !existing.has(id));
+      return additions.length > 0 ? [...prevQueue, ...additions] : prevQueue;
+    });
+  }, [badgeEval.newlyUnlocked]);
+
+  const dismissCelebrationBadge = useCallback(() => {
+    setPendingBadgeQueue((prev) => prev.slice(1));
+  }, []);
 
   const togglePrayer = useCallback((prayerId, preferredStatus = 'ontime') => {
     setData((prev) => {
@@ -205,6 +340,7 @@ export function useDevotionData() {
       return {
         ...prev,
         totalPrayers: prev.totalPrayers + 1,
+        maxDailyPrayers: Math.max(prev.maxDailyPrayers || 0, nextCompleted.length),
         history: {
           ...prev.history,
           [dateStr]: { ...currentDayEntry, prayers: (currentDayEntry.prayers || 0) + 1 },
@@ -220,23 +356,74 @@ export function useDevotionData() {
     });
   }, []);
 
-  const logPrayer = useCallback(
-    (prayerId, status = 'ontime') => {
-      togglePrayer(prayerId, status);
-    },
-    [togglePrayer]
-  );
+  const logPrayer = useCallback((prayerId, status = 'ontime') => {
+    setData((prev) => {
+      const dateStr = getLocalDateStr();
+      const isToday = prev.dailyPrayers?.date === dateStr;
+      const baseDaily = isToday ? prev.dailyPrayers : getDefaultDailyPrayers(dateStr);
+      const completedList = baseDaily.completed || [];
+      if (completedList.includes(prayerId)) return prev;
+
+      const statuses = { ...(baseDaily.statuses || {}), [prayerId]: status };
+      const currentDayEntry = prev.history[dateStr] || { prayers: 0, verses: 0 };
+      const nextCompleted = [...completedList, prayerId];
+
+      let nextMaqamat = prev.maqamat;
+      let nextRewardedFlag = baseDaily.allFiveRewarded;
+      if (nextCompleted.length === 5 && !baseDaily.allFiveRewarded) {
+        nextRewardedFlag = true;
+        nextMaqamat = {
+          ...prev.maqamat,
+          yaqeenProgress: Math.min(100, (prev.maqamat?.yaqeenProgress || 0) + 20),
+        };
+      }
+
+      return {
+        ...prev,
+        totalPrayers: prev.totalPrayers + 1,
+        maxDailyPrayers: Math.max(prev.maxDailyPrayers || 0, nextCompleted.length),
+        history: {
+          ...prev.history,
+          [dateStr]: { ...currentDayEntry, prayers: (currentDayEntry.prayers || 0) + 1 },
+        },
+        dailyPrayers: {
+          date: dateStr,
+          completed: nextCompleted,
+          statuses,
+          allFiveRewarded: nextRewardedFlag,
+        },
+        maqamat: nextMaqamat,
+      };
+    });
+  }, []);
 
   const resetData = useCallback(() => {
     const currentDate = getLocalDateStr();
-    localStorage.removeItem(STORAGE_KEY);
+    try {
+      mirroredRemove(STORAGE_KEY);
+      localStorage.removeItem('ruh_sent_notifications_v1');
+    } catch {}
+    setPendingBadgeQueue([]);
     setData({
       totalVerses: 0,
       totalPrayers: 0,
+      totalDhikr: 0,
+      maxDailyPrayers: 0,
+      unlockedBadges: {},
       history: {},
       savedVerses: [],
       dailyPrayers: getDefaultDailyPrayers(currentDate),
       dailyTasks: getDefaultDailyTasks(currentDate),
+      habits: cloneDefaultHabits(DEFAULT_HABITS),
+      dailyHabitLogs: { date: currentDate, counts: {} },
+      qada: {
+        prayers: { fajr: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0 },
+        fasts: 0,
+        completedTotal: 0,
+      },
+      favoriteDuaIds: [],
+      streakPausedDates: {},
+      dailyIntention: { date: currentDate, text: '' },
       burhanNotes: {},
       maqamat: {
         currentStation: 0,
@@ -245,18 +432,7 @@ export function useDevotionData() {
         todayYaqeenGiven: 0,
         yaqeenDate: currentDate,
       },
-      settings: {
-        isSimpleMode: false,
-        prayers: {
-          fajr: { enabled: false, time: '05:15' },
-          dhuhr: { enabled: false, time: '12:45' },
-          asr: { enabled: false, time: '16:15' },
-          maghrib: { enabled: false, time: '18:30' },
-          isha: { enabled: false, time: '20:00' },
-        },
-        customReminders: [],
-        isAmbientEnabled: false,
-      },
+      settings: getDefaultSettings(),
       profile: { name: 'Seeker', initials: 'SK', joinedDate: currentDate },
     });
   }, []);
@@ -306,6 +482,7 @@ export function useDevotionData() {
 
       return {
         ...prev,
+        totalDhikr: Math.max(0, (prev.totalDhikr || 0) + delta),
         history: nextHistory,
         dailyTasks: {
           ...baseTasks,
@@ -358,11 +535,250 @@ export function useDevotionData() {
     });
   }, []);
 
+  const logHabitStep = useCallback((habitId, delta = 1) => {
+    setData((prev) => {
+      const dateStr = getLocalDateStr();
+      const baseLogs =
+        prev.dailyHabitLogs?.date === dateStr
+          ? prev.dailyHabitLogs
+          : { date: dateStr, counts: {} };
+      const counts = { ...(baseLogs.counts || {}) };
+      const prevVal = counts[habitId] || 0;
+      const nextVal = Math.max(0, prevVal + delta);
+      counts[habitId] = nextVal;
+
+      const actualDelta = nextVal - prevVal;
+      const currentDayEntry = prev.history[dateStr] || { prayers: 0, verses: 0, practices: 0 };
+      const nextDayPractices = Math.max(
+        0,
+        (currentDayEntry.practices || 0) + (actualDelta > 0 ? 1 : actualDelta < 0 ? -1 : 0)
+      );
+
+      const nextHistory = { ...prev.history };
+      if (
+        (currentDayEntry.prayers || 0) === 0 &&
+        (currentDayEntry.verses || 0) === 0 &&
+        nextDayPractices === 0
+      ) {
+        delete nextHistory[dateStr];
+      } else {
+        nextHistory[dateStr] = {
+          prayers: currentDayEntry.prayers || 0,
+          verses: currentDayEntry.verses || 0,
+          practices: nextDayPractices,
+        };
+      }
+
+      return {
+        ...prev,
+        history: nextHistory,
+        dailyHabitLogs: { date: dateStr, counts },
+      };
+    });
+  }, []);
+
+  const addCustomHabit = useCallback((titleOrConfig, target = 1, unit = 'time', cadence = 'Daily', arabic = 'عَمَل') => {
+    const config =
+      titleOrConfig && typeof titleOrConfig === 'object'
+        ? titleOrConfig
+        : { title: titleOrConfig, target, unit, cadence, arabic };
+    const entry = createHabitEntry(config);
+    if (!entry) return null;
+
+    setData((prev) => ({
+      ...prev,
+      habits: [...(Array.isArray(prev.habits) ? prev.habits : cloneDefaultHabits(DEFAULT_HABITS)), entry],
+    }));
+    return entry.id;
+  }, []);
+
+  const updateHabit = useCallback((habitId, patch) => {
+    setData((prev) => ({
+      ...prev,
+      habits: updateHabitInList(
+        Array.isArray(prev.habits) ? prev.habits : cloneDefaultHabits(DEFAULT_HABITS),
+        habitId,
+        patch
+      ),
+    }));
+  }, []);
+
+  const reorderHabit = useCallback((habitId, direction = 'up') => {
+    setData((prev) => ({
+      ...prev,
+      habits: reorderHabitInList(
+        Array.isArray(prev.habits) ? prev.habits : cloneDefaultHabits(DEFAULT_HABITS),
+        habitId,
+        direction
+      ),
+    }));
+  }, []);
+
+  const resetDefaultHabits = useCallback(() => {
+    setData((prev) => ({
+      ...prev,
+      habits: cloneDefaultHabits(DEFAULT_HABITS),
+    }));
+  }, []);
+
+  const removeHabit = useCallback((habitId) => {
+    setData((prev) => ({
+      ...prev,
+      habits: removeHabitFromList(
+        Array.isArray(prev.habits) ? prev.habits : cloneDefaultHabits(DEFAULT_HABITS),
+        habitId
+      ),
+    }));
+  }, []);
+
+  const setQadaCount = useCallback((key, value) => {
+    const safeVal = Math.max(0, Math.min(50000, Math.floor(Number(value) || 0)));
+    setData((prev) => {
+      const cur = prev.qada || { prayers: { fajr: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0 }, fasts: 0, completedTotal: 0 };
+      if (key === 'fasts') {
+        return { ...prev, qada: { ...cur, fasts: safeVal } };
+      }
+      return {
+        ...prev,
+        qada: {
+          ...cur,
+          prayers: { ...(cur.prayers || {}), [key]: safeVal },
+        },
+      };
+    });
+  }, []);
+
+  const bulkAddQadaYears = useCallback((years = 1) => {
+    const count = Math.max(1, Math.min(80, Number(years) || 1)) * 365;
+    setData((prev) => {
+      const cur = prev.qada || { prayers: { fajr: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0 }, fasts: 0, completedTotal: 0 };
+      const p = cur.prayers || {};
+      return {
+        ...prev,
+        qada: {
+          ...cur,
+          prayers: {
+            fajr: (p.fajr || 0) + count,
+            dhuhr: (p.dhuhr || 0) + count,
+            asr: (p.asr || 0) + count,
+            maghrib: (p.maghrib || 0) + count,
+            isha: (p.isha || 0) + count,
+          },
+        },
+      };
+    });
+  }, []);
+
+  const completeOneQada = useCallback((key) => {
+    setData((prev) => {
+      const cur = prev.qada || { prayers: { fajr: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0 }, fasts: 0, completedTotal: 0 };
+      const dateStr = getLocalDateStr();
+      const currentDayEntry = prev.history[dateStr] || { prayers: 0, verses: 0, practices: 0 };
+
+      let nextQada = cur;
+      let changed = false;
+      if (key === 'fasts') {
+        if ((cur.fasts || 0) > 0) {
+          nextQada = { ...cur, fasts: cur.fasts - 1, completedTotal: (cur.completedTotal || 0) + 1 };
+          changed = true;
+        }
+      } else if ((cur.prayers?.[key] || 0) > 0) {
+        nextQada = {
+          ...cur,
+          prayers: { ...cur.prayers, [key]: cur.prayers[key] - 1 },
+          completedTotal: (cur.completedTotal || 0) + 1,
+        };
+        changed = true;
+      }
+      if (!changed) return prev;
+
+      return {
+        ...prev,
+        qada: nextQada,
+        history: {
+          ...prev.history,
+          [dateStr]: {
+            prayers: currentDayEntry.prayers || 0,
+            verses: currentDayEntry.verses || 0,
+            practices: (currentDayEntry.practices || 0) + 1,
+          },
+        },
+        maqamat: {
+          ...prev.maqamat,
+          yaqeenProgress: Math.min(100, (prev.maqamat?.yaqeenProgress || 0) + 2),
+        },
+      };
+    });
+  }, []);
+
+  const toggleFavoriteDua = useCallback((duaId) => {
+    setData((prev) => {
+      const list = Array.isArray(prev.favoriteDuaIds) ? prev.favoriteDuaIds : [];
+      const exists = list.includes(duaId);
+      return {
+        ...prev,
+        favoriteDuaIds: exists ? list.filter((id) => id !== duaId) : [...list, duaId],
+      };
+    });
+  }, []);
+
+  const toggleStreakPauseToday = useCallback(() => {
+    const dateStr = getLocalDateStr();
+    setData((prev) => {
+      const paused = { ...(prev.streakPausedDates || {}) };
+      if (paused[dateStr]) delete paused[dateStr];
+      else paused[dateStr] = true;
+      return { ...prev, streakPausedDates: paused };
+    });
+  }, []);
+
+  const setDailyIntention = useCallback((text) => {
+    const dateStr = getLocalDateStr();
+    setData((prev) => ({
+      ...prev,
+      dailyIntention: { date: dateStr, text: (text || '').slice(0, 140) },
+    }));
+  }, []);
+
+  const exportBackupJson = useCallback(() => {
+    return JSON.stringify(data, null, 2);
+  }, [data]);
+
+  const importBackupJson = useCallback((jsonText) => {
+    try {
+      const parsed = JSON.parse(jsonText);
+      const safe = sanitizeBackupPayload(parsed);
+      if (!safe) return false;
+      setData((prev) => ({
+        ...prev,
+        ...safe,
+        habits: safe.habits !== undefined ? safe.habits : prev.habits || cloneDefaultHabits(DEFAULT_HABITS),
+        qada: safe.qada || prev.qada,
+        profile: safe.profile || prev.profile,
+        maqamat: safe.maqamat ? { ...prev.maqamat, ...safe.maqamat } : prev.maqamat,
+        settings: safe.settings
+          ? {
+              ...prev.settings,
+              ...safe.settings,
+              prayers: safe.settings.prayers
+                ? { ...prev.settings.prayers, ...safe.settings.prayers }
+                : prev.settings.prayers,
+            }
+          : prev.settings,
+      }));
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const activeDays = Object.keys(data.history).length;
   const { currentStreak, longestStreak } = useMemo(
-    () => computeStreaks(data.history),
-    [data.history]
+    () => computeStreaks(data.history, new Date(), data.streakPausedDates),
+    [data.history, data.streakPausedDates]
   );
+  const todayStr = getLocalDateStr();
+  const isStreakPausedToday = Boolean(data.streakPausedDates?.[todayStr]);
 
   const toggleSimpleMode = useCallback(() => {
     setData((prev) => ({
@@ -398,6 +814,70 @@ export function useDevotionData() {
             ...prayers,
             [prayerId]: { ...prayers[prayerId], time: timeString },
           },
+        },
+      };
+    });
+  }, []);
+
+  const setNotificationLeadMinutes = useCallback((minutes) => {
+    const safeMinutes = [0, 5, 10, 15].includes(Number(minutes)) ? Number(minutes) : 0;
+    setData((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        notificationLeadMinutes: safeMinutes,
+      },
+    }));
+  }, []);
+
+  const toggleNotificationChime = useCallback(() => {
+    setData((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        notificationChime: prev.settings?.notificationChime === false,
+      },
+    }));
+  }, []);
+
+  const setAllPrayerRemindersEnabled = useCallback((enabled) => {
+    setData((prev) => {
+      const currentPrayers = prev.settings?.prayers || {};
+      const nextPrayers = {};
+      for (const id of ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha']) {
+        nextPrayers[id] = {
+          ...(currentPrayers[id] || { time: '05:15' }),
+          enabled: Boolean(enabled),
+        };
+      }
+      return {
+        ...prev,
+        settings: {
+          ...prev.settings,
+          prayers: nextPrayers,
+        },
+      };
+    });
+  }, []);
+
+  const syncPrayerReminderTimes = useCallback((timesHHMM) => {
+    if (!timesHHMM || typeof timesHHMM !== 'object') return;
+    setData((prev) => {
+      const currentPrayers = prev.settings?.prayers || {};
+      const nextPrayers = { ...currentPrayers };
+      for (const id of ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha']) {
+        if (timesHHMM[id]) {
+          nextPrayers[id] = {
+            ...(currentPrayers[id] || { enabled: false }),
+            time: timesHHMM[id],
+          };
+        }
+      }
+      return {
+        ...prev,
+        settings: {
+          ...prev.settings,
+          prayers: nextPrayers,
         },
       };
     });
@@ -567,18 +1047,47 @@ export function useDevotionData() {
     maqamat: data.maqamat,
     isSimpleMode: data.settings?.isSimpleMode || false,
     isAmbientEnabled: data.settings?.isAmbientEnabled || false,
+    notificationLeadMinutes: data.settings?.notificationLeadMinutes || 0,
+    notificationChime: data.settings?.notificationChime !== false,
     prayers: data.settings?.prayers || {},
     customReminders: data.settings?.customReminders || [],
     profile: data.profile,
     activeDays,
     currentStreak,
     longestStreak,
+    streakPausedDates: data.streakPausedDates || {},
+    isStreakPausedToday,
+    habits: data.habits || DEFAULT_HABITS,
+    dailyHabitLogs: data.dailyHabitLogs?.counts || {},
+    qada: data.qada || { prayers: { fajr: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0 }, fasts: 0, completedTotal: 0 },
+    favoriteDuaIds: data.favoriteDuaIds || [],
+    dailyIntention: data.dailyIntention?.text || '',
+    badgeStatuses: badgeEval.statuses,
+    unlockedBadgeCount: badgeEval.unlockedCount,
+    totalBadgeCount: badgeEval.totalCount,
+    activeCelebrationBadge: pendingBadgeQueue[0] ? getBadgeById(pendingBadgeQueue[0]) : null,
+    pendingBadgeCount: pendingBadgeQueue.length,
+    dismissCelebrationBadge,
     logPrayer,
     togglePrayer,
     logVerseSwipe,
     toggleSaveVerse,
     updateVerseNote,
     incrementTask,
+    logHabitStep,
+    addCustomHabit,
+    updateHabit,
+    reorderHabit,
+    resetDefaultHabits,
+    removeHabit,
+    setQadaCount,
+    bulkAddQadaYears,
+    completeOneQada,
+    toggleFavoriteDua,
+    toggleStreakPauseToday,
+    setDailyIntention,
+    exportBackupJson,
+    importBackupJson,
     completeBurhan,
     saveBurhanNote,
     markTaskRewarded,
@@ -590,6 +1099,10 @@ export function useDevotionData() {
     toggleAmbientMode,
     togglePrayerReminder,
     updatePrayerTime,
+    setNotificationLeadMinutes,
+    toggleNotificationChime,
+    setAllPrayerRemindersEnabled,
+    syncPrayerReminderTimes,
     addCustomReminder,
     toggleCustomReminder,
     deleteCustomReminder,

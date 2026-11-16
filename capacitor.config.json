@@ -6,6 +6,9 @@
     "androidScheme": "https"
   },
   "plugins": {
+    "LocalNotifications": {
+      "presentationOptions": ["badge", "sound", "banner", "list"]
+    },
     "StatusBar": {
       "overlaysWebView": true,
       "style": "Dark",

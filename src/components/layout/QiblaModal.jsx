@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { getAngularDelta } from '../../utils/devotionLogic';
 import { ChevronDownIcon, CompassIcon, MapPinIcon } from '../icons/Icons';
+import { hapticTapMedium } from '../../utils/haptics';
 
 export const QiblaModal = ({
   isOpen,
@@ -11,6 +12,7 @@ export const QiblaModal = ({
 }) => {
   const [heading, setHeading] = useState(null);
   const [sensorStatus, setSensorStatus] = useState('idle'); // 'idle' | 'active' | 'denied' | 'unsupported'
+  const [iosGranted, setIosGranted] = useState(false);
   const lastAlignedBuzzRef = useRef(false);
 
   const qiblaBearing = prayerTimes?.prayerData?.qiblaBearing ?? null;
@@ -50,7 +52,7 @@ export const QiblaModal = ({
     const needsExplicitPermission =
       typeof DeviceOrientationEvent.requestPermission === 'function';
 
-    if (!needsExplicitPermission) {
+    if (!needsExplicitPermission || iosGranted) {
       window.addEventListener('deviceorientationabsolute', handleOrientation, true);
       window.addEventListener('deviceorientation', handleOrientation, true);
       return () => {
@@ -58,15 +60,13 @@ export const QiblaModal = ({
         window.removeEventListener('deviceorientation', handleOrientation, true);
       };
     }
-  }, [isOpen]);
+  }, [isOpen, iosGranted]);
 
   // Subtle single haptic buzz when entering alignment
   useEffect(() => {
     if (isAligned && !lastAlignedBuzzRef.current) {
       lastAlignedBuzzRef.current = true;
-      if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        navigator.vibrate(25);
-      }
+      hapticTapMedium();
     } else if (!isAligned) {
       lastAlignedBuzzRef.current = false;
     }
@@ -83,13 +83,7 @@ export const QiblaModal = ({
     try {
       const response = await DeviceOrientationEvent.requestPermission();
       if (response === 'granted') {
-        const handleOrientation = (event) => {
-          if (typeof event.webkitCompassHeading === 'number') {
-            setHeading(Math.round(event.webkitCompassHeading));
-            setSensorStatus('active');
-          }
-        };
-        window.addEventListener('deviceorientation', handleOrientation, true);
+        setIosGranted(true);
         setSensorStatus('active');
       } else {
         setSensorStatus('denied');

@@ -7,6 +7,7 @@ import {
   VolumeOffIcon,
   XIcon,
 } from '../icons/Icons';
+import { hapticSuccess, hapticTapLight } from '../../utils/haptics';
 
 export const MisbahaMode = ({
   isOpen,
@@ -103,9 +104,8 @@ export const MisbahaMode = ({
     const reachedTarget = newCount >= target;
     playBeadTick(reachedTarget);
 
-    if (typeof navigator !== 'undefined' && navigator.vibrate) {
-      navigator.vibrate(reachedTarget ? [45, 30, 60] : 14);
-    }
+    if (reachedTarget) hapticSuccess();
+    else hapticTapLight();
 
     const id = rippleId.current++;
     setRipples((prev) => [...prev, id]);

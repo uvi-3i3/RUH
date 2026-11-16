@@ -20,15 +20,15 @@ export const StationIndicator = memo(({
   return (
     <section
       aria-label="Spiritual Stations (Maqamat)"
-      className={`w-full rounded-[20px] overflow-hidden border transition-all duration-1000 mb-5 ${
+      className={`w-full rounded-[20px] overflow-hidden border transition-all duration-1000 mb-2 ${
         isLightMode
-          ? 'bg-white/45 border-white/70 island-light'
-          : 'bg-white/[0.02] border-white/[0.05] island-dark'
+          ? 'bg-white/62 border-white/80 island-light'
+          : 'bg-[#0b0e16]/68 border-white/[0.09] island-dark'
       }`}
     >
       {/* Header Row */}
       <div
-        className={`flex items-center justify-between px-4 pt-3.5 pb-2.5 border-b ${
+        className={`flex items-center justify-between px-4 pt-2.5 pb-1.5 border-b ${
           isLightMode ? 'border-black/[0.06]' : 'border-white/[0.06]'
         }`}
       >
@@ -81,7 +81,7 @@ export const StationIndicator = memo(({
               aria-label={stationLabel}
               disabled={!isUnlocked}
               onClick={() => isUnlocked && onSelectStation(idx)}
-              className={`relative w-full min-h-[48px] px-4 py-2.5 flex items-center justify-between gap-3 text-left overflow-hidden transition-colors duration-300 ${
+              className={`relative w-full min-h-[40px] px-4 py-1.5 flex items-center justify-between gap-3 text-left overflow-hidden transition-colors duration-300 ${
                 isUnlocked
                   ? isLightMode
                     ? 'cursor-pointer hover:bg-white/40 active:bg-white/60'
@@ -103,16 +103,27 @@ export const StationIndicator = memo(({
                 />
               )}
               {isFrontier && frontierFill > 0 && (
-                <div
-                  aria-hidden="true"
-                  className="absolute left-0 top-0 bottom-0 pointer-events-none transition-all duration-700"
-                  style={{
-                    width: `${frontierFill}%`,
-                    background: isLightMode
-                      ? 'linear-gradient(90deg, rgba(156,117,51,0.04) 0%, rgba(156,117,51,0.12) 100%)'
-                      : 'linear-gradient(90deg, rgba(210,162,75,0.04) 0%, rgba(210,162,75,0.12) 100%)',
-                  }}
-                />
+                <>
+                  <div
+                    aria-hidden="true"
+                    className="absolute left-0 top-0 bottom-0 pointer-events-none transition-all duration-700"
+                    style={{
+                      width: `${frontierFill}%`,
+                      background: isLightMode
+                        ? 'linear-gradient(90deg, rgba(156,117,51,0.08) 0%, rgba(156,117,51,0.06) 70%, transparent 100%)'
+                        : 'linear-gradient(90deg, rgba(210,162,75,0.1) 0%, rgba(210,162,75,0.06) 70%, transparent 100%)',
+                    }}
+                  />
+                  <div
+                    aria-hidden="true"
+                    className="absolute left-0 bottom-0 h-[1.5px] pointer-events-none transition-all duration-700"
+                    style={{
+                      width: `${frontierFill}%`,
+                      backgroundColor: accentHex,
+                      opacity: 0.55,
+                    }}
+                  />
+                </>
               )}
 
               {/* Left: State Ring + English Name & Practical Status */}

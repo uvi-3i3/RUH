@@ -1,9 +1,9 @@
 import { memo } from 'react';
 
-export const DevotionTimeline = memo(({ completedCount, isLightMode, isHikmah, accentColor, accentGlow }) => {
+export const DevotionTimeline = memo(({ completedCount, isLightMode, isHikmah, accentColor, accentGlow, isVisible = true }) => {
   const isCompleted = completedCount === 5;
 
-  const baseColor = isLightMode ? 'rgba(74, 69, 61, 0.18)' : 'rgba(228, 218, 200, 0.15)';
+  const baseColor = isLightMode ? 'rgba(74, 69, 61, 0.16)' : 'rgba(228, 218, 200, 0.14)';
 
   const activeColor = isHikmah
     ? isLightMode
@@ -21,12 +21,16 @@ export const DevotionTimeline = memo(({ completedCount, isLightMode, isHikmah, a
   if (completedCount > 0 && completedCount < 5) fillHeight = completedCount * 12;
   else if (completedCount === 5) fillHeight = 180;
 
-  const wrapperClass = isCompleted
-    ? 'left-1/2 scale-[1.8] opacity-0 z-0'
-    : 'left-[22px] md:left-[88px] scale-[0.68] md:scale-100 opacity-75 md:opacity-100 z-20';
+  const wrapperClass = !isVisible
+    ? 'left-[22px] md:left-[88px] scale-[0.65] opacity-0 z-0'
+    : isCompleted
+      ? 'left-1/2 scale-[1.8] opacity-0 z-0'
+      : 'left-[22px] md:left-[88px] scale-[0.68] md:scale-100 opacity-65 md:opacity-90 z-20';
 
   const transitionStyle = {
-    transition: `all 2.8s cubic-bezier(0.16,1,0.3,1) ${isCompleted ? '1.2s' : '0s'}`,
+    transition: isVisible
+      ? `all 2.8s cubic-bezier(0.16,1,0.3,1) ${isCompleted ? '1.2s' : '0s'}`
+      : 'opacity 0.35s ease, transform 0.35s ease',
   };
 
   return (

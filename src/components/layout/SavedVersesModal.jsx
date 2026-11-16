@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ChevronDownIcon, BookmarkIcon, ShareIcon, EditIcon, TrashIcon } from '../icons/Icons';
+import { ChevronDownIcon, BookmarkIcon, ShareIcon, EditIcon, TrashIcon, CheckCircleIcon } from '../icons/Icons';
 import { resolveVerseCopy } from '../../utils/devotionLogic';
 
 const SearchIcon = ({ size = 16, ...props }) => (
@@ -32,6 +32,7 @@ export const SavedVersesModal = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
   const [sortKey, setSortKey] = useState('newest');
+  const [copiedId, setCopiedId] = useState(null);
 
   const savedIds = useMemo(() => (savedVerses || []).map((v) => v.id), [savedVerses]);
 
@@ -281,7 +282,13 @@ export const SavedVersesModal = ({
                           if (navigator.share) {
                             navigator.share({ title: 'Ruh Reflections', text: textToShare }).catch(() => {});
                           } else if (navigator.clipboard) {
-                            navigator.clipboard.writeText(textToShare);
+                            navigator.clipboard
+                              .writeText(textToShare)
+                              .then(() => {
+                                setCopiedId(verse.id);
+                                setTimeout(() => setCopiedId((prev) => (prev === verse.id ? null : prev)), 1800);
+                              })
+                              .catch(() => {});
                           }
                         }}
                         className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-colors cursor-pointer ${
@@ -290,7 +297,11 @@ export const SavedVersesModal = ({
                             : 'border-white/10 hover:bg-white/10 text-[#e4dac8]'
                         }`}
                       >
-                        <ShareIcon size={13} />
+                        {copiedId === verse.id ? (
+                          <CheckCircleIcon size={13} style={{ color: itemAccent }} />
+                        ) : (
+                          <ShareIcon size={13} />
+                        )}
                       </button>
 
                       {onRemoveSaved && (

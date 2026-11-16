@@ -3,27 +3,49 @@
  * Decoupled for deterministic unit testing and cross-component consistency.
  */
 
+import { sanitizeHabitList } from './habitLogic.js';
+
 export const getLocalDateStr = (d = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 /**
  * Compute current and longest streak from the history map.
- * A "streak day" is any day with at least one prayer or verse logged.
+ * Supports optional pausedDates ({ [dateStr]: true }) for travel, illness, or exemption days
+ * so streaks remain unbroken across honored rest days without inflating active counts.
  */
-export function computeStreaks(history, referenceDate = new Date()) {
+export function computeStreaks(history, referenceDate = new Date(), pausedDates = {}) {
   if (!history || typeof history !== 'object') {
     return { currentStreak: 0, longestStreak: 0 };
   }
 
+  const safePaused = pausedDates && typeof pausedDates === 'object' ? pausedDates : {};
+
+  const hasActivityOn = (dateStr) => {
+    const entry = history[dateStr];
+    if (!entry) return false;
+    if (typeof entry === 'number') return entry > 0;
+    return (entry.prayers || 0) + (entry.verses || 0) + (entry.practices || 0) > 0;
+  };
+
   const activeKeys = Object.keys(history)
-    .filter((k) => {
-      const entry = history[k];
-      if (typeof entry === 'number') return entry > 0;
-      return entry && (entry.prayers || 0) + (entry.verses || 0) + (entry.practices || 0) > 0;
-    })
+    .filter((k) => hasActivityOn(k))
     .sort();
 
   if (activeKeys.length === 0) return { currentStreak: 0, longestStreak: 0 };
+
+  const allIntermediatePaused = (prevStr, currStr) => {
+    const [py, pm, pd] = prevStr.split('-').map(Number);
+    const [cy, cm, cd] = currStr.split('-').map(Number);
+    const prevDate = new Date(py, pm - 1, pd);
+    const currTime = new Date(cy, cm - 1, cd).getTime();
+    const cursor = new Date(prevDate.getTime());
+    cursor.setDate(cursor.getDate() + 1);
+    while (cursor.getTime() < currTime) {
+      if (!safePaused[getLocalDateStr(cursor)]) return false;
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return true;
+  };
 
   let longestStreak = 1;
   let tempStreak = 1;
@@ -35,7 +57,7 @@ export function computeStreaks(history, referenceDate = new Date()) {
     const currUTC = Date.UTC(cy, cm - 1, cd);
     const diffDays = Math.round((currUTC - prevUTC) / (1000 * 3600 * 24));
 
-    if (diffDays === 1) {
+    if (diffDays === 1 || (diffDays > 1 && allIntermediatePaused(activeKeys[i - 1], activeKeys[i]))) {
       tempStreak++;
     } else if (diffDays > 1) {
       tempStreak = 1;
@@ -48,23 +70,21 @@ export function computeStreaks(history, referenceDate = new Date()) {
   yd.setDate(yd.getDate() - 1);
   const yesterday = getLocalDateStr(yd);
 
-  const hasActivityOn = (dateStr) => {
-    const entry = history[dateStr];
-    if (!entry) return false;
-    if (typeof entry === 'number') return entry > 0;
-    return (entry.prayers || 0) + (entry.verses || 0) + (entry.practices || 0) > 0;
-  };
-
   let currentStreak = 0;
-  if (hasActivityOn(today) || hasActivityOn(yesterday)) {
+  if (hasActivityOn(today) || hasActivityOn(yesterday) || safePaused[today] || safePaused[yesterday]) {
     const checkDate = new Date(referenceDate.getTime());
-    if (!hasActivityOn(today)) {
+    if (!hasActivityOn(today) && !safePaused[today]) {
       checkDate.setDate(checkDate.getDate() - 1);
     }
-    while (true) {
+    let consecutivePaused = 0;
+    while (consecutivePaused < 90) {
       const dateStr = getLocalDateStr(checkDate);
       if (hasActivityOn(dateStr)) {
         currentStreak++;
+        consecutivePaused = 0;
+        checkDate.setDate(checkDate.getDate() - 1);
+      } else if (safePaused[dateStr]) {
+        consecutivePaused++;
         checkDate.setDate(checkDate.getDate() - 1);
       } else {
         break;
@@ -652,9 +672,10 @@ const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 /**
  * Build comprehensive daily streak status, 7-day rolling rhythm, and milestone rewards.
  */
-export function buildStreakStatus(history = {}, referenceDate = new Date()) {
+export function buildStreakStatus(history = {}, referenceDate = new Date(), pausedDates = {}) {
   const safeHistory = history && typeof history === 'object' ? history : {};
-  const { currentStreak, longestStreak } = computeStreaks(safeHistory, referenceDate);
+  const safePaused = pausedDates && typeof pausedDates === 'object' ? pausedDates : {};
+  const { currentStreak, longestStreak } = computeStreaks(safeHistory, referenceDate, safePaused);
 
   const weekDays = [];
   for (let offset = 6; offset >= 0; offset--) {
@@ -679,6 +700,7 @@ export function buildStreakStatus(history = {}, referenceDate = new Date()) {
 
     const totalActions = prayers + verses + practices;
     const active = totalActions > 0;
+    const paused = Boolean(safePaused[dateStr]) && !active;
     const categoriesCount = (prayers > 0 ? 1 : 0) + (verses > 0 ? 1 : 0) + (practices > 0 ? 1 : 0);
 
     let tier = 0;
@@ -701,13 +723,15 @@ export function buildStreakStatus(history = {}, referenceDate = new Date()) {
       practices,
       totalActions,
       active,
+      paused,
       tier,
     });
   }
 
   const todayEntry = weekDays[weekDays.length - 1];
   const todayActive = Boolean(todayEntry?.active);
-  const atRisk = currentStreak > 0 && !todayActive;
+  const todayPaused = Boolean(todayEntry?.paused);
+  const atRisk = currentStreak > 0 && !todayActive && !todayPaused;
 
   const earnedAnchor = Math.max(currentStreak, longestStreak);
   const unlockedMilestoneIds = STREAK_MILESTONES.filter((m) => m.days <= earnedAnchor).map(
@@ -737,6 +761,9 @@ export function buildStreakStatus(history = {}, referenceDate = new Date()) {
       currentStreak >= 100
         ? 'Century of steadfast remembrance sealed'
         : `${nextMilestone.days - currentStreak} ${nextMilestone.days - currentStreak === 1 ? 'day' : 'days'} to ${nextMilestone.title}`;
+  } else if (todayPaused) {
+    headline = 'Rest & exemption honored';
+    subline = 'Your streak is protected while resting or traveling';
   } else if (atRisk) {
     headline = 'Preserve your flame today';
     subline = 'Log 1 prayer, verse, or dhikr before nightfall';
@@ -746,6 +773,7 @@ export function buildStreakStatus(history = {}, referenceDate = new Date()) {
     currentStreak,
     longestStreak,
     todayActive,
+    todayPaused,
     atRisk,
     weekDays,
     todayBreakdown: {
@@ -761,6 +789,281 @@ export function buildStreakStatus(history = {}, referenceDate = new Date()) {
     subline,
   };
 }
+
+/**
+ * Compute a deterministic celebration signature for today's active streak.
+ * Returns null if today has no logged devotion yet so inactive days do not celebrate.
+ */
+export function getStreakCelebrationSignature(status) {
+  if (!status || !status.todayActive) return null;
+  const todayNode = Array.isArray(status.weekDays)
+    ? status.weekDays[status.weekDays.length - 1]
+    : null;
+  const dateStr = todayNode?.dateStr || '';
+  const tier = todayNode?.tier || 1;
+  return `${dateStr}|${status.currentStreak || 0}|${tier}`;
+}
+
+/**
+ * Determine timely Sunnah lifestyle prompts based on the day of week and Hijri calendar date.
+ */
+export function getSunnahCalendarContext(date = new Date(), hijri = null) {
+  const safeHijri = hijri && typeof hijri.day === 'number' ? hijri : gregorianToHijri(date);
+  const dow = date.getDay(); // 0=Sun .. 5=Fri
+  const isFriday = dow === 5;
+  const isMonOrThu = dow === 1 || dow === 4;
+  const isWhiteDay = safeHijri.day >= 13 && safeHijri.day <= 15 && safeHijri.month !== 9;
+  const isRamadan = safeHijri.month === 9;
+  const isLastTenNights = isRamadan && safeHijri.day >= 21;
+  const isAshura = safeHijri.month === 1 && (safeHijri.day === 9 || safeHijri.day === 10);
+  const isArafah = safeHijri.month === 12 && safeHijri.day === 9;
+
+  const prompts = [];
+  if (isFriday) {
+    prompts.push({
+      id: 'kahf_friday',
+      label: "Jumu'ah Sunnah",
+      arabic: 'الْكَهْف',
+      detail: 'Recite Surah Al-Kahf & send abundant Salawat before sunset.',
+    });
+  }
+  if (isLastTenNights) {
+    prompts.push({
+      id: 'qadr_nights',
+      label: 'Last 10 Nights',
+      arabic: 'لَيْلَةُ الْقَدْر',
+      detail: 'Seek Laylat al-Qadr with quiet night prayer and heartfelt Istighfar.',
+    });
+  } else if (isArafah) {
+    prompts.push({
+      id: 'arafah_fast',
+      label: 'Day of Arafah',
+      arabic: 'عَرَفَة',
+      detail: 'A sacred day of fasting, forgiveness, and heartfelt Dua.',
+    });
+  } else if (isAshura) {
+    prompts.push({
+      id: 'ashura_fast',
+      label: "Tasu'a / Ashura",
+      arabic: 'عَاشُورَاء',
+      detail: 'Prophetic Sunnah of fasting on the 9th and 10th of Muharram.',
+    });
+  } else if (isWhiteDay) {
+    prompts.push({
+      id: 'white_days',
+      label: 'Ayyam al-Bid',
+      arabic: 'الأَيَّامُ البِيض',
+      detail: `White Days (${safeHijri.day}th Hijri) · Sunnah voluntary fast & reflection.`,
+    });
+  } else if (isMonOrThu) {
+    prompts.push({
+      id: 'mon_thu_fast',
+      label: dow === 1 ? 'Monday Sunnah' : 'Thursday Sunnah',
+      arabic: 'صِيَامُ السُّنَّة',
+      detail: 'Deeds are presented on Mondays & Thursdays — ideal for fasting or extra kindness.',
+    });
+  }
+
+  return {
+    isFriday,
+    isMonOrThu,
+    isWhiteDay,
+    isRamadan,
+    isLastTenNights,
+    prompts,
+    primaryPrompt: prompts[0] || {
+      id: 'daily_sunnah',
+      label: 'Daily Sunnah',
+      arabic: 'سُنَّة',
+      detail: 'Anchor your day with two quiet units of Duha & three verses of reflection.',
+    },
+  };
+}
+
+/**
+ * Aggregate remaining Qada (make-up) prayers & fasts and lifetime completed Qada acts.
+ */
+export function computeQadaTotals(qada = {}) {
+  const prayers = qada?.prayers || {};
+  const fajr = Math.max(0, Number(prayers.fajr) || 0);
+  const dhuhr = Math.max(0, Number(prayers.dhuhr) || 0);
+  const asr = Math.max(0, Number(prayers.asr) || 0);
+  const maghrib = Math.max(0, Number(prayers.maghrib) || 0);
+  const isha = Math.max(0, Number(prayers.isha) || 0);
+  const fasts = Math.max(0, Number(qada?.fasts) || 0);
+  const completedTotal = Math.max(0, Number(qada?.completedTotal) || 0);
+
+  const remainingPrayers = fajr + dhuhr + asr + maghrib + isha;
+  const totalRemaining = remainingPrayers + fasts;
+  const totalTracked = totalRemaining + completedTotal;
+  const completionPct =
+    totalTracked > 0 ? Math.round((completedTotal / totalTracked) * 100) : 0;
+
+  return {
+    prayers: { fajr, dhuhr, asr, maghrib, isha },
+    fasts,
+    remainingPrayers,
+    totalRemaining,
+    completedTotal,
+    completionPct,
+  };
+}
+
+/**
+ * Filter categorized Duas by category ('all' | 'favorites' | categoryId) and search text.
+ */
+export function filterDuas(duas = [], category = 'all', query = '', favoriteIds = []) {
+  if (!Array.isArray(duas)) return [];
+  const favSet = new Set(Array.isArray(favoriteIds) ? favoriteIds : []);
+  const q = (query || '').trim().toLowerCase();
+
+  return duas.filter((d) => {
+    if (!d) return false;
+    if (category === 'favorites') {
+      if (!favSet.has(d.id)) return false;
+    } else if (category && category !== 'all') {
+      if (d.category !== category) return false;
+    }
+    if (!q) return true;
+    const haystack = `${d.title || ''} ${d.translation || ''} ${d.transliteration || ''} ${d.moment || ''} ${d.source || ''}`.toLowerCase();
+    return haystack.includes(q);
+  });
+}
+
+/**
+ * Validate and normalize an imported Ruh JSON backup payload safely.
+ */
+export function sanitizeBackupPayload(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  if (typeof raw.totalPrayers !== 'number' && !raw.history && !raw.profile) return null;
+
+  const cleanMaqamat =
+    raw.maqamat && typeof raw.maqamat === 'object' && !Array.isArray(raw.maqamat)
+      ? {
+          currentStation: Math.max(0, Math.floor(Number(raw.maqamat.currentStation) || 0)),
+          yaqeenProgress: Math.max(
+            0,
+            Math.min(100, Math.floor(Number(raw.maqamat.yaqeenProgress) || 0))
+          ),
+          unlockedStations: Array.isArray(raw.maqamat.unlockedStations)
+            ? Array.from(
+                new Set(
+                  raw.maqamat.unlockedStations
+                    .map((n) => Math.floor(Number(n)))
+                    .filter((n) => Number.isFinite(n) && n >= 0)
+                )
+              )
+            : [0],
+        }
+      : undefined;
+
+  if (cleanMaqamat && cleanMaqamat.unlockedStations.length === 0) {
+    cleanMaqamat.unlockedStations = [0];
+  }
+
+  let cleanSettings;
+  if (raw.settings && typeof raw.settings === 'object' && !Array.isArray(raw.settings)) {
+    const rawPrayers =
+      raw.settings.prayers && typeof raw.settings.prayers === 'object' ? raw.settings.prayers : {};
+    const safePrayers = {};
+    for (const id of ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha']) {
+      const cfg = rawPrayers[id];
+      if (cfg && typeof cfg === 'object') {
+        const timeStr =
+          typeof cfg.time === 'string' && /^\d{2}:\d{2}$/.test(cfg.time) ? cfg.time : '05:15';
+        safePrayers[id] = { enabled: Boolean(cfg.enabled), time: timeStr };
+      }
+    }
+    const leadNum = Number(raw.settings.notificationLeadMinutes);
+    cleanSettings = {
+      isSimpleMode: Boolean(raw.settings.isSimpleMode),
+      isAmbientEnabled: Boolean(raw.settings.isAmbientEnabled),
+      notificationLeadMinutes: [0, 5, 10, 15].includes(leadNum) ? leadNum : 0,
+      notificationChime: raw.settings.notificationChime !== false,
+      prayers: Object.keys(safePrayers).length > 0 ? safePrayers : undefined,
+      customReminders: Array.isArray(raw.settings.customReminders)
+        ? raw.settings.customReminders
+            .filter(
+              (r) =>
+                r &&
+                typeof r === 'object' &&
+                typeof r.title === 'string' &&
+                r.title.trim() &&
+                typeof r.time === 'string' &&
+                /^\d{2}:\d{2}$/.test(r.time)
+            )
+            .map((r) => ({
+              id: typeof r.id === 'string' && r.id ? r.id : `custom-${Date.now()}`,
+              title: r.title.trim().slice(0, 80),
+              time: r.time,
+              enabled: Boolean(r.enabled),
+            }))
+        : [],
+    };
+  }
+
+  let cleanProfile;
+  if (raw.profile && typeof raw.profile === 'object' && !Array.isArray(raw.profile)) {
+    const name = String(raw.profile.name || '').trim().slice(0, 60) || 'Seeker';
+    const initials =
+      name
+        .split(/\s+/)
+        .map((w) => w[0]?.toUpperCase() || '')
+        .join('')
+        .slice(0, 2) || 'SK';
+    cleanProfile = {
+      name,
+      initials,
+      joinedDate:
+        typeof raw.profile.joinedDate === 'string' && raw.profile.joinedDate
+          ? raw.profile.joinedDate
+          : getLocalDateStr(),
+    };
+  }
+
+  return {
+    totalVerses: Math.max(0, Number(raw.totalVerses) || 0),
+    totalPrayers: Math.max(0, Number(raw.totalPrayers) || 0),
+    totalDhikr: Math.max(0, Number(raw.totalDhikr) || 0),
+    maxDailyPrayers: Math.max(0, Number(raw.maxDailyPrayers) || 0),
+    history: raw.history && typeof raw.history === 'object' && !Array.isArray(raw.history) ? raw.history : {},
+    savedVerses: Array.isArray(raw.savedVerses)
+      ? raw.savedVerses
+          .filter((v) => typeof v === 'string' || (v && typeof v === 'object' && v.id))
+          .map((v) =>
+            typeof v === 'string'
+              ? { id: v, note: '', timestamp: Date.now() }
+              : {
+                  id: String(v.id),
+                  note: typeof v.note === 'string' ? v.note : '',
+                  timestamp: typeof v.timestamp === 'number' ? v.timestamp : Date.now(),
+                }
+          )
+      : [],
+    unlockedBadges:
+      raw.unlockedBadges && typeof raw.unlockedBadges === 'object' && !Array.isArray(raw.unlockedBadges)
+        ? raw.unlockedBadges
+        : {},
+    burhanNotes:
+      raw.burhanNotes && typeof raw.burhanNotes === 'object' && !Array.isArray(raw.burhanNotes)
+        ? raw.burhanNotes
+        : {},
+    habits: sanitizeHabitList(raw.habits),
+    qada: raw.qada && typeof raw.qada === 'object' && !Array.isArray(raw.qada) ? raw.qada : undefined,
+    favoriteDuaIds: Array.isArray(raw.favoriteDuaIds)
+      ? raw.favoriteDuaIds.filter((id) => typeof id === 'string')
+      : [],
+    streakPausedDates:
+      raw.streakPausedDates && typeof raw.streakPausedDates === 'object' && !Array.isArray(raw.streakPausedDates)
+        ? raw.streakPausedDates
+        : {},
+    maqamat: cleanMaqamat,
+    settings: cleanSettings,
+    profile: cleanProfile,
+  };
+}
+
+
 
 
 

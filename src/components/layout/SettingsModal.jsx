@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { ChevronDownIcon, SettingsIcon } from '../icons/Icons';
@@ -25,6 +25,24 @@ export const SettingsModal = ({
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [nameInput, setNameInput] = useState(devotionData.profile?.name || 'Seeker');
   const [nameSaved, setNameSaved] = useState(false);
+  const [backupNotice, setBackupNotice] = useState(null);
+  const fileInputRef = useRef(null);
+  const resetConfirmTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setNameInput(devotionData.profile?.name || 'Seeker');
+      setConfirmingReset(false);
+      setNameSaved(false);
+      setBackupNotice(null);
+    }
+    return () => {
+      if (resetConfirmTimerRef.current) {
+        clearTimeout(resetConfirmTimerRef.current);
+        resetConfirmTimerRef.current = null;
+      }
+    };
+  }, [isOpen, devotionData.profile?.name]);
 
   if (!isOpen) return null;
 
@@ -63,6 +81,43 @@ export const SettingsModal = ({
       devotionData.setProfile(nameInput.trim());
       setNameSaved(true);
       setTimeout(() => setNameSaved(false), 2000);
+    }
+  };
+
+  const handleExportBackup = () => {
+    try {
+      const json = devotionData.exportBackupJson?.();
+      if (!json) return;
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const today = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `ruh-sanctuary-backup-${today}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setBackupNotice({ type: 'success', text: 'Backup exported to your device.' });
+    } catch {
+      setBackupNotice({ type: 'error', text: 'Unable to export backup right now.' });
+    }
+  };
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const ok = devotionData.importBackupJson?.(text);
+      if (ok) {
+        setBackupNotice({ type: 'success', text: 'Sanctuary restored from backup.' });
+      } else {
+        setBackupNotice({ type: 'error', text: 'Invalid backup file. Please choose a Ruh JSON export.' });
+      }
+    } catch {
+      setBackupNotice({ type: 'error', text: 'Could not read the selected file.' });
     }
   };
 
@@ -316,6 +371,68 @@ export const SettingsModal = ({
             </div>
           </div>
 
+          {/* Sanctuary Backup & Restore Card */}
+          <div
+            className={`w-full p-5 rounded-3xl border flex flex-col gap-3 ${
+              isLightMode ? 'bg-white/70 border-black/10 shadow-xs' : 'bg-white/[0.03] border-white/10'
+            }`}
+          >
+            <span className={`font-serif-eng text-base font-medium ${tTextMain}`}>
+              Sanctuary Backup (Local JSON)
+            </span>
+            <p className={`font-serif-eng text-xs leading-relaxed opacity-70 ${tTextSub}`}>
+              Export your prayers, streaks, Qada ledger, custom habits, and notes to a private file, or restore anytime.
+            </p>
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={handleExportBackup}
+                className={`min-h-[40px] px-3 py-2 rounded-xl font-serif-eng uppercase text-xs tracking-wider border transition-colors cursor-pointer ${
+                  isLightMode
+                    ? 'bg-[#9c7533] text-white border-[#9c7533]'
+                    : 'bg-[#d2a24b]/20 text-[#d2a24b] border-[#d2a24b]/40 hover:bg-[#d2a24b]/30'
+                }`}
+              >
+                Export JSON
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className={`min-h-[40px] px-3 py-2 rounded-xl font-serif-eng uppercase text-xs tracking-wider border transition-colors cursor-pointer ${
+                  isLightMode
+                    ? 'border-black/15 text-[#1a1814] hover:bg-black/5'
+                    : 'border-white/15 text-[#e4dac8] hover:bg-white/5'
+                }`}
+              >
+                Import JSON
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json,application/json"
+                aria-label="Import Sanctuary JSON Backup"
+                onChange={handleImportFile}
+                className="hidden"
+              />
+            </div>
+            {backupNotice && (
+              <p
+                role="status"
+                className="font-serif-eng text-xs"
+                style={{
+                  color:
+                    backupNotice.type === 'error'
+                      ? isLightMode
+                        ? '#8a0000'
+                        : '#ff6b6b'
+                      : accentHex,
+                }}
+              >
+                {backupNotice.text}
+              </p>
+            )}
+          </div>
+
           {/* Reset Progress Card */}
           <div
             className={`w-full p-5 rounded-3xl border flex flex-col gap-3 ${
@@ -332,12 +449,20 @@ export const SettingsModal = ({
               type="button"
               onClick={() => {
                 if (confirmingReset) {
+                  if (resetConfirmTimerRef.current) {
+                    clearTimeout(resetConfirmTimerRef.current);
+                    resetConfirmTimerRef.current = null;
+                  }
                   devotionData.resetData();
                   setConfirmingReset(false);
                   onClose();
                 } else {
                   setConfirmingReset(true);
-                  setTimeout(() => setConfirmingReset(false), 3000);
+                  if (resetConfirmTimerRef.current) clearTimeout(resetConfirmTimerRef.current);
+                  resetConfirmTimerRef.current = setTimeout(() => {
+                    setConfirmingReset(false);
+                    resetConfirmTimerRef.current = null;
+                  }, 3000);
                 }
               }}
               className={`mt-1 py-2.5 w-full rounded-xl font-serif-eng uppercase text-xs tracking-widest border transition-colors cursor-pointer ${

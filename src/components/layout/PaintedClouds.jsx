@@ -62,7 +62,7 @@ const CloudDepthGroup = ({ src, isVisible, targetOpacity, isNight = false }) => 
 
   return (
     <div
-      className="absolute inset-0 transition-[opacity,visibility] duration-900 ease-out"
+      className="absolute inset-0 transition-[opacity,visibility] duration-300 ease-out"
       style={{
         opacity: isVisible ? targetOpacity : 0,
         visibility: isVisible ? 'visible' : 'hidden',

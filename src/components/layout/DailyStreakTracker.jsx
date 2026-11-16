@@ -1,6 +1,10 @@
-import { useMemo, useState } from 'react';
-import { CheckCircleIcon, FlameIcon } from '../icons/Icons';
-import { buildStreakStatus, STREAK_MILESTONES } from '../../utils/devotionLogic';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { CheckCircleIcon, FlameIcon, MoonIcon } from '../icons/Icons';
+import {
+  buildStreakStatus,
+  getStreakCelebrationSignature,
+  STREAK_MILESTONES,
+} from '../../utils/devotionLogic';
 
 const SacredStarSeal = ({ unlocked, accentHex, isLightMode }) => {
   const strokeColor = unlocked
@@ -44,13 +48,41 @@ const SacredStarSeal = ({ unlocked, accentHex, isLightMode }) => {
 
 export const DailyStreakTracker = ({
   historyMap,
+  pausedDates = {},
+  onTogglePauseToday,
   isLightMode = false,
+  isVisible = true,
 }) => {
   const [selectedDateStr, setSelectedDateStr] = useState(null);
   const [selectedMilestoneId, setSelectedMilestoneId] = useState(null);
+  const [celebrationRunId, setCelebrationRunId] = useState(0);
+  const [isCelebrating, setIsCelebrating] = useState(false);
+  const lastCelebratedSigRef = useRef(null);
 
-  const status = useMemo(() => buildStreakStatus(historyMap), [historyMap]);
+  const status = useMemo(
+    () => buildStreakStatus(historyMap, new Date(), pausedDates),
+    [historyMap, pausedDates]
+  );
+  const celebrationSig = useMemo(() => getStreakCelebrationSignature(status), [status]);
   const rewardHex = isLightMode ? '#9c7533' : '#d2a24b';
+  const pauseHex = isLightMode ? '#0d9488' : '#2dd4bf';
+  const todayNode = status.weekDays[status.weekDays.length - 1];
+  const isTodayPauseStored = Boolean(todayNode && pausedDates?.[todayNode.dateStr]);
+
+  useEffect(() => {
+    if (!isVisible || !celebrationSig) return;
+    if (lastCelebratedSigRef.current === celebrationSig) return;
+    lastCelebratedSigRef.current = celebrationSig;
+    const rafId = requestAnimationFrame(() => {
+      setCelebrationRunId((id) => id + 1);
+      setIsCelebrating(true);
+    });
+    const timer = setTimeout(() => setIsCelebrating(false), 1500);
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(timer);
+    };
+  }, [isVisible, celebrationSig]);
 
   const tTextMain = isLightMode ? 'text-[#1a1814]' : 'text-[rgba(245,238,224,0.92)]';
   const tTextSub = isLightMode ? 'text-[#2c2720]' : 'text-[rgba(228,218,200,0.62)]';
@@ -76,20 +108,47 @@ export const DailyStreakTracker = ({
       parts.push(`${day.practices} ${day.practices === 1 ? 'practice' : 'practices'}`);
     }
     const label = day.isToday ? `Today (${day.dayNum})` : `${day.dayShort} ${day.dayNum}`;
-    return parts.length > 0 ? `${label} · ${parts.join(' · ')}` : `${label} · Quiet day — no devotion logged`;
+    if (parts.length > 0) return `${label} · ${parts.join(' · ')}`;
+    if (day.paused) return `${label} · Rest day — streak protected`;
+    return `${label} · Quiet day — no devotion logged`;
   };
 
   return (
     <section
       aria-label="Daily Streak Tracker"
-      className={`w-full rounded-[20px] border transition-all duration-700 mb-5 overflow-hidden ${
+      data-celebrating={isCelebrating ? 'true' : 'false'}
+      className={`relative w-full rounded-[20px] border transition-all duration-700 mb-2 overflow-hidden ${
         isLightMode
-          ? 'bg-white/45 border-white/70 island-light'
-          : 'bg-white/[0.02] border-white/[0.05] island-dark'
+          ? 'bg-white/62 border-white/80 island-light'
+          : 'bg-[#0b0e16]/68 border-white/[0.09] island-dark'
       }`}
+      style={{
+        boxShadow: isCelebrating
+          ? isLightMode
+            ? '0 0 28px rgba(156, 117, 51, 0.24)'
+            : '0 0 34px rgba(210, 162, 75, 0.24)'
+          : undefined,
+      }}
     >
+      {/* Subtle Celestial Glass Shine Overlay on Daily Progress Reveal */}
+      {isCelebrating && celebrationRunId > 0 && (
+        <div
+          key={`shine-${celebrationRunId}`}
+          aria-hidden="true"
+          className="absolute inset-0 pointer-events-none z-20 overflow-hidden"
+        >
+          <div
+            className="animate-streak-shine absolute inset-y-[-20%] left-[-40%] w-[180%]"
+            style={{
+              background: isLightMode
+                ? 'linear-gradient(90deg, transparent 0%, rgba(156,117,51,0.08) 32%, rgba(255,252,244,0.68) 50%, rgba(156,117,51,0.08) 68%, transparent 100%)'
+                : 'linear-gradient(90deg, transparent 0%, rgba(210,162,75,0.06) 32%, rgba(255,244,214,0.28) 50%, rgba(210,162,75,0.07) 68%, transparent 100%)',
+            }}
+          />
+        </div>
+      )}
       {/* Header Strip */}
-      <div className={`flex items-center justify-between px-4 pt-3.5 pb-2.5 border-b ${dividerClass}`}>
+      <div className={`flex items-center justify-between gap-2 px-4 pt-2.5 pb-1.5 border-b ${dividerClass}`}>
         <div className="flex items-center gap-1.5 min-w-0">
           <span
             className={`font-serif-eng text-[8px] uppercase ${tTextSub} opacity-85 whitespace-nowrap`}
@@ -101,29 +160,51 @@ export const DailyStreakTracker = ({
             ·
           </span>
           <span
-            className={`font-serif-eng text-[8px] uppercase tabular-nums ${tTextSub} opacity-70 whitespace-nowrap`}
+            className={`font-serif-eng text-[8px] uppercase tabular-nums ${tTextSub} opacity-82 whitespace-nowrap`}
             style={{ letterSpacing: '0.16em', textShadow: glowSub }}
           >
             Best {status.longestStreak}d
           </span>
         </div>
 
-        <span
-          className="font-calligraphy text-[15px] leading-none shrink-0"
-          style={{ color: rewardHex, opacity: status.activeMilestone ? 0.95 : 0.65 }}
-          dir="rtl"
-          title={status.activeMilestone ? status.activeMilestone.title : 'Steadfastness'}
-        >
-          {status.activeMilestone ? status.activeMilestone.arabic : 'مُواظَبَة'}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          {onTogglePauseToday && (
+            <button
+              type="button"
+              onClick={onTogglePauseToday}
+              aria-pressed={isTodayPauseStored}
+              aria-label={isTodayPauseStored ? 'Resume streak tracking today' : 'Rest or exempt day — protect streak'}
+              className={`min-h-[26px] px-2.5 rounded-xl border font-serif-eng text-[8.5px] uppercase tracking-[0.12em] flex items-center gap-1 cursor-pointer transition-colors ${
+                isTodayPauseStored
+                  ? isLightMode
+                    ? 'bg-[#0d9488]/12 border-[#0d9488]/40 text-[#0d9488]'
+                    : 'bg-[#14b8a6]/15 border-[#2dd4bf]/45 text-[#2dd4bf]'
+                  : isLightMode
+                    ? 'border-black/12 text-[#2c2720]/75 hover:bg-black/5'
+                    : 'border-white/12 text-[#e4dac8]/75 hover:bg-white/5'
+              }`}
+            >
+              <MoonIcon size={10} />
+              <span>{isTodayPauseStored ? 'Exempt' : 'Rest Day'}</span>
+            </button>
+          )}
+          <span
+            className="font-calligraphy text-[15px] leading-none shrink-0"
+            style={{ color: status.todayPaused ? pauseHex : rewardHex, opacity: status.activeMilestone ? 0.95 : 0.65 }}
+            dir="rtl"
+            title={status.activeMilestone ? status.activeMilestone.title : 'Steadfastness'}
+          >
+            {status.activeMilestone ? status.activeMilestone.arabic : 'مُواظَبَة'}
+          </span>
+        </div>
       </div>
 
       {/* Hero Centerpiece + Progress */}
-      <div className="px-4 pt-3.5 pb-3">
-        <div className="flex items-center gap-3.5">
-          {/* Flame Vessel */}
+      <div className="px-4 pt-2.5 pb-2">
+        <div className="flex items-center gap-3">
+          {/* Flame Vessel + Soft Ember Aura + Celebratory Bloom */}
           <div
-            className={`relative w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border transition-all duration-500 ${
+            className={`relative w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border transition-all duration-500 ${
               status.todayActive
                 ? 'border-transparent'
                 : status.atRisk
@@ -146,19 +227,39 @@ export const DailyStreakTracker = ({
               boxShadow: status.todayActive ? `0 0 22px ${rewardHex}2e` : undefined,
             }}
           >
+            {status.todayActive && (
+              <span
+                aria-hidden="true"
+                className="animate-streak-ember absolute inset-0 rounded-2xl pointer-events-none"
+                style={{
+                  background: `radial-gradient(circle, ${rewardHex}42 0%, transparent 72%)`,
+                }}
+              />
+            )}
+            {isCelebrating && celebrationRunId > 0 && (
+              <span
+                key={`bloom-${celebrationRunId}`}
+                aria-hidden="true"
+                className="animate-streak-bloom absolute inset-[-6px] rounded-2xl border pointer-events-none"
+                style={{
+                  borderColor: rewardHex,
+                  background: `radial-gradient(circle, ${rewardHex}35 0%, transparent 70%)`,
+                }}
+              />
+            )}
             <FlameIcon
               size={22}
               filled={status.todayActive}
               style={{
                 color: status.todayActive || status.atRisk ? rewardHex : undefined,
               }}
-              className={
+              className={`relative z-10 ${
                 status.todayActive
-                  ? 'transition-transform duration-500 scale-105'
+                  ? `transition-transform duration-500 ${isCelebrating ? 'scale-110' : 'scale-105'}`
                   : status.atRisk
                     ? 'animate-pulse'
                     : `${tTextSub} opacity-40`
-              }
+              }`}
             />
           </div>
 
@@ -182,6 +283,14 @@ export const DailyStreakTracker = ({
                   style={{ color: rewardHex }}
                 >
                   Lit Today
+                </span>
+              )}
+              {status.todayPaused && (
+                <span
+                  className="font-serif-eng text-[9px] uppercase tracking-[0.14em] ml-auto shrink-0 font-medium"
+                  style={{ color: pauseHex }}
+                >
+                  Protected
                 </span>
               )}
               {status.atRisk && (
@@ -234,12 +343,12 @@ export const DailyStreakTracker = ({
       </div>
 
       {/* 7-Day Rolling Cadence Chain */}
-      <div className={`px-3 pt-2.5 pb-3 border-t ${dividerClass}`}>
+      <div className={`px-3 pt-2 pb-2 border-t ${dividerClass}`}>
         <div className="grid grid-cols-7 items-center relative">
           {status.weekDays.map((day, idx) => {
             const isSelected = selectedDateStr === day.dateStr;
             const prevDay = idx > 0 ? status.weekDays[idx - 1] : null;
-            const linkPrev = Boolean(day.active && prevDay?.active);
+            const linkPrev = Boolean((day.active || day.paused) && (prevDay?.active || prevDay?.paused));
 
             return (
               <div key={day.dateStr} className="relative flex flex-col items-center">
@@ -251,7 +360,7 @@ export const DailyStreakTracker = ({
                   }}
                   aria-pressed={isSelected}
                   aria-label={formatDaySummary(day)}
-                  className={`relative z-10 w-full min-h-[54px] rounded-xl flex flex-col items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                  className={`relative z-10 w-full min-h-[46px] rounded-xl flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer ${
                     isSelected
                       ? isLightMode
                         ? 'bg-black/[0.05]'
@@ -265,7 +374,7 @@ export const DailyStreakTracker = ({
                     className={`font-serif-eng text-[8.5px] uppercase leading-none ${
                       day.isToday ? 'font-semibold' : `${tTextSub} opacity-65`
                     }`}
-                    style={{ color: day.isToday ? rewardHex : undefined }}
+                    style={{ color: day.isToday ? (day.paused ? pauseHex : rewardHex) : undefined }}
                   >
                     {day.dayLetter}
                   </span>
@@ -276,7 +385,16 @@ export const DailyStreakTracker = ({
                       <span
                         aria-hidden="true"
                         className="absolute top-1/2 -translate-y-1/2 -left-1/2 w-full h-[1.5px] pointer-events-none"
-                        style={{ backgroundColor: `${rewardHex}66` }}
+                        style={{ backgroundColor: day.paused || prevDay?.paused ? `${pauseHex}55` : `${rewardHex}66` }}
+                      />
+                    )}
+
+                    {isCelebrating && celebrationRunId > 0 && day.isToday && day.active && (
+                      <span
+                        key={`seal-ring-${celebrationRunId}`}
+                        aria-hidden="true"
+                        className="animate-streak-seal-ring absolute w-[24px] h-[24px] rounded-full border pointer-events-none"
+                        style={{ borderColor: rewardHex }}
                       />
                     )}
 
@@ -284,26 +402,36 @@ export const DailyStreakTracker = ({
                       className={`relative z-10 w-[24px] h-[24px] rounded-full flex items-center justify-center transition-all duration-300 ${
                         day.tier === 3
                           ? ''
-                          : day.active
-                            ? 'border'
-                            : day.isToday
-                              ? 'border border-dashed'
-                              : `border ${isLightMode ? 'border-black/10 bg-[#faf7f0]' : 'border-white/10 bg-[#0d1018]'}`
+                          : day.paused
+                            ? 'border border-dashed'
+                            : day.active
+                              ? 'border'
+                              : day.isToday
+                                ? 'border border-dashed'
+                                : `border ${isLightMode ? 'border-black/10 bg-[#faf7f0]' : 'border-white/10 bg-[#0d1018]'}`
                       }`}
                       style={{
                         backgroundColor:
                           day.tier === 3
                             ? rewardHex
-                            : day.tier === 2
+                            : day.paused
                               ? isLightMode
-                                ? '#ede3cf'
-                                : '#2a2214'
-                              : day.tier === 1
+                                ? 'rgba(13,148,136,0.12)'
+                                : 'rgba(45,212,191,0.14)'
+                              : day.tier === 2
                                 ? isLightMode
-                                  ? '#f3ecdd'
-                                  : '#1f1b13'
-                                : undefined,
-                        borderColor: day.active || day.isToday ? rewardHex : undefined,
+                                  ? '#ede3cf'
+                                  : '#2a2214'
+                                : day.tier === 1
+                                  ? isLightMode
+                                    ? '#f3ecdd'
+                                    : '#1f1b13'
+                                  : undefined,
+                        borderColor: day.paused
+                          ? pauseHex
+                          : day.active || day.isToday
+                            ? rewardHex
+                            : undefined,
                         boxShadow:
                           day.tier >= 2 ? `0 0 10px ${rewardHex}35` : undefined,
                       }}
@@ -313,6 +441,8 @@ export const DailyStreakTracker = ({
                           size={13}
                           className={isLightMode ? 'text-[#faf8f4]' : 'text-[#0c0e14]'}
                         />
+                      ) : day.paused ? (
+                        <MoonIcon size={11} style={{ color: pauseHex }} />
                       ) : day.active ? (
                         <span
                           className="w-1.5 h-1.5 rounded-full"
@@ -352,8 +482,8 @@ export const DailyStreakTracker = ({
       </div>
 
       {/* Consistency Milestone Seals */}
-      <div className={`px-3.5 pt-2.5 pb-3 border-t ${dividerClass}`}>
-        <div className="flex items-center justify-between px-0.5 mb-2">
+      <div className={`px-3.5 pt-2 pb-2.5 border-t ${dividerClass}`}>
+        <div className="flex items-center justify-between px-0.5 mb-1.5">
           <span
             className={`font-serif-eng text-[8px] uppercase ${tTextSub} opacity-75`}
             style={{ letterSpacing: '0.18em' }}
@@ -396,7 +526,7 @@ export const DailyStreakTracker = ({
                 />
                 <span
                   className={`font-serif-eng text-[8px] tabular-nums leading-none ${
-                    unlocked ? 'font-medium' : `${tTextSub} opacity-50`
+                    unlocked ? 'font-medium' : `${tTextSub} opacity-68`
                   }`}
                   style={{ color: unlocked ? rewardHex : undefined }}
                 >

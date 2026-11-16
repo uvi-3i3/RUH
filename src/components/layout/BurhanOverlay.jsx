@@ -87,10 +87,13 @@ export const BurhanOverlay = ({
     if (navigator.share) {
       navigator.share({ title: activeBurhan.title, text }).catch(() => {});
     } else if (navigator.clipboard) {
-      navigator.clipboard.writeText(text).then(() => {
-        setCopiedFeedback(true);
-        setTimeout(() => setCopiedFeedback(false), 1800);
-      });
+      navigator.clipboard
+        .writeText(text)
+        .then(() => {
+          setCopiedFeedback(true);
+          setTimeout(() => setCopiedFeedback(false), 1800);
+        })
+        .catch(() => {});
     }
   };
 

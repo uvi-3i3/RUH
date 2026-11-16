@@ -1,11 +1,13 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Coordinates, CalculationMethod, PrayerTimes } from 'adhan';
+import { Coordinates, PrayerTimes } from 'adhan';
 import {
   calculateDistanceToKaabaKm,
   calculateQiblaBearing,
   formatCardinalDirection,
   formatCountdown,
 } from '../utils/devotionLogic';
+import { getAdhanCalculationParams } from '../utils/prayerMethod';
+import { hydrateMissingFromPreferences, mirroredRemove, mirroredSet } from '../utils/nativeStorage';
 
 const LOCATION_STORAGE_KEY = 'ruh_location_v1';
 const LEGACY_COORDS_KEY = 'ruh_coords';
@@ -68,20 +70,20 @@ export function usePrayerTimes() {
 
   const persistLocation = useCallback((nextLoc) => {
     setLocation(nextLoc);
-    try {
-      if (nextLoc) {
-        localStorage.setItem(LOCATION_STORAGE_KEY, JSON.stringify(nextLoc));
-      } else {
-        localStorage.removeItem(LOCATION_STORAGE_KEY);
-      }
-    } catch {}
+    if (nextLoc) {
+      mirroredSet(LOCATION_STORAGE_KEY, JSON.stringify(nextLoc));
+    } else {
+      mirroredRemove(LOCATION_STORAGE_KEY);
+    }
   }, []);
 
   const setMethod = useCallback((nextMethod) => {
     setMethodState(nextMethod);
-    try {
-      localStorage.setItem(METHOD_STORAGE_KEY, nextMethod);
-    } catch {}
+    mirroredSet(METHOD_STORAGE_KEY, nextMethod);
+  }, []);
+
+  const refresh = useCallback(() => {
+    setTick((t) => t + 1);
   }, []);
 
   const requestLocation = useCallback(() => {
@@ -128,11 +130,30 @@ export function usePrayerTimes() {
     [persistLocation, setMethod]
   );
 
-  // Attempt passive GPS lookup once on initial mount only when no location is saved
+  // Hydrate location/method from native Preferences if WebView storage was purged; otherwise probe passive GPS
   useEffect(() => {
-    if (!location) {
-      requestLocation();
-    }
+    let cancelled = false;
+    hydrateMissingFromPreferences([LOCATION_STORAGE_KEY, METHOD_STORAGE_KEY]).then((recovered) => {
+      if (cancelled) return;
+      if (recovered[METHOD_STORAGE_KEY]) {
+        setMethodState(recovered[METHOD_STORAGE_KEY]);
+      }
+      if (recovered[LOCATION_STORAGE_KEY]) {
+        try {
+          const parsed = JSON.parse(recovered[LOCATION_STORAGE_KEY]);
+          if (typeof parsed?.lat === 'number' && typeof parsed?.lng === 'number') {
+            setLocation(parsed);
+            return;
+          }
+        } catch {}
+      }
+      if (!location) {
+        requestLocation();
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Update countdown every 30s so minutes stay accurate
@@ -148,41 +169,7 @@ export function usePrayerTimes() {
 
     const coordinates = new Coordinates(coords.lat, coords.lng);
     const date = new Date();
-
-    let params;
-    switch (method) {
-      case 'MuslimWorldLeague':
-        params = CalculationMethod.MuslimWorldLeague();
-        break;
-      case 'Egyptian':
-        params = CalculationMethod.Egyptian();
-        break;
-      case 'Karachi':
-        params = CalculationMethod.Karachi();
-        break;
-      case 'UmmAlQura':
-        params = CalculationMethod.UmmAlQura();
-        break;
-      case 'Dubai':
-        params = CalculationMethod.Dubai();
-        break;
-      case 'Qatar':
-        params = CalculationMethod.Qatar();
-        break;
-      case 'Kuwait':
-        params = CalculationMethod.Kuwait();
-        break;
-      case 'Singapore':
-        params = CalculationMethod.Singapore();
-        break;
-      case 'NorthAmerica':
-        params = CalculationMethod.NorthAmerica();
-        break;
-      default:
-        params = CalculationMethod.MoonsightingCommittee();
-        break;
-    }
-
+    const params = getAdhanCalculationParams(method);
     const pt = new PrayerTimes(coordinates, date, params);
 
     const times = {
@@ -261,6 +248,7 @@ export function usePrayerTimes() {
     selectCity,
     method,
     setMethod,
+    refresh,
     hasLocation: !!coords,
   };
 }

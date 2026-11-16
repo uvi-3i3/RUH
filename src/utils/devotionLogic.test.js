@@ -320,6 +320,114 @@ test('buildStreakStatus tracks 7-day cadence, practices activity, at-risk state,
   assert.equal(emptyStatus.activeMilestone, null);
   assert.equal(emptyStatus.nextMilestone.id, 'bidayah');
   assert.equal(emptyStatus.progressToNextPct, 0);
+
+  const { getStreakCelebrationSignature } = await import('./devotionLogic.js');
+  assert.equal(getStreakCelebrationSignature(emptyStatus), null);
+  assert.equal(getStreakCelebrationSignature(atRiskStatus), null);
+  assert.equal(getStreakCelebrationSignature(activeStatus), '2026-11-13|3|3');
 });
+
+test('computeStreaks and buildStreakStatus preserve continuity across paused rest days', async () => {
+  const { computeStreaks, buildStreakStatus } = await import('./devotionLogic.js');
+  const ref = new Date(2026, 10, 14, 12, 0); // 2026-11-14
+
+  const history = {
+    '2026-11-11': { prayers: 5, verses: 1, practices: 0 },
+    '2026-11-12': { prayers: 5, verses: 0, practices: 1 },
+  };
+  const pausedDates = {
+    '2026-11-13': true,
+    '2026-11-14': true,
+  };
+
+  const streak = computeStreaks(history, ref, pausedDates);
+  assert.equal(streak.currentStreak, 2);
+  assert.equal(streak.longestStreak, 2);
+
+  const status = buildStreakStatus(history, ref, pausedDates);
+  assert.equal(status.todayPaused, true);
+  assert.equal(status.atRisk, false);
+  assert.equal(status.weekDays[5].paused, true);
+  assert.equal(status.weekDays[6].paused, true);
+});
+
+test('getSunnahCalendarContext, computeQadaTotals, filterDuas, and sanitizeBackupPayload work accurately', async () => {
+  const {
+    getSunnahCalendarContext,
+    computeQadaTotals,
+    filterDuas,
+    sanitizeBackupPayload,
+  } = await import('./devotionLogic.js');
+
+  // 2026-11-13 is a Friday
+  const fridayCtx = getSunnahCalendarContext(new Date(2026, 10, 13, 10, 0), {
+    year: 1448,
+    month: 6,
+    day: 2,
+  });
+  assert.equal(fridayCtx.isFriday, true);
+  assert.equal(fridayCtx.primaryPrompt.id, 'kahf_friday');
+
+  // White day (Hijri 14th) on a Sunday
+  const whiteCtx = getSunnahCalendarContext(new Date(2026, 10, 15, 10, 0), {
+    year: 1448,
+    month: 6,
+    day: 14,
+  });
+  assert.equal(whiteCtx.isWhiteDay, true);
+  assert.equal(whiteCtx.primaryPrompt.id, 'white_days');
+
+  const qadaStats = computeQadaTotals({
+    prayers: { fajr: 10, dhuhr: 5, asr: 5, maghrib: 0, isha: 5 },
+    fasts: 5,
+    completedTotal: 10,
+  });
+  assert.equal(qadaStats.remainingPrayers, 25);
+  assert.equal(qadaStats.totalRemaining, 30);
+  assert.equal(qadaStats.completionPct, 25);
+
+  const sampleDuas = [
+    { id: 'd1', category: 'anxiety', title: 'Calm Heart', translation: 'Lift worry', moment: 'stress' },
+    { id: 'd2', category: 'family', title: 'Parents', translation: 'Mercy on parents', moment: 'home' },
+  ];
+  assert.equal(filterDuas(sampleDuas, 'anxiety', '', []).length, 1);
+  assert.equal(filterDuas(sampleDuas, 'favorites', '', ['d2']).map((d) => d.id)[0], 'd2');
+  assert.equal(filterDuas(sampleDuas, 'all', 'worry', []).length, 1);
+
+  assert.equal(sanitizeBackupPayload(null), null);
+  assert.equal(sanitizeBackupPayload([]), null);
+  const cleaned = sanitizeBackupPayload({
+    totalPrayers: 42,
+    history: { '2026-11-14': { prayers: 2 } },
+    habits: [
+      { id: 'h1', title: '  Surah Al-Mulk  ', target: 0, unit: '', cadence: 'Night' },
+      { title: '   ' },
+    ],
+    settings: {
+      isSimpleMode: true,
+      notificationLeadMinutes: 10,
+      notificationChime: false,
+      prayers: { fajr: { enabled: true, time: '05:00' } },
+      customReminders: [{ id: 'c1', title: 'Salawat', time: '09:30', enabled: true }],
+    },
+    maqamat: { currentStation: 2, yaqeenProgress: 120, unlockedStations: [0, 1, 2] },
+  });
+  assert.equal(cleaned.totalPrayers, 42);
+  assert.equal(cleaned.history['2026-11-14'].prayers, 2);
+  assert.equal(cleaned.habits.length, 1);
+  assert.equal(cleaned.habits[0].title, 'Surah Al-Mulk');
+  assert.equal(cleaned.habits[0].target, 1);
+  assert.equal(cleaned.habits[0].unit, 'time');
+  assert.equal(cleaned.settings.isSimpleMode, true);
+  assert.equal(cleaned.settings.notificationLeadMinutes, 10);
+  assert.equal(cleaned.settings.notificationChime, false);
+  assert.equal(cleaned.settings.prayers.fajr.enabled, true);
+  assert.equal(cleaned.maqamat.yaqeenProgress, 100);
+
+  const emptyHabitsBackup = sanitizeBackupPayload({ totalPrayers: 1, habits: [] });
+  assert.deepEqual(emptyHabitsBackup.habits, []);
+});
+
+
 
 

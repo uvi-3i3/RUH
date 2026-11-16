@@ -22,6 +22,8 @@ import {
   TasksNavIcon,
   ShareIcon,
   CompassIcon,
+  BookIcon,
+  RotateCcwIcon,
 } from './components/icons/Icons';
 import { DevotionTimeline } from './components/layout/DevotionTimeline';
 import { DevotionHeatmap } from './components/layout/DevotionHeatmap';
@@ -36,16 +38,34 @@ import { SettingsModal } from './components/layout/SettingsModal';
 import { RemindersModal } from './components/layout/RemindersModal';
 import { QiblaModal } from './components/layout/QiblaModal';
 import { CityPickerModal } from './components/layout/CityPickerModal';
+import { DuasModal } from './components/layout/DuasModal';
+import { QadaModal } from './components/layout/QadaModal';
 import { MisbahaMode } from './components/layout/MisbahaMode';
 import { burhanData } from './data/burhanData';
-import { resolveVerseCopy, selectActiveBurhan } from './utils/devotionLogic';
+import {
+  computeQadaTotals,
+  getSunnahCalendarContext,
+  resolveVerseCopy,
+  selectActiveBurhan,
+} from './utils/devotionLogic';
 import { PaintedClouds } from './components/layout/PaintedClouds';
+import { BadgesShowcase } from './components/layout/BadgesShowcase';
+import { BadgeRewardOverlay } from './components/badges/BadgeRewardOverlay';
+import { SacredNotificationToast } from './components/layout/SacredNotificationToast';
+import { useLocalNotifications } from './hooks/useLocalNotifications';
+import { registerNativeLifecycle, syncStatusBarTheme } from './native';
+import { hapticSuccess, hapticTapLight, hapticTapMedium } from './utils/haptics';
+import { hydrateMissingFromPreferences, mirroredSet } from './utils/nativeStorage';
 
 export default function App() {
   const devotionData = useDevotionData();
   const localAI = useLocalAI();
   const hijri = useHijriDate();
   const prayerTimes = usePrayerTimes();
+  const notifications = useLocalNotifications({ devotionData, prayerTimes });
+  const enabledAlertsCount =
+    PRAYERS.filter((p) => devotionData.prayers?.[p.id]?.enabled).length +
+    (devotionData.customReminders || []).filter((r) => r.enabled).length;
 
   // --- APP STATE ---
   const [currentView, setCurrentView] = useState('main'); // 'main' | 'tasks' | 'profile'
@@ -55,7 +75,17 @@ export default function App() {
   const [contentData, setContentData] = useState(null);
   const [showAmbientTasks, setShowAmbientTasks] = useState(false);
   const [kashfCeremony, setKashfCeremony] = useState(false);
-  const [devTimePhase, setDevTimePhase] = useState(null);
+  const kashfTimerRef = useRef(null);
+  const [devTimePhase, setDevTimePhase] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ruh_atmosphere_phase_v1');
+      if (saved === null || saved === '') return null;
+      const n = Number(saved);
+      return Number.isInteger(n) && n >= 0 && n <= 4 ? n : null;
+    } catch {
+      return null;
+    }
+  });
   const palette = useTemporalPhase(devTimePhase);
   const temporalRef = useRef(palette);
   temporalRef.current = palette;
@@ -83,9 +113,42 @@ export default function App() {
   const verses = currentStationData?.verses || null;
   const nextStation = stations[maq.currentStation + 1] || null;
 
-  const [isLightMode, setIsLightMode] = useState(false);
+  const [isLightMode, setIsLightMode] = useState(() => {
+    try {
+      return localStorage.getItem('ruh_theme_mode_v1') === 'light';
+    } catch {
+      return false;
+    }
+  });
   const [showContext, setShowContext] = useState(false);
   const [tafakkurPromptId, setTafakkurPromptId] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    hydrateMissingFromPreferences(['ruh_theme_mode_v1']).then((recovered) => {
+      if (!cancelled && recovered.ruh_theme_mode_v1) {
+        setIsLightMode(recovered.ruh_theme_mode_v1 === 'light');
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    mirroredSet('ruh_theme_mode_v1', isLightMode ? 'light' : 'dark');
+    syncStatusBarTheme(isLightMode);
+  }, [isLightMode]);
+
+  useEffect(() => {
+    try {
+      if (devTimePhase === null || devTimePhase === undefined) {
+        localStorage.removeItem('ruh_atmosphere_phase_v1');
+      } else {
+        localStorage.setItem('ruh_atmosphere_phase_v1', String(devTimePhase));
+      }
+    } catch {}
+  }, [devTimePhase]);
 
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [checkingId, setCheckingId] = useState(null);
@@ -100,12 +163,143 @@ export default function App() {
   const [showReminders, setShowReminders] = useState(false);
   const [showQibla, setShowQibla] = useState(false);
   const [showCityPicker, setShowCityPicker] = useState(false);
+  const [showDuas, setShowDuas] = useState(false);
+  const [showQada, setShowQada] = useState(false);
   const [misbahaLaunch, setMisbahaLaunch] = useState(null);
   const [reviewPrayers, setReviewPrayers] = useState(false);
+  const [inspectedBadge, setInspectedBadge] = useState(null);
+  const [journeyTab, setJourneyTab] = useState('streak'); // 'streak' | 'badges' | 'path'
   const prayerLongPressTimer = useRef(null);
   const prayerLongPressTriggered = useRef(false);
   const lastTapTime = useRef(0);
   const doubleTapCooldown = useRef(false);
+
+  const isAnyModalOpen = Boolean(
+    tafakkurPromptId ||
+      showArchive ||
+      showBurhanModal ||
+      showSettings ||
+      showReminders ||
+      showQibla ||
+      showCityPicker ||
+      showDuas ||
+      showQada ||
+      misbahaLaunch ||
+      inspectedBadge ||
+      devotionData.activeCelebrationBadge
+  );
+
+  // Prioritized Escape dismissal: close strictly the topmost open dialog
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key !== 'Escape') return;
+      if (devotionData.activeCelebrationBadge || inspectedBadge) return;
+      if (typeof document !== 'undefined' && document.querySelector('[data-habit-editor-open="true"]')) {
+        return;
+      }
+      if (misbahaLaunch) setMisbahaLaunch(null);
+      else if (showCityPicker) setShowCityPicker(false);
+      else if (tafakkurPromptId) setTafakkurPromptId(null);
+      else if (showReminders) setShowReminders(false);
+      else if (showSettings) setShowSettings(false);
+      else if (showQibla) setShowQibla(false);
+      else if (showDuas) setShowDuas(false);
+      else if (showQada) setShowQada(false);
+      else if (showArchive) setShowArchive(false);
+      else if (showBurhanModal) setShowBurhanModal(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    devotionData.activeCelebrationBadge,
+    inspectedBadge,
+    misbahaLaunch,
+    showCityPicker,
+    tafakkurPromptId,
+    showReminders,
+    showSettings,
+    showQibla,
+    showDuas,
+    showQada,
+    showArchive,
+    showBurhanModal,
+  ]);
+
+  // Android hardware back button & mobile app foreground resume lifecycle
+  const nativeBackHandlerRef = useRef(() => false);
+  nativeBackHandlerRef.current = () => {
+    if (devotionData.activeCelebrationBadge) {
+      devotionData.dismissCelebrationBadge();
+      return true;
+    }
+    if (inspectedBadge) {
+      setInspectedBadge(null);
+      return true;
+    }
+    if (typeof document !== 'undefined' && document.querySelector('[data-habit-editor-open="true"]')) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      return true;
+    }
+    if (misbahaLaunch) {
+      setMisbahaLaunch(null);
+      return true;
+    }
+    if (showCityPicker) {
+      setShowCityPicker(false);
+      return true;
+    }
+    if (tafakkurPromptId) {
+      setTafakkurPromptId(null);
+      return true;
+    }
+    if (showReminders) {
+      setShowReminders(false);
+      return true;
+    }
+    if (showSettings) {
+      setShowSettings(false);
+      return true;
+    }
+    if (showQibla) {
+      setShowQibla(false);
+      return true;
+    }
+    if (showDuas) {
+      setShowDuas(false);
+      return true;
+    }
+    if (showQada) {
+      setShowQada(false);
+      return true;
+    }
+    if (showArchive) {
+      setShowArchive(false);
+      return true;
+    }
+    if (showBurhanModal) {
+      setShowBurhanModal(false);
+      return true;
+    }
+    if (currentView !== 'main') {
+      setCurrentView('main');
+      return true;
+    }
+    return false;
+  };
+
+  const nativeForegroundRef = useRef(() => {});
+  nativeForegroundRef.current = () => {
+    prayerTimes.refresh?.();
+    notifications.refreshPermission?.();
+    notifications.syncAllNativePrayerSchedules?.();
+  };
+
+  useEffect(() => {
+    return registerNativeLifecycle({
+      onBackButton: () => nativeBackHandlerRef.current(),
+      onForeground: () => nativeForegroundRef.current(),
+    });
+  }, []);
 
   const userProfile = devotionData.profile || { name: 'Seeker', initials: 'SK', joinedDate: '2026' };
 
@@ -262,6 +456,7 @@ export default function App() {
   const handleBookmarkAndReflect = useCallback(
     (verse) => {
       if (!verse) return;
+      hapticTapLight();
       devotionData.toggleSaveVerse(verse.id);
       if (!isSaved) {
         setTafakkurPromptId(verse.id);
@@ -329,12 +524,13 @@ export default function App() {
   };
 
   const handleTouchStart = (e) => {
+    if (isAnyModalOpen || e.target.closest?.('[role="dialog"]')) return;
     touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
     stateRef.current.lastInteractionTime = Date.now();
   };
 
   const handleTouchEnd = (e) => {
-    if (e.target.closest('button') || currentView !== 'main') return;
+    if (isAnyModalOpen || e.target.closest?.('[role="dialog"]') || e.target.closest('button') || currentView !== 'main') return;
     const dx = touchStart.current.x - e.changedTouches[0].clientX;
     const dy = touchStart.current.y - e.changedTouches[0].clientY;
 
@@ -350,7 +546,15 @@ export default function App() {
   };
 
   const handleWheel = (e) => {
-    if (scrollCooldown.current || hideStackForSeal || currentView !== 'main') return;
+    if (
+      isAnyModalOpen ||
+      e.target.closest?.('[role="dialog"]') ||
+      scrollCooldown.current ||
+      hideStackForSeal ||
+      currentView !== 'main'
+    ) {
+      return;
+    }
     stateRef.current.lastInteractionTime = Date.now();
     if (Math.abs(e.deltaY) > 20) {
       scrollCooldown.current = true;
@@ -372,6 +576,9 @@ export default function App() {
 
     setCheckingId(prayerId);
     if (engineRef.current.triggerButtonBurst) engineRef.current.triggerButtonBurst();
+    const nextCount = completedPrayers.length + 1;
+    if (nextCount === PRAYERS.length) hapticSuccess();
+    else hapticTapLight();
 
     setTimeout(() => {
       const currentIdx = PRAYERS.findIndex((p) => p.id === prayerId);
@@ -406,13 +613,24 @@ export default function App() {
   useEffect(() => {
     if (maq.yaqeenProgress >= 100 && nextStation && !kashfCeremony) {
       setKashfCeremony(true);
-      setTimeout(() => {
+      if (kashfTimerRef.current) clearTimeout(kashfTimerRef.current);
+      kashfTimerRef.current = setTimeout(() => {
+        kashfTimerRef.current = null;
         devotionData.advanceStation();
         setVerseIndex(0);
         setKashfCeremony(false);
       }, 3200);
     }
   }, [maq.yaqeenProgress, nextStation, kashfCeremony, devotionData]);
+
+  useEffect(() => {
+    return () => {
+      if (kashfTimerRef.current) {
+        clearTimeout(kashfTimerRef.current);
+        kashfTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Ambient mode dhikr
   useEffect(() => {
@@ -444,10 +662,13 @@ export default function App() {
     if (navigator.share) {
       navigator.share({ title: 'Ruh — رُوح', text: textToShare }).catch(() => {});
     } else if (navigator.clipboard) {
-      navigator.clipboard.writeText(textToShare).then(() => {
-        setCopiedFeedback(true);
-        setTimeout(() => setCopiedFeedback(false), 1800);
-      });
+      navigator.clipboard
+        .writeText(textToShare)
+        .then(() => {
+          setCopiedFeedback(true);
+          setTimeout(() => setCopiedFeedback(false), 1800);
+        })
+        .catch(() => {});
     }
   };
 
@@ -483,6 +704,9 @@ export default function App() {
   const streakPercentage = Math.min(1, devotionData.currentStreak / 30);
   const dynamicDashOffset = circumference - streakPercentage * circumference;
 
+  const sunnahContext = getSunnahCalendarContext(new Date(), hijri);
+  const qadaTotals = computeQadaTotals(devotionData.qada);
+
   const allVersesFlat = stations.flatMap((s) => s.verses || []);
   const tafakkurVerse = tafakkurPromptId
     ? allVersesFlat.find((v) => v.id === tafakkurPromptId)
@@ -493,8 +717,7 @@ export default function App() {
 
   return (
     <div
-      className={`w-full h-screen ${tBg} overflow-hidden font-sans relative select-none transition-colors duration-1000`}
-      style={{ touchAction: 'none' }}
+      className={`w-full h-full min-h-screen ${tBg} overflow-clip font-sans relative select-none transition-colors duration-300`}
       onPointerMove={handlePointerMove}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
@@ -508,7 +731,7 @@ export default function App() {
 
       {/* Measured Contrast & Atmosphere Scrim */}
       <div
-        className="absolute inset-0 z-10 pointer-events-none transition-[background] duration-900"
+        className="absolute inset-0 z-10 pointer-events-none transition-[background] duration-300"
         style={{
           background: isLightMode
             ? isHikmah
@@ -520,13 +743,14 @@ export default function App() {
         }}
       />
 
-      {/* THEOLOGICAL WATERMARK / DEVOTION TIMELINE (Left Side → Center Watermark when 5 prayers done) */}
+      {/* THEOLOGICAL WATERMARK / DEVOTION TIMELINE (Main Sanctuary only) */}
       <DevotionTimeline
         completedCount={completedPrayers.length}
         isLightMode={isLightMode}
         isHikmah={isHikmah}
         accentColor={accentHex}
         accentGlow={`${accentRgba},0.6)`}
+        isVisible={currentView === 'main'}
       />
 
       {/* AMBIENT SIDE COLUMN (Materializes on the left when all 5 prayers are complete) */}
@@ -546,7 +770,7 @@ export default function App() {
           aria-label={`Hijri date: ${hijri.formatted}${hijri.notable ? ` (${hijri.notable.label})` : ''}`}
         >
           <span
-            className={`font-serif-eng text-[8.5px] md:text-[9.5px] uppercase tracking-[0.14em] leading-tight truncate ${tTextSub} ${isLightMode ? 'opacity-80' : 'opacity-72'} transition-colors duration-1000`}
+            className={`font-serif-eng text-[8.5px] md:text-[9.5px] uppercase tracking-[0.14em] leading-tight truncate ${tTextSub} ${isLightMode ? 'opacity-80' : 'opacity-72'} transition-colors duration-300`}
             style={{ textShadow: glowSub }}
           >
             {hijri.day} {hijri.monthName}
@@ -578,7 +802,7 @@ export default function App() {
         <div className="justify-self-center text-center mix-blend-normal flex flex-col items-center">
           <span
             aria-label="Ruh"
-            className={`font-calligraphy text-[28px] md:text-[32px] leading-none ${tTextMain} opacity-85 block transition-colors duration-1000`}
+            className={`font-calligraphy text-[28px] md:text-[32px] leading-none ${tTextMain} opacity-85 block transition-colors duration-300`}
             style={{ textShadow: glowSub }}
             dir="rtl"
           >
@@ -608,7 +832,7 @@ export default function App() {
           className={`justify-self-end pointer-events-auto min-w-[44px] min-h-[44px] -mr-2 flex items-center justify-center rounded-full transition-all duration-500 hover:scale-110 cursor-pointer ${
             isLightMode
               ? 'text-[#9c7533] hover:bg-[#9c7533]/10'
-              : 'text-[#e4dac8] hover:bg-white/5 opacity-45 hover:opacity-100'
+              : 'text-[#e4dac8] hover:bg-white/5 opacity-70 hover:opacity-100'
           }`}
         >
           {isLightMode ? <SunIcon size={16} /> : <MoonIcon size={16} />}
@@ -716,7 +940,7 @@ export default function App() {
                       </div>
 
                       <p
-                        className={`font-arabic text-[clamp(22px,5.4vw,30px)] leading-[2.15] text-center ${tTextMain} transition-colors duration-1000 w-full relative z-10`}
+                        className={`font-arabic text-[clamp(22px,5.4vw,30px)] leading-[2.15] text-center ${tTextMain} transition-colors duration-300 w-full relative z-10`}
                         dir="rtl"
                         style={{ textShadow: glowArabic }}
                       >
@@ -769,7 +993,7 @@ export default function App() {
                       <p
                         className={`font-serif-eng italic font-light text-[clamp(14px,3.3vw,16.5px)] leading-[1.9] text-center ${
                           isLightMode ? 'text-[#3a3630]' : 'text-[rgba(232,223,207,0.78)]'
-                        } whitespace-pre-line w-full mb-[18px] transition-colors duration-1000`}
+                        } whitespace-pre-line w-full mb-[18px] transition-colors duration-300`}
                         style={{
                           textShadow: glowSub,
                           letterSpacing: '0.025em',
@@ -781,7 +1005,7 @@ export default function App() {
 
                       <div className="flex flex-col items-center w-full">
                         <span
-                          className="font-serif-eng text-[9.5px] uppercase text-center transition-colors duration-1000"
+                          className="font-serif-eng text-[9.5px] uppercase text-center transition-colors duration-300"
                           style={{
                             color: isLightMode && !isHikmah ? '#3d3528' : accentHex,
                             opacity: isLightMode ? 0.92 : 0.85,
@@ -892,7 +1116,7 @@ export default function App() {
                             </p>
                             {activeVerse.ts && (
                               <p
-                                className="font-serif-eng text-[8px] uppercase opacity-70 mt-3 text-center transition-colors duration-1000"
+                                className="font-serif-eng text-[8px] uppercase opacity-70 mt-3 text-center transition-colors duration-300"
                                 style={{
                                   color: accentHex,
                                   letterSpacing: '0.25em',
@@ -925,29 +1149,44 @@ export default function App() {
             activeDays={devotionData.activeDays}
             onOpenBurhan={() => setShowBurhanModal(true)}
             onOpenMisbaha={(launch) => setMisbahaLaunch(launch)}
+            habits={devotionData.habits}
+            dailyHabitLogs={devotionData.dailyHabitLogs}
+            onLogHabitStep={devotionData.logHabitStep}
+            onAddCustomHabit={devotionData.addCustomHabit}
+            onUpdateHabit={devotionData.updateHabit}
+            onReorderHabit={devotionData.reorderHabit}
+            onResetDefaultHabits={devotionData.resetDefaultHabits}
+            onRemoveHabit={devotionData.removeHabit}
+            dailyIntention={devotionData.dailyIntention}
+            onSetDailyIntention={devotionData.setDailyIntention}
+            sunnahContext={sunnahContext}
+            qadaRemainingCount={qadaTotals.totalRemaining}
+            onOpenDuas={() => setShowDuas(true)}
+            onOpenQada={() => setShowQada(true)}
           />
 
           {/* === VIEW 3: PROFILE (THE SOUL MIRROR) === */}
           <div
             data-testid="journey-scroller"
-            className="absolute inset-x-0 top-[80px] md:top-[90px] bottom-0 flex flex-col items-center transition-[opacity,transform,visibility] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] w-full overflow-y-auto hide-scrollbar pt-4 pb-12"
+            className="absolute inset-x-0 top-[70px] md:top-[80px] bottom-0 flex flex-col items-center transition-[opacity,transform,visibility] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] w-full overflow-y-auto hide-scrollbar pt-1 pb-4"
             style={{
+              touchAction: 'pan-y',
               opacity: currentView === 'profile' ? 1 : 0,
               visibility: currentView === 'profile' ? 'visible' : 'hidden',
               transform: currentView === 'profile' ? 'scale(1)' : 'scale(1.02)',
               pointerEvents: currentView === 'profile' ? 'auto' : 'none',
               maskImage: currentView === 'profile'
-                ? 'linear-gradient(to bottom, transparent 0px, black 20px, black calc(100% - 20px), transparent 100%)'
+                ? 'linear-gradient(to bottom, transparent 0px, black 12px, black calc(100% - 12px), transparent 100%)'
                 : 'none',
               WebkitMaskImage: currentView === 'profile'
-                ? 'linear-gradient(to bottom, transparent 0px, black 20px, black calc(100% - 20px), transparent 100%)'
+                ? 'linear-gradient(to bottom, transparent 0px, black 12px, black calc(100% - 12px), transparent 100%)'
                 : 'none',
             }}
           >
-            <div className="flex flex-col items-center justify-start w-full max-w-[356px] px-3 sm:px-4 mx-auto my-auto">
+            <div className="flex flex-col items-center justify-start w-full max-w-[300px] sm:max-w-[360px] md:max-w-[460px] px-1.5 sm:px-3 mx-auto">
               {/* Top Anchor */}
               <span
-                className={`font-calligraphy text-[24px] leading-none ${tTextMain} opacity-65 mb-2 transition-colors duration-1000`}
+                className={`font-calligraphy text-[19px] leading-none ${tTextMain} opacity-75 mb-0.5 transition-colors duration-300`}
                 dir="rtl"
               >
                 الرحلة
@@ -956,9 +1195,8 @@ export default function App() {
               {/* Avatar + Streak Integration (Optical Nur Orb centers behind this ring) */}
               <div
                 ref={avatarRef}
-                className="relative w-28 h-28 flex items-center justify-center mb-6 mx-auto mt-2 shrink-0"
+                className="relative w-16 h-16 flex items-center justify-center mb-1.5 mx-auto shrink-0"
               >
-                {/* The Streak Orbit (Progress Ring) */}
                 <svg
                   className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none"
                   viewBox="0 0 100 100"
@@ -968,7 +1206,7 @@ export default function App() {
                     cy="50"
                     r="48"
                     fill="none"
-                    stroke={isLightMode ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.03)'}
+                    stroke={isLightMode ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)'}
                     strokeWidth="1"
                     strokeDasharray="2 4"
                   />
@@ -986,16 +1224,15 @@ export default function App() {
                   />
                 </svg>
 
-                {/* The Liquid-Glass Avatar Center */}
                 <div
-                  className={`flex flex-col items-center justify-center w-20 h-20 rounded-full border transition-all duration-1000 z-10 ${
+                  className={`flex flex-col items-center justify-center w-[48px] h-[48px] rounded-full border transition-all duration-300 z-10 ${
                     isLightMode
-                      ? 'bg-white/25 border-white/70 island-light'
-                      : 'bg-white/[0.02] border-white/[0.12] island-dark'
+                      ? 'bg-white/65 border-white/85 island-light'
+                      : 'bg-[#0b0e16]/65 border-white/[0.14] island-dark'
                   }`}
                 >
                   <span
-                    className={`font-serif-eng text-2xl font-light ${tTextMain} transition-colors duration-1000`}
+                    className={`font-serif-eng text-base font-light ${tTextMain} transition-colors duration-300`}
                     style={{
                       letterSpacing: '0.1em',
                       marginRight: '-0.1em',
@@ -1009,7 +1246,7 @@ export default function App() {
 
               {/* User Identity */}
               <h2
-                className={`font-serif-eng text-2xl font-medium ${tTextMain} mb-1 transition-colors duration-1000 flex items-center justify-center`}
+                className={`font-serif-eng text-[18px] font-medium ${tTextMain} leading-tight transition-colors duration-300 flex items-center justify-center`}
                 style={{
                   textShadow: glowSub,
                   letterSpacing: '0.05em',
@@ -1019,169 +1256,244 @@ export default function App() {
                 {userProfile.name}
               </h2>
               <p
-                className={`font-serif-eng text-[10px] uppercase ${tTextGold} mb-6 transition-colors duration-1000 text-center`}
-                style={{ letterSpacing: '0.2em', marginRight: '-0.2em' }}
+                className={`font-serif-eng text-[8.5px] uppercase ${tTextGold} mb-2 transition-colors duration-300 text-center`}
+                style={{ letterSpacing: '0.18em', marginRight: '-0.18em' }}
               >
-                {currentStationData?.subtitle || 'Station of Patience'} • {maq.yaqeenProgress}% Yaqeen
+                {currentStationData?.subtitle || 'Station of Patience'} · {maq.yaqeenProgress}% Yaqeen
               </p>
 
-              {/* Daily Streak Tracker */}
-              <DailyStreakTracker
-                historyMap={devotionData.history}
-                isLightMode={isLightMode}
-              />
-
-              {/* 3-Pillar Lifetime Summary Grid */}
-              <div className="grid grid-cols-3 gap-3 w-full mb-5">
-                <div
-                  className={`flex flex-col items-center justify-center py-4 px-2 rounded-[20px] border transition-all duration-1000 ${
-                    isLightMode
-                      ? 'bg-white/45 border-white/70 island-light'
-                      : 'bg-white/[0.02] border-white/[0.05] island-dark'
-                  }`}
-                >
-                  <span
-                    className={`font-serif-eng text-2xl leading-none font-light tabular-nums ${tTextMain} transition-colors duration-1000`}
-                  >
+              {/* Compact 3-Pillar Lifetime Summary Strip */}
+              <div
+                className={`w-full grid grid-cols-3 divide-x rounded-[16px] border transition-all duration-300 mb-2 ${
+                  isLightMode
+                    ? 'bg-white/68 border-white/85 divide-black/[0.06] island-light'
+                    : 'bg-[#0b0e16]/68 border-white/[0.09] divide-white/[0.06] island-dark'
+                }`}
+              >
+                <div className="flex flex-col items-center justify-center py-2 px-2">
+                  <span className={`font-serif-eng text-[17px] leading-none font-light tabular-nums ${tTextMain}`}>
                     {devotionData.totalPrayers}
                   </span>
                   <span
-                    className={`font-serif-eng text-[8px] uppercase ${tTextSub} mt-2.5 opacity-80 transition-colors duration-1000`}
-                    style={{ letterSpacing: '0.15em', marginRight: '-0.15em' }}
+                    className={`font-serif-eng text-[7px] uppercase ${tTextSub} mt-1 opacity-80`}
+                    style={{ letterSpacing: '0.14em' }}
                   >
                     Prayers
                   </span>
                 </div>
 
-                <div
-                  className={`flex flex-col items-center justify-center py-4 px-2 rounded-[20px] border transition-all duration-1000 ${
-                    isLightMode
-                      ? 'bg-white/45 border-white/70 island-light'
-                      : 'bg-white/[0.02] border-white/[0.05] island-dark'
-                  }`}
-                >
-                  <span
-                    className={`font-serif-eng text-2xl leading-none font-light tabular-nums ${tTextMain} transition-colors duration-1000`}
-                  >
+                <div className="flex flex-col items-center justify-center py-2 px-2">
+                  <span className={`font-serif-eng text-[17px] leading-none font-light tabular-nums ${tTextMain}`}>
                     {devotionData.totalVerses}
                   </span>
                   <span
-                    className={`font-serif-eng text-[8px] uppercase ${tTextSub} mt-2.5 opacity-80 transition-colors duration-1000`}
-                    style={{ letterSpacing: '0.15em', marginRight: '-0.15em' }}
+                    className={`font-serif-eng text-[7px] uppercase ${tTextSub} mt-1 opacity-80`}
+                    style={{ letterSpacing: '0.14em' }}
                   >
                     Verses
                   </span>
                 </div>
 
-                <div
-                  className={`flex flex-col items-center justify-center py-4 px-2 rounded-[20px] border transition-all duration-1000 ${
-                    isLightMode
-                      ? 'bg-white/45 border-white/70 island-light'
-                      : 'bg-white/[0.02] border-white/[0.05] island-dark'
-                  }`}
-                >
-                  <span
-                    className={`font-serif-eng text-2xl leading-none font-light tabular-nums ${tTextMain} transition-colors duration-1000`}
-                  >
+                <div className="flex flex-col items-center justify-center py-2 px-2">
+                  <span className={`font-serif-eng text-[17px] leading-none font-light tabular-nums ${tTextMain}`}>
                     {devotionData.activeDays}
                   </span>
                   <span
-                    className={`font-serif-eng text-[8px] uppercase ${tTextSub} mt-2.5 opacity-80 transition-colors duration-1000`}
-                    style={{ letterSpacing: '0.15em', marginRight: '-0.15em' }}
+                    className={`font-serif-eng text-[7px] uppercase ${tTextSub} mt-1 opacity-80 whitespace-nowrap`}
+                    style={{ letterSpacing: '0.14em' }}
                   >
                     Active Days
                   </span>
                 </div>
               </div>
 
-              {/* Spiritual Stations (Maqamat) */}
-              {stations.length > 0 && (
-                <StationIndicator
-                  stations={stations}
-                  currentStation={maq.currentStation}
-                  unlockedStations={maq.unlockedStations || [0]}
-                  yaqeenProgress={maq.yaqeenProgress}
-                  accentHex={accentHex}
+              {/* Clean Segmented Journey Switcher (Streak | Badges | Path) */}
+              <div
+                role="tablist"
+                aria-label="Journey Sections"
+                className={`w-full grid grid-cols-3 p-1 rounded-2xl border mb-2 backdrop-blur-md transition-colors ${
+                  isLightMode
+                    ? 'bg-[#e6dfd1]/75 border-black/[0.08]'
+                    : 'bg-[#0b0e16]/75 border-white/[0.09]'
+                }`}
+              >
+                {[
+                  { id: 'streak', label: `Streak · ${devotionData.currentStreak}d` },
+                  { id: 'badges', label: `Badges · ${devotionData.unlockedBadgeCount}/${devotionData.totalBadgeCount}` },
+                  { id: 'path', label: 'Path' },
+                ].map((tab) => {
+                  const active = journeyTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setJourneyTab(tab.id)}
+                      className="min-h-[34px] rounded-xl font-serif-eng text-[9px] uppercase tracking-[0.11em] cursor-pointer flex items-center justify-center whitespace-nowrap px-1 border"
+                      style={{
+                        backgroundColor: active
+                          ? isLightMode
+                            ? '#fcfaf5'
+                            : 'rgba(255,255,255,0.14)'
+                          : 'transparent',
+                        borderColor: active
+                          ? isLightMode
+                            ? 'rgba(156,117,51,0.28)'
+                            : 'rgba(210,162,75,0.28)'
+                          : 'transparent',
+                        boxShadow: active
+                          ? isLightMode
+                            ? '0 2px 6px rgba(26,24,20,0.09)'
+                            : '0 2px 8px rgba(0,0,0,0.35)'
+                          : 'none',
+                        color: active
+                          ? isLightMode
+                            ? '#7c5a1e'
+                            : '#e5c17b'
+                          : isLightMode
+                            ? 'rgba(44,39,32,0.72)'
+                            : 'rgba(228,218,200,0.68)',
+                        fontWeight: active ? 600 : 400,
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Tab Panel */}
+              {journeyTab === 'streak' && (
+                <DailyStreakTracker
+                  historyMap={devotionData.history}
+                  pausedDates={devotionData.streakPausedDates}
+                  onTogglePauseToday={devotionData.toggleStreakPauseToday}
                   isLightMode={isLightMode}
-                  onSelectStation={(idx) => {
-                    setVerseIndex(0);
-                    devotionData.goToStation(idx);
-                  }}
+                  isVisible={currentView === 'profile' && journeyTab === 'streak'}
                 />
               )}
 
-              {/* Consistency Heatmap */}
-              <DevotionHeatmap isLightMode={isLightMode} historyMap={devotionData.history} />
+              {journeyTab === 'badges' && (
+                <BadgesShowcase
+                  badgeStatuses={devotionData.badgeStatuses}
+                  unlockedCount={devotionData.unlockedBadgeCount}
+                  totalCount={devotionData.totalBadgeCount}
+                  isLightMode={isLightMode}
+                  onInspectBadge={(badge) => setInspectedBadge(badge)}
+                />
+              )}
 
-              {/* Actionable Preferences Menu */}
-              <div className="w-full flex flex-col gap-3 mb-10">
+              {journeyTab === 'path' && (
+                <div className="w-full">
+                  {stations.length > 0 && (
+                    <StationIndicator
+                      stations={stations}
+                      currentStation={maq.currentStation}
+                      unlockedStations={maq.unlockedStations || [0]}
+                      yaqeenProgress={maq.yaqeenProgress}
+                      accentHex={accentHex}
+                      isLightMode={isLightMode}
+                      onSelectStation={(idx) => {
+                        setVerseIndex(0);
+                        devotionData.goToStation(idx);
+                      }}
+                    />
+                  )}
+                  <DevotionHeatmap isLightMode={isLightMode} historyMap={devotionData.history} />
+                </div>
+              )}
+
+              {/* Compact 2-Column Sanctuary Menu */}
+              <div className="w-full grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowDuas(true)}
+                  className={`min-h-[44px] px-3 py-2 rounded-[16px] border flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                    isLightMode
+                      ? 'bg-white/50 hover:bg-white/75 border-white/65 island-light'
+                      : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] island-dark'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <BookIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
+                    <span className={`font-serif-eng text-[10px] uppercase tracking-[0.12em] truncate ${tTextMain}`}>
+                      Duas ({devotionData.favoriteDuaIds?.length || 0})
+                    </span>
+                  </div>
+                  <ChevronRightIcon size={13} className={`${tTextSub} opacity-45 shrink-0`} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowQada(true)}
+                  className={`min-h-[44px] px-3 py-2 rounded-[16px] border flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                    isLightMode
+                      ? 'bg-white/50 hover:bg-white/75 border-white/65 island-light'
+                      : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] island-dark'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <RotateCcwIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
+                    <span className={`font-serif-eng text-[10px] uppercase tracking-[0.12em] truncate ${tTextMain}`}>
+                      Qada ({qadaTotals.totalRemaining})
+                    </span>
+                  </div>
+                  <ChevronRightIcon size={13} className={`${tTextSub} opacity-45 shrink-0`} />
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setShowArchive(true)}
-                  className={`w-full flex items-center justify-between p-4 rounded-[20px] border transition-all duration-500 hover:scale-[1.02] cursor-pointer ${
+                  className={`min-h-[44px] px-3 py-2 rounded-[16px] border flex items-center justify-between gap-2 transition-colors cursor-pointer ${
                     isLightMode
-                      ? 'bg-white/40 border-white/50 island-light'
-                      : 'bg-white/[0.04] border-white/[0.08] island-dark'
+                      ? 'bg-white/50 hover:bg-white/75 border-white/65 island-light'
+                      : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] island-dark'
                   }`}
                 >
-                  <div className="flex items-center gap-4">
-                    <BookmarkIcon
-                      size={16}
-                      className={isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}
-                    />
-                    <span
-                      className={`font-serif-eng text-[12px] uppercase ${tTextMain} tracking-[0.18em]`}
-                    >
-                      Saved Verses ({devotionData.savedVerses.length})
+                  <div className="flex items-center gap-2 min-w-0">
+                    <BookmarkIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
+                    <span className={`font-serif-eng text-[10px] uppercase tracking-[0.12em] truncate ${tTextMain}`}>
+                      Saved ({devotionData.savedVerses.length})
                     </span>
                   </div>
-                  <ChevronRightIcon size={16} className={`${tTextSub} opacity-50`} />
+                  <ChevronRightIcon size={13} className={`${tTextSub} opacity-45 shrink-0`} />
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setShowReminders(true)}
-                  className={`w-full flex items-center justify-between p-4 rounded-[20px] border transition-all duration-500 hover:scale-[1.02] cursor-pointer ${
+                  className={`min-h-[44px] px-3 py-2 rounded-[16px] border flex items-center justify-between gap-2 transition-colors cursor-pointer ${
                     isLightMode
-                      ? 'bg-white/40 border-white/50 island-light'
-                      : 'bg-white/[0.04] border-white/[0.08] island-dark'
+                      ? 'bg-white/50 hover:bg-white/75 border-white/65 island-light'
+                      : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] island-dark'
                   }`}
                 >
-                  <div className="flex items-center gap-4">
-                    <BellIcon
-                      size={16}
-                      className={isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}
-                    />
-                    <span
-                      className={`font-serif-eng text-[12px] uppercase ${tTextMain} tracking-[0.18em]`}
-                    >
-                      Prayer Alerts
+                  <div className="flex items-center gap-2 min-w-0">
+                    <BellIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
+                    <span className={`font-serif-eng text-[10px] uppercase tracking-[0.12em] truncate ${tTextMain}`}>
+                      Alerts{enabledAlertsCount > 0 ? ` (${enabledAlertsCount})` : ''}
                     </span>
                   </div>
-                  <ChevronRightIcon size={16} className={`${tTextSub} opacity-50`} />
+                  <ChevronRightIcon size={13} className={`${tTextSub} opacity-45 shrink-0`} />
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setShowSettings(true)}
-                  className={`w-full flex items-center justify-between p-4 rounded-[20px] border transition-all duration-500 hover:scale-[1.02] cursor-pointer ${
+                  className={`col-span-2 min-h-[44px] px-3.5 py-2 rounded-[16px] border flex items-center justify-between gap-2 transition-colors cursor-pointer ${
                     isLightMode
-                      ? 'bg-white/40 border-white/50 island-light'
-                      : 'bg-white/[0.04] border-white/[0.08] island-dark'
+                      ? 'bg-white/50 hover:bg-white/75 border-white/65 island-light'
+                      : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] island-dark'
                   }`}
                 >
-                  <div className="flex items-center gap-4">
-                    <SettingsIcon
-                      size={16}
-                      className={isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}
-                    />
-                    <span
-                      className={`font-serif-eng text-[12px] uppercase ${tTextMain} tracking-[0.18em]`}
-                    >
-                      Preferences
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <SettingsIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
+                    <span className={`font-serif-eng text-[10px] uppercase tracking-[0.14em] truncate ${tTextMain}`}>
+                      Preferences &amp; Backup
                     </span>
                   </div>
-                  <ChevronRightIcon size={16} className={`${tTextSub} opacity-50`} />
+                  <ChevronRightIcon size={14} className={`${tTextSub} opacity-45 shrink-0`} />
                 </button>
               </div>
             </div>
@@ -1192,7 +1504,7 @@ export default function App() {
         <div className="w-[44px] md:w-[140px] flex-shrink-0 h-full relative pointer-events-none pr-1 md:pr-10">
           <nav
             aria-label="Sanctuary Navigation"
-            className={`absolute right-2 md:right-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 py-2 px-1 w-[38px] rounded-full border pointer-events-auto transition-all duration-1000 ${
+            className={`absolute right-2 md:right-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 py-2 px-1 w-[38px] rounded-full border pointer-events-auto transition-all duration-300 ${
               isLightMode
                 ? 'bg-white/30 border-white/40 engraved-light island-light'
                 : 'bg-[#12100d]/35 border-white/[0.06] engraved-dark island-dark'
@@ -1254,27 +1566,36 @@ export default function App() {
             >
               <ProfileNavIcon size={15} />
             </button>
-
-            {/* Qibla Compass Button */}
-            <button
-              type="button"
-              aria-label="Qibla Compass"
-              onClick={() => setShowQibla(true)}
-              className={`relative w-7 h-7 rounded-full transition-all duration-500 hover:scale-105 flex items-center justify-center cursor-pointer ${
-                showQibla
-                  ? isLightMode
-                    ? 'text-[#9c7533] shadow-[0_2px_10px_rgba(156,117,51,0.2)] bg-white/50'
-                    : 'text-[#d2a24b] shadow-[0_2px_10px_rgba(210,162,75,0.2)] bg-white/5'
-                  : isLightMode
-                    ? 'text-[#4a453d] opacity-50 hover:opacity-100'
-                    : 'text-[#e4dac8] opacity-30 hover:opacity-100'
-              }`}
-            >
-              <CompassIcon size={15} />
-            </button>
           </nav>
         </div>
       </div>
+
+      {/* Bottom-Right Qibla Icon Trigger */}
+      <button
+        type="button"
+        aria-label={
+          prayerTimes.hasLocation && prayerTimes.prayerData?.qiblaBearing != null
+            ? `Qibla Compass (${prayerTimes.prayerData.qiblaBearing}° ${prayerTimes.prayerData.qiblaCardinal})`
+            : 'Qibla Compass'
+        }
+        title={
+          prayerTimes.hasLocation && prayerTimes.prayerData?.qiblaBearing != null
+            ? `Qibla · ${prayerTimes.prayerData.qiblaBearing}° ${prayerTimes.prayerData.qiblaCardinal}`
+            : 'Qibla Compass'
+        }
+        onClick={() => setShowQibla(true)}
+        className={`absolute bottom-3.5 right-3.5 md:bottom-7 md:right-8 z-30 w-11 h-11 rounded-full border flex items-center justify-center transition-all duration-500 hover:scale-105 cursor-pointer pointer-events-auto ${
+          showQibla
+            ? isLightMode
+              ? 'bg-white/75 border-[#9c7533]/40 text-[#9c7533] shadow-[0_2px_12px_rgba(156,117,51,0.22)] island-light'
+              : 'bg-[#12100d]/70 border-[#d2a24b]/45 text-[#d2a24b] shadow-[0_2px_12px_rgba(210,162,75,0.22)] island-dark'
+            : isLightMode
+              ? 'bg-white/45 hover:bg-white/65 border-white/60 text-[#4a453d] hover:text-[#9c7533] engraved-light island-light'
+              : 'bg-[#12100d]/45 hover:bg-[#12100d]/65 border-white/[0.08] text-[#e4dac8]/70 hover:text-[#d2a24b] engraved-dark island-dark'
+        }`}
+      >
+        <CompassIcon size={17} />
+      </button>
 
       {/* --- 5. FOCAL STACK (3D ROLODEX) - ONLY SHOW ON MAIN VIEW --- */}
       {currentView === 'main' && allCompleted && reviewPrayers && (
@@ -1290,7 +1611,7 @@ export default function App() {
       )}
 
       <div
-        className="absolute bottom-[48px] md:bottom-[56px] left-1/2 -translate-x-1/2 z-30 w-full max-w-[288px] sm:max-w-[308px] h-[64px] flex justify-center items-center pointer-events-none transition-[opacity,visibility] duration-700"
+        className="absolute bottom-[56px] md:bottom-[64px] left-1/2 -translate-x-1/2 z-30 w-full max-w-[288px] sm:max-w-[308px] h-[64px] flex justify-center items-center pointer-events-none transition-[opacity,visibility] duration-500"
         style={{
           opacity: currentView === 'main' ? 1 : 0,
           visibility: currentView === 'main' ? 'visible' : 'hidden',
@@ -1305,9 +1626,9 @@ export default function App() {
 
           let yPos = offset * 48;
           const scale = 1 - Math.abs(offset) * 0.12;
-          let opacity = isActive ? 1 : Math.max(0, 0.26 - Math.abs(offset) * 0.12);
+          let opacity = isActive ? 1 : Math.max(0, 0.28 - Math.abs(offset) * 0.12);
 
-          if (isLightMode && !isActive && opacity > 0) opacity += 0.1;
+          if (isLightMode && !isActive && opacity > 0) opacity += 0.24;
           if (Math.abs(offset) >= 3) opacity = 0;
           if (hideStackForSeal) {
             opacity = 0;
@@ -1346,9 +1667,7 @@ export default function App() {
                     prayerLongPressTimer.current = setTimeout(() => {
                       prayerLongPressTriggered.current = true;
                       prayerLongPressTimer.current = null;
-                      if (typeof navigator !== 'undefined' && navigator.vibrate) {
-                        navigator.vibrate(30);
-                      }
+                      hapticTapMedium();
                       handleTogglePrayer(item.id, 'qada');
                     }, 480);
                   }
@@ -1375,14 +1694,14 @@ export default function App() {
                   if (!isActive) setFocusedIndex(i);
                   else handleTogglePrayer(item.id, 'ontime');
                 }}
-                className={`group relative flex items-center justify-between w-full px-4 py-3.5 rounded-2xl transition-all duration-500 ease-out overflow-hidden border cursor-pointer ${
+                className={`group relative flex items-center justify-between w-full px-4 py-3.5 rounded-2xl transition-all duration-300 ease-out overflow-hidden border cursor-pointer ${
                   isLightMode
                     ? isChecking || isCompletedItem
-                      ? 'bg-white/55 border-[#9c7533]/40 island-light'
-                      : 'bg-white/45 hover:bg-white/65 border-white/75 island-light'
+                      ? 'bg-white/82 border-[#9c7533]/45 island-light'
+                      : 'bg-white/80 hover:bg-white/92 border-[#9c7533]/18 island-light'
                     : isChecking || isCompletedItem
-                      ? 'bg-[#d2a24b]/10 border-[#d2a24b]/30 island-dark'
-                      : 'bg-white/[0.03] hover:bg-white/[0.06] border-white/[0.06] island-dark'
+                      ? 'bg-[#d2a24b]/14 border-[#d2a24b]/35 island-dark'
+                      : 'bg-[#0b0e16]/76 hover:bg-[#0e1320]/88 border-white/[0.12] island-dark'
                 }`}
               >
                 <div className="flex items-center space-x-3 z-10 min-w-0">
@@ -1394,8 +1713,8 @@ export default function App() {
                           ? 'text-[#9c7533]'
                           : 'text-[#d2a24b]'
                         : isLightMode
-                          ? 'text-[#4a453d] opacity-65 group-hover:opacity-90 group-hover:text-[#9c7533]'
-                          : 'text-[#e4dac8] opacity-60 group-hover:opacity-85 group-hover:text-[#d2a24b]'
+                          ? 'text-[#4a453d] opacity-75 group-hover:opacity-95 group-hover:text-[#9c7533]'
+                          : 'text-[#e4dac8] opacity-72 group-hover:opacity-95 group-hover:text-[#d2a24b]'
                     }`}
                   />
                   <div className="flex flex-col items-start min-w-0">
@@ -1406,8 +1725,8 @@ export default function App() {
                             ? 'text-[#9c7533] font-medium'
                             : 'text-[#d2a24b]'
                           : isLightMode
-                            ? 'text-[#4a453d] opacity-85 group-hover:opacity-100'
-                            : 'text-[#e4dac8] opacity-85 group-hover:opacity-100'
+                            ? 'text-[#2c2720] opacity-90 group-hover:opacity-100'
+                            : 'text-[#f2ead9] opacity-90 group-hover:opacity-100'
                       }`}
                       style={{ letterSpacing: '0.1em', marginRight: '-0.1em' }}
                     >
@@ -1415,16 +1734,16 @@ export default function App() {
                     </span>
                     {isActive && (
                       <span
-                        className={`font-serif-eng text-[8px] uppercase tracking-[0.14em] mt-0.5 leading-none ${
+                        className={`font-serif-eng text-[8.5px] uppercase tracking-[0.14em] mt-0.5 leading-none ${
                           isCompletedItem
                             ? isLightMode
-                              ? 'text-[#9c7533]/80'
-                              : 'text-[#d2a24b]/80'
+                              ? 'text-[#9c7533]/90'
+                              : 'text-[#d2a24b]/90'
                             : isNextPrayer
                               ? isLightMode
-                                ? 'text-[#9c7533]/85'
-                                : 'text-[#d2a24b]/85'
-                              : `${tTextSub} opacity-50`
+                                ? 'text-[#9c7533]/92'
+                                : 'text-[#d2a24b]/92'
+                              : `${tTextSub} opacity-72`
                         }`}
                       >
                         {isCompletedItem
@@ -1585,6 +1904,9 @@ export default function App() {
         onClose={() => setShowReminders(false)}
         isLightMode={isLightMode}
         devotionData={devotionData}
+        prayerTimes={prayerTimes}
+        notifications={notifications}
+        onOpenCityPicker={() => setShowCityPicker(true)}
       />
 
       <QiblaModal
@@ -1602,6 +1924,24 @@ export default function App() {
         prayerTimes={prayerTimes}
       />
 
+      <DuasModal
+        isOpen={showDuas}
+        onClose={() => setShowDuas(false)}
+        isLightMode={isLightMode}
+        favoriteDuaIds={devotionData.favoriteDuaIds}
+        onToggleFavorite={devotionData.toggleFavoriteDua}
+      />
+
+      <QadaModal
+        isOpen={showQada}
+        onClose={() => setShowQada(false)}
+        isLightMode={isLightMode}
+        qada={devotionData.qada}
+        onSetCount={devotionData.setQadaCount}
+        onBulkAddYears={devotionData.bulkAddQadaYears}
+        onCompleteOne={devotionData.completeOneQada}
+      />
+
       {misbahaLaunch && (
         <MisbahaMode
           isOpen={!!misbahaLaunch}
@@ -1614,6 +1954,25 @@ export default function App() {
           onClose={() => setMisbahaLaunch(null)}
         />
       )}
+
+      {/* SACRED BADGE LOTTIE-STYLE REWARD & SHOWCASE OVERLAY */}
+      <BadgeRewardOverlay
+        badge={devotionData.activeCelebrationBadge || inspectedBadge}
+        isLightMode={isLightMode}
+        isNewUnlock={Boolean(devotionData.activeCelebrationBadge)}
+        queueRemaining={
+          devotionData.activeCelebrationBadge
+            ? Math.max(0, (devotionData.pendingBadgeCount || 0) - 1)
+            : 0
+        }
+        onClose={() => {
+          if (devotionData.activeCelebrationBadge) {
+            devotionData.dismissCelebrationBadge();
+          } else {
+            setInspectedBadge(null);
+          }
+        }}
+      />
 
       {/* KASHF (UNVEILING) CEREMONY */}
       {kashfCeremony && (
@@ -1648,6 +2007,20 @@ export default function App() {
           </div>
         </div>
       )}
+      {/* SERENE LOCAL PRAYER NOTIFICATION BANNER */}
+      <SacredNotificationToast
+        toast={notifications.activeToast}
+        isLightMode={isLightMode}
+        isAlreadyCompleted={Boolean(
+          notifications.activeToast?.prayerId &&
+            devotionData.dailyCompletedPrayers?.includes(notifications.activeToast.prayerId)
+        )}
+        onMarkPrayed={(prayerId) => {
+          devotionData.logPrayer(prayerId, 'ontime');
+          notifications.dismissToast();
+        }}
+        onDismiss={notifications.dismissToast}
+      />
     </div>
   );
 }

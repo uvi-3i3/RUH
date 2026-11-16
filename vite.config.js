@@ -15,23 +15,40 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['favicon.svg', 'ruh-mark.svg', 'sw-notifications.js'],
       manifest: {
+        id: '/',
         name: 'Ruh Spiritual Companion',
         short_name: 'Ruh',
         description: 'A serene spiritual companion and habit-forming app',
         theme_color: '#0a0908',
         background_color: '#0a0908',
         display: 'standalone',
+        start_url: '/',
+        scope: '/',
         icons: [
           {
-            src: 'favicon.svg',
+            src: '/ruh-mark.svg',
             sizes: '192x192 512x512',
             type: 'image/svg+xml',
-            purpose: 'any maskable'
-          }
-        ]
-      }
+            purpose: 'any',
+          },
+          {
+            src: '/favicon.svg',
+            sizes: '192x192 512x512',
+            type: 'image/svg+xml',
+            purpose: 'any',
+          },
+        ],
+      },
+      workbox: {
+        importScripts: ['/sw-notifications.js'],
+        cleanupOutdatedCaches: true,
+        navigateFallback: null,
+      },
+      devOptions: {
+        enabled: false,
+      },
     })
   ],
   server: {

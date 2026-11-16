@@ -1,21 +1,27 @@
 import { useEffect, useState } from 'react';
-import { Capacitor } from '@capacitor/core';
-import { LocalNotifications } from '@capacitor/local-notifications';
-import { ChevronDownIcon, BellIcon, TrashIcon, PlusIcon } from '../icons/Icons';
+import { BellIcon, CheckCircleIcon, ChevronDownIcon, PlusIcon, SparklesIcon, TrashIcon } from '../icons/Icons';
 import { PRAYERS } from '../../data/constants';
+import { NOTIFICATION_LEAD_OPTIONS, PRAYER_REMINDER_MESSAGES } from '../../utils/notificationLogic';
 
-export const RemindersModal = ({ isOpen, onClose, isLightMode, devotionData }) => {
-  const [hasPermission, setHasPermission] = useState(false);
+export const RemindersModal = ({
+  isOpen,
+  onClose,
+  isLightMode,
+  devotionData,
+  prayerTimes,
+  notifications,
+  onOpenCityPicker,
+}) => {
   const [customTitle, setCustomTitle] = useState('');
   const [customTime, setCustomTime] = useState('09:00');
   const [feedback, setFeedback] = useState({});
   const [statusNotice, setStatusNotice] = useState('');
 
   useEffect(() => {
-    if (isOpen && Capacitor.isNativePlatform()) {
-      LocalNotifications.checkPermissions().then((res) => {
-        setHasPermission(res.display === 'granted');
-      });
+    if (isOpen) {
+      notifications?.refreshPermission?.();
+    } else {
+      setStatusNotice('');
     }
   }, [isOpen]);
 
@@ -24,6 +30,12 @@ export const RemindersModal = ({ isOpen, onClose, isLightMode, devotionData }) =
   const tTextMain = isLightMode ? 'text-[#1a1814]' : 'text-[rgba(245,238,224,0.94)]';
   const tTextSub = isLightMode ? 'text-[#4a453d]' : 'text-[#e4dac8]';
   const accentHex = isLightMode ? '#9c7533' : '#d2a24b';
+
+  const permission = notifications?.permission || 'default';
+  const leadMinutes = devotionData.notificationLeadMinutes || 0;
+  const chimeEnabled = devotionData.notificationChime !== false;
+  const enabledPrayerCount = PRAYERS.filter((p) => devotionData.prayers?.[p.id]?.enabled).length;
+  const allPrayersEnabled = enabledPrayerCount === PRAYERS.length;
 
   const showFeedback = (id, status) => {
     setFeedback((prev) => ({ ...prev, [id]: status }));
@@ -34,132 +46,167 @@ export const RemindersModal = ({ isOpen, onClose, isLightMode, devotionData }) =
           delete n[id];
           return n;
         }),
-      2000
+      1800
     );
   };
 
-  const ensurePermissions = async () => {
-    if (!Capacitor.isNativePlatform()) {
-      setStatusNotice('Schedule saved in Sanctuary. Native lock-screen alerts activate automatically on iOS & Android.');
+  const ensurePermissionForAction = async () => {
+    if (!notifications?.requestPermission) return true;
+    if (permission === 'granted' || permission === 'native') return true;
+    if (permission === 'unsupported') {
+      setStatusNotice('Sanctuary in-app alerts are active. This browser does not support OS background alerts.');
       return true;
     }
-    if (!hasPermission) {
-      const res = await LocalNotifications.requestPermissions();
-      if (res.display !== 'granted') {
-        setStatusNotice('Please enable notification permissions in your device settings.');
-        return false;
-      }
-      setHasPermission(true);
+    if (permission === 'denied') {
+      setStatusNotice('Browser alerts are blocked in site settings. In-app Sanctuary alerts will still appear while open.');
+      return true;
+    }
+    const nextPerm = await notifications.requestPermission();
+    if (nextPerm === 'granted') {
+      setStatusNotice('Local push notifications enabled for this device.');
+    } else if (nextPerm === 'denied') {
+      setStatusNotice('Browser alerts declined — in-app Sanctuary banners remain active while open.');
     }
     return true;
   };
 
-  const scheduleNativeNotification = async (id, title, body, timeString) => {
-    if (!Capacitor.isNativePlatform() || !timeString) return;
-    const [hour, minute] = timeString.split(':').map(Number);
-    await LocalNotifications.cancel({ notifications: [{ id }] });
-    await LocalNotifications.schedule({
-      notifications: [
-        {
-          title,
-          body,
-          id,
-          schedule: { allowWhileIdle: true, on: { hour, minute } },
-          sound: null,
-        },
-      ],
-    });
-  };
-
-  const cancelNativeNotification = async (id) => {
-    if (!Capacitor.isNativePlatform()) return;
-    await LocalNotifications.cancel({ notifications: [{ id }] });
-  };
-
   const handlePrayerToggle = async (prayerId, currentState, currentTime) => {
-    const canProceed = await ensurePermissions();
-    if (!canProceed) return;
+    const isNowEnabled = !currentState;
+    if (isNowEnabled) {
+      await ensurePermissionForAction();
+    }
 
     devotionData.togglePrayerReminder(prayerId);
-    const isNowEnabled = !currentState;
-    const idMap = { fajr: 1, dhuhr: 2, asr: 3, maghrib: 4, isha: 5 };
-    const notifId = idMap[prayerId];
+    const notifId = notifications?.prayerIdMap?.[prayerId];
 
-    if (isNowEnabled) {
+    if (isNowEnabled && notifId) {
       const p = PRAYERS.find((item) => item.id === prayerId);
-      try {
-        await scheduleNativeNotification(
-          notifId,
-          `${p.label} Prayer`,
-          `It is time to center your soul for ${p.label}.`,
-          currentTime
-        );
-        showFeedback(prayerId, 'success');
-      } catch {
-        showFeedback(prayerId, 'error');
-      }
-    } else {
-      await cancelNativeNotification(notifId);
-      showFeedback(prayerId, 'success');
+      const copy = PRAYER_REMINDER_MESSAGES[prayerId];
+      await notifications?.scheduleNativeReminder?.(
+        notifId,
+        `${p?.label || prayerId} Prayer`,
+        copy?.onTime || `It is time to center your soul for ${p?.label}.`,
+        currentTime,
+        leadMinutes
+      );
+      showFeedback(prayerId, 'saved');
+    } else if (notifId) {
+      await notifications?.cancelNativeReminder?.(notifId);
+      showFeedback(prayerId, 'saved');
     }
   };
 
   const handlePrayerTimeChange = async (prayerId, newTime, currentState) => {
     devotionData.updatePrayerTime(prayerId, newTime);
-    if (currentState) {
-      const idMap = { fajr: 1, dhuhr: 2, asr: 3, maghrib: 4, isha: 5 };
+    const notifId = notifications?.prayerIdMap?.[prayerId];
+    if (currentState && notifId) {
       const p = PRAYERS.find((item) => item.id === prayerId);
-      await scheduleNativeNotification(
-        idMap[prayerId],
-        `${p.label} Prayer`,
-        `It is time to center your soul for ${p.label}.`,
-        newTime
+      const copy = PRAYER_REMINDER_MESSAGES[prayerId];
+      await notifications?.scheduleNativeReminder?.(
+        notifId,
+        `${p?.label || prayerId} Prayer`,
+        copy?.onTime || `It is time to center your soul for ${p?.label}.`,
+        newTime,
+        leadMinutes
       );
+      showFeedback(prayerId, 'saved');
+    }
+  };
+
+  const handleToggleAllPrayers = async () => {
+    const targetEnabled = !allPrayersEnabled;
+    if (targetEnabled) {
+      await ensurePermissionForAction();
+    }
+    devotionData.setAllPrayerRemindersEnabled?.(targetEnabled);
+    setStatusNotice(
+      targetEnabled
+        ? 'All five daily prayer reminders enabled.'
+        : 'All five daily prayer reminders paused.'
+    );
+  };
+
+  const handleSyncSolar = () => {
+    if (!prayerTimes?.hasLocation) {
+      onClose?.();
+      onOpenCityPicker?.();
+      return;
+    }
+    const ok = notifications?.syncFromLiveSolarTimes?.();
+    if (ok) {
+      setStatusNotice(`Prayer reminder times synced to ${prayerTimes.cityLabel}.`);
+    }
+  };
+
+  const handleLeadChange = async (mins) => {
+    devotionData.setNotificationLeadMinutes?.(mins);
+    await notifications?.syncAllNativePrayerSchedules?.(mins);
+  };
+
+  const handlePreviewAlert = async () => {
+    const res = await notifications?.sendPreviewAlert?.();
+    if (res?.osDelivered) {
+      setStatusNotice('Sent gentle local push notification & Sanctuary alert banner.');
+    } else if (res?.permission === 'denied') {
+      setStatusNotice('Showed Sanctuary alert banner (OS notifications are blocked in browser settings).');
+    } else {
+      setStatusNotice('Previewed gentle Sanctuary alert banner.');
     }
   };
 
   const handleAddCustom = async (e) => {
     if (e) e.preventDefault();
     if (!customTitle.trim()) return;
-    const canProceed = await ensurePermissions();
-    if (!canProceed) return;
+    await ensurePermissionForAction();
 
     const newIdStr = devotionData.addCustomReminder(customTitle.trim(), customTime);
     const numericId = parseInt(newIdStr.replace(/[^0-9]/g, '').slice(-8), 10);
-    await scheduleNativeNotification(
+    await notifications?.scheduleNativeReminder?.(
       numericId,
       customTitle.trim(),
       `Your personal devotion reminder for ${customTitle.trim()}.`,
-      customTime
+      customTime,
+      0
     );
     setCustomTitle('');
   };
 
   const handleCustomToggle = async (cr) => {
-    const canProceed = await ensurePermissions();
-    if (!canProceed) return;
+    const isNowEnabled = !cr.enabled;
+    if (isNowEnabled) {
+      await ensurePermissionForAction();
+    }
 
     devotionData.toggleCustomReminder(cr.id);
-    const isNowEnabled = !cr.enabled;
     const numericId = parseInt(cr.id.replace(/[^0-9]/g, '').slice(-8), 10);
 
     if (isNowEnabled) {
-      await scheduleNativeNotification(
+      await notifications?.scheduleNativeReminder?.(
         numericId,
         cr.title,
         `Your personal devotion reminder for ${cr.title}.`,
-        cr.time
+        cr.time,
+        0
       );
     } else {
-      await cancelNativeNotification(numericId);
+      await notifications?.cancelNativeReminder?.(numericId);
     }
   };
 
   const handleCustomDelete = async (cr) => {
     devotionData.deleteCustomReminder(cr.id);
     const numericId = parseInt(cr.id.replace(/[^0-9]/g, '').slice(-8), 10);
-    await cancelNativeNotification(numericId);
+    await notifications?.cancelNativeReminder?.(numericId);
   };
+
+  const permissionLabel =
+    permission === 'granted' || permission === 'native'
+      ? 'Local Push Active'
+      : permission === 'denied'
+        ? 'Browser Alerts Blocked'
+        : permission === 'unsupported'
+          ? 'In-App Sanctuary Alerts'
+          : 'Enable Local Push';
 
   return (
     <div
@@ -179,14 +226,16 @@ export const RemindersModal = ({ isOpen, onClose, isLightMode, devotionData }) =
 
       <div className="relative z-10 w-full max-w-xl mx-auto h-full flex flex-col">
         {/* Sticky Top Header */}
-        <div className="w-full flex items-center justify-between px-6 pt-8 pb-4 border-b border-current/10 shrink-0">
+        <div className="w-full flex items-center justify-between px-6 pt-7 pb-4 border-b border-current/10 shrink-0">
           <div className="flex items-center gap-3">
-            <BellIcon size={22} style={{ color: accentHex }} />
+            <BellIcon size={21} style={{ color: accentHex }} />
             <div>
               <h2 className={`font-serif-eng text-lg font-medium uppercase tracking-[0.2em] ${tTextMain}`}>
                 Sacred Reminders
               </h2>
-              <span className={`font-calligraphy text-sm opacity-70 ${tTextSub}`} dir="rtl">التذكير اليومي</span>
+              <span className={`font-calligraphy text-sm opacity-75 ${tTextSub}`} dir="rtl">
+                التذكير اليومي
+              </span>
             </div>
           </div>
           <button
@@ -194,7 +243,7 @@ export const RemindersModal = ({ isOpen, onClose, isLightMode, devotionData }) =
             aria-label="Close Reminders"
             onClick={onClose}
             className={`w-11 h-11 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
-              isLightMode ? 'bg-white/70 border-black/10 text-[#4a453d]' : 'bg-white/5 border-white/10 text-white'
+              isLightMode ? 'bg-white/75 border-black/10 text-[#4a453d]' : 'bg-white/5 border-white/10 text-white'
             }`}
           >
             <ChevronDownIcon size={20} />
@@ -202,10 +251,10 @@ export const RemindersModal = ({ isOpen, onClose, isLightMode, devotionData }) =
         </div>
 
         {/* Scrollable Content */}
-        <div className="flex-1 w-full overflow-y-auto hide-scrollbar px-6 py-6 flex flex-col gap-6">
+        <div className="flex-1 w-full overflow-y-auto hide-scrollbar px-6 py-5 flex flex-col gap-5">
           {statusNotice && (
             <div
-              className={`w-full px-4 py-3 rounded-2xl border font-serif-eng text-xs leading-relaxed ${
+              className={`w-full px-4 py-2.5 rounded-2xl border font-serif-eng text-xs leading-relaxed ${
                 isLightMode
                   ? 'bg-[#9c7533]/10 border-[#9c7533]/30 text-[#1a1814]'
                   : 'bg-[#d2a24b]/10 border-[#d2a24b]/30 text-[#f5eee0]'
@@ -215,45 +264,203 @@ export const RemindersModal = ({ isOpen, onClose, isLightMode, devotionData }) =
             </div>
           )}
 
-          {/* THE 5 PRAYERS */}
-          <div className="flex flex-col gap-3">
-            <span className={`font-serif-eng uppercase tracking-[0.2em] text-xs opacity-70 px-1 ${tTextSub}`}>
-              01. The Five Pillars
+          {/* 01. DELIVERY & CADENCE */}
+          <div className="flex flex-col gap-2.5">
+            <span className={`font-serif-eng uppercase tracking-[0.2em] text-[11px] opacity-70 px-1 ${tTextSub}`}>
+              01. Gentle Alert Delivery
             </span>
 
             <div
+              className={`w-full rounded-3xl border p-4 flex flex-col gap-3.5 ${
+                isLightMode ? 'bg-white/72 border-black/10 shadow-xs' : 'bg-white/[0.03] border-white/10'
+              }`}
+            >
+              {/* Permission + Test Button */}
+              <div className="flex flex-wrap items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{
+                      backgroundColor:
+                        permission === 'granted' || permission === 'native'
+                          ? '#10b981'
+                          : permission === 'denied'
+                            ? '#ef4444'
+                            : accentHex,
+                    }}
+                  />
+                  <span className={`font-serif-eng text-sm font-medium ${tTextMain}`}>
+                    {permissionLabel}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {permission === 'default' && (
+                    <button
+                      type="button"
+                      onClick={ensurePermissionForAction}
+                      className="min-h-[34px] px-3 rounded-xl border font-serif-eng text-[10px] uppercase tracking-[0.14em] font-medium cursor-pointer transition-colors"
+                      style={{
+                        backgroundColor: isLightMode ? '#9c7533' : 'rgba(210,162,75,0.2)',
+                        borderColor: isLightMode ? '#9c7533' : 'rgba(210,162,75,0.45)',
+                        color: isLightMode ? '#ffffff' : '#f3d9a4',
+                      }}
+                    >
+                      Allow Push
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handlePreviewAlert}
+                    className={`min-h-[34px] px-3 rounded-xl border font-serif-eng text-[10px] uppercase tracking-[0.14em] flex items-center gap-1.5 cursor-pointer transition-colors ${
+                      isLightMode
+                        ? 'border-black/12 text-[#1a1814] hover:bg-black/5'
+                        : 'border-white/15 text-[#f5eee0] hover:bg-white/5'
+                    }`}
+                  >
+                    <SparklesIcon size={12} style={{ color: accentHex }} />
+                    <span>Preview Alert</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Lead Timing & Soft Chime */}
+              <div
+                className={`pt-3 border-t flex flex-wrap items-center justify-between gap-3 ${
+                  isLightMode ? 'border-black/[0.06]' : 'border-white/[0.06]'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className={`font-serif-eng text-[10px] uppercase tracking-[0.14em] opacity-70 mr-1 ${tTextSub}`}>
+                    Timing:
+                  </span>
+                  {NOTIFICATION_LEAD_OPTIONS.map((mins) => {
+                    const active = leadMinutes === mins;
+                    return (
+                      <button
+                        key={mins}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => handleLeadChange(mins)}
+                        className={`min-h-[28px] px-2.5 rounded-lg border font-serif-eng text-[10px] tracking-[0.06em] cursor-pointer transition-colors ${
+                          active ? 'font-medium' : `${tTextSub} opacity-80 hover:opacity-100`
+                        }`}
+                        style={{
+                          backgroundColor: active
+                            ? isLightMode
+                              ? 'rgba(156,117,51,0.14)'
+                              : 'rgba(210,162,75,0.18)'
+                            : 'transparent',
+                          borderColor: active
+                            ? accentHex
+                            : isLightMode
+                              ? 'rgba(0,0,0,0.1)'
+                              : 'rgba(255,255,255,0.14)',
+                          color: active ? accentHex : undefined,
+                        }}
+                      >
+                        {mins === 0 ? 'At Adhan' : `${mins}m early`}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={chimeEnabled}
+                  onClick={() => devotionData.toggleNotificationChime?.()}
+                  className={`min-h-[28px] px-2.5 rounded-lg border font-serif-eng text-[10px] uppercase tracking-[0.12em] cursor-pointer transition-colors ${
+                    chimeEnabled
+                      ? isLightMode
+                        ? 'border-[#9c7533]/40 bg-[#9c7533]/10 text-[#7c5a1e]'
+                        : 'border-[#d2a24b]/40 bg-[#d2a24b]/12 text-[#e5c17b]'
+                      : isLightMode
+                        ? 'border-black/10 text-[#4a453d]/70'
+                        : 'border-white/10 text-[#e4dac8]/60'
+                  }`}
+                >
+                  Chime: {chimeEnabled ? 'On' : 'Quiet'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 02. THE 5 PRAYERS */}
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-center justify-between px-1 gap-2">
+              <span className={`font-serif-eng uppercase tracking-[0.2em] text-[11px] opacity-70 ${tTextSub}`}>
+                02. The Five Daily Prayers
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSyncSolar}
+                  className="font-serif-eng text-[10px] uppercase tracking-[0.14em] cursor-pointer hover:opacity-100 opacity-85 transition-opacity"
+                  style={{ color: accentHex }}
+                >
+                  {prayerTimes?.hasLocation ? 'Sync Solar Times' : 'Set City to Sync'}
+                </button>
+                <span className={`opacity-30 text-xs ${tTextSub}`} aria-hidden="true">
+                  ·
+                </span>
+                <button
+                  type="button"
+                  onClick={handleToggleAllPrayers}
+                  className={`font-serif-eng text-[10px] uppercase tracking-[0.14em] cursor-pointer hover:opacity-100 opacity-80 transition-opacity ${tTextMain}`}
+                >
+                  {allPrayersEnabled ? 'Mute All' : 'Enable All'}
+                </button>
+              </div>
+            </div>
+
+            <div
               className={`w-full rounded-3xl border overflow-hidden ${
-                isLightMode ? 'bg-white/70 border-black/10 shadow-xs' : 'bg-white/[0.03] border-white/10'
+                isLightMode ? 'bg-white/72 border-black/10 shadow-xs' : 'bg-white/[0.03] border-white/10'
               }`}
             >
               {PRAYERS.map((p, idx) => {
-                const stateObj = devotionData.prayers[p.id] || { enabled: false, time: '05:00' };
+                const stateObj = devotionData.prayers?.[p.id] || { enabled: false, time: '05:15' };
+                const copy = PRAYER_REMINDER_MESSAGES[p.id];
                 return (
                   <div
                     key={p.id}
-                    className={`flex items-center justify-between p-4 px-5 ${
+                    className={`flex items-center justify-between py-3.5 px-5 ${
                       idx !== PRAYERS.length - 1 ? 'border-b' : ''
-                    } ${isLightMode ? 'border-black/5' : 'border-white/5'}`}
+                    } ${isLightMode ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}
                   >
-                    <div className="flex items-center gap-4">
-                      <span className={`font-serif-eng text-lg min-w-[80px] ${tTextMain}`}>{p.label}</span>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="min-w-[82px]">
+                        <span className={`font-serif-eng text-[17px] leading-tight block ${tTextMain}`}>
+                          {p.label}
+                        </span>
+                        <span
+                          className="font-calligraphy text-[12px] leading-none opacity-75"
+                          style={{ color: accentHex }}
+                          dir="rtl"
+                        >
+                          {copy?.arabic}
+                        </span>
+                      </div>
+
                       <input
                         type="time"
                         aria-label={`${p.label} reminder time`}
                         value={stateObj.time}
                         onChange={(e) => handlePrayerTimeChange(p.id, e.target.value, stateObj.enabled)}
-                        className={`bg-transparent outline-none font-serif-eng text-xs tabular-nums tracking-wider px-2 py-1 rounded-lg border ${
+                        className={`bg-transparent outline-none font-serif-eng text-xs tabular-nums tracking-wider px-2.5 py-1.5 rounded-lg border ${
                           isLightMode
                             ? 'text-[#9c7533] border-black/10'
                             : 'text-[#d2a24b] border-white/10'
                         } cursor-pointer`}
                       />
                     </div>
-                    <div className="flex items-center gap-3">
+
+                    <div className="flex items-center gap-2.5 shrink-0">
                       {feedback[p.id] && (
-                        <span className="font-serif-eng text-xs" style={{ color: accentHex }}>
-                          Saved
-                        </span>
+                        <CheckCircleIcon size={14} style={{ color: accentHex }} aria-label="Saved" />
                       )}
                       <button
                         type="button"
@@ -284,16 +491,16 @@ export const RemindersModal = ({ isOpen, onClose, isLightMode, devotionData }) =
             </div>
           </div>
 
-          {/* CUSTOM REMINDERS */}
-          <div className="flex flex-col gap-3">
-            <span className={`font-serif-eng uppercase tracking-[0.2em] text-xs opacity-70 px-1 ${tTextSub}`}>
-              02. Personal Devotion Reminders
+          {/* 03. PERSONAL DEVOTION REMINDERS */}
+          <div className="flex flex-col gap-2.5 pb-4">
+            <span className={`font-serif-eng uppercase tracking-[0.2em] text-[11px] opacity-70 px-1 ${tTextSub}`}>
+              03. Personal Devotion Reminders
             </span>
 
             <form
               onSubmit={handleAddCustom}
               className={`w-full p-2 pl-4 rounded-2xl border flex items-center justify-between gap-2 ${
-                isLightMode ? 'bg-white/70 border-black/10 shadow-xs' : 'bg-white/[0.03] border-white/10'
+                isLightMode ? 'bg-white/72 border-black/10 shadow-xs' : 'bg-white/[0.03] border-white/10'
               }`}
             >
               <input
@@ -330,24 +537,28 @@ export const RemindersModal = ({ isOpen, onClose, isLightMode, devotionData }) =
             </form>
 
             {devotionData.customReminders.length > 0 && (
-              <div className="flex flex-col gap-2.5 mt-1">
+              <div className="flex flex-col gap-2 mt-1">
                 {devotionData.customReminders.map((cr) => (
                   <div
                     key={cr.id}
-                    className={`w-full p-4 px-5 rounded-2xl border flex justify-between items-center ${
-                      isLightMode ? 'bg-white/55 border-black/10' : 'bg-white/[0.03] border-white/10'
+                    className={`w-full py-3.5 px-5 rounded-2xl border flex justify-between items-center ${
+                      isLightMode ? 'bg-white/60 border-black/10' : 'bg-white/[0.03] border-white/10'
                     }`}
                   >
-                    <div className="flex flex-col">
-                      <span className={`font-serif-eng text-base font-medium ${tTextMain}`}>{cr.title}</span>
-                      <span className={`font-serif-eng text-xs tabular-nums opacity-70 ${tTextSub}`}>{cr.time}</span>
+                    <div className="flex flex-col min-w-0 pr-3">
+                      <span className={`font-serif-eng text-base font-medium truncate ${tTextMain}`}>
+                        {cr.title}
+                      </span>
+                      <span className={`font-serif-eng text-xs tabular-nums opacity-70 ${tTextSub}`}>
+                        {cr.time}
+                      </span>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 shrink-0">
                       <button
                         type="button"
                         aria-label={`Delete reminder ${cr.title}`}
                         onClick={() => handleCustomDelete(cr)}
-                        className="w-9 h-9 rounded-full flex items-center justify-center opacity-50 hover:opacity-100 transition-opacity text-red-500 cursor-pointer"
+                        className="w-9 h-9 rounded-full flex items-center justify-center opacity-55 hover:opacity-100 transition-opacity text-red-500 cursor-pointer"
                       >
                         <TrashIcon size={16} />
                       </button>

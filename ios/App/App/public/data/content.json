@@ -1,0 +1,236 @@
+{
+  "stations": [
+    {
+      "id": "sabr",
+      "name": "الصبر",
+      "nameEn": "Patience",
+      "subtitle": "The First Station",
+      "verses": [
+        {
+          "id": "s1v1",
+          "type": "quran",
+          "a": "لَا يُكَلِّفُ اللَّهُ نَفْسًا إِلَّا وُسْعَهَا",
+          "t": "Allah does not burden a soul\nbeyond that it can bear.",
+          "s": "Al-Baqarah · 2:286",
+          "c": "A definitive statement on human resilience. It serves as a divine guarantee that the very existence of a trial in your life means you already possess the exact internal architecture required to survive it.",
+          "simpleT": "God does not give a person\\nmore than they can handle.",
+          "simpleC": "A promise of human strength. It means if you are facing a problem right now, God knows you already have the ability to survive it."
+        },
+        {
+          "id": "s1v2",
+          "type": "quran",
+          "a": "إِنَّ مَعَ الْعُسْرِ يُسْرًا",
+          "t": "With every hardship\ncomes ease.",
+          "s": "Ash-Sharh · 94:6",
+          "c": "Grammatically in Arabic, 'the hardship' is definite (singular), while 'ease' is indefinite (plural). This implies that for every one specific difficulty you face, multiple avenues of relief are already unfolding.",
+          "simpleT": "With every hardship\\ncomes ease.",
+          "simpleC": "For every one difficulty you face, multiple ways of relief are already being created for you."
+        },
+        {
+          "id": "s1v3",
+          "type": "hadith",
+          "a": "لَيْسَ الشَّدِيدُ بِالصُّرَعَةِ، إِنَّمَا الشَّدِيدُ الَّذِي يَمْلِكُ نَفْسَهُ عِنْدَ الْغَضَبِ",
+          "t": "The strong man is not the good wrestler, but the strong man is he who controls himself when he is angry.",
+          "s": "Sahih al-Bukhari 6114",
+          "c": "A redefinition of power. True strength is not external dominance, but internal emotional regulation during moments of intense provocation.",
+          "simpleT": "The strong person is not the fighter, but the one who controls themselves when angry.",
+          "simpleC": "True strength is not physical power, but how well you control your emotions during very hard moments."
+        },
+        {
+          "id": "s1v4",
+          "type": "hadith",
+          "a": "إِنَّمَا الأَعْمَالُ بِالنِّيَّاتِ",
+          "t": "Verily, actions are judged\nby their intentions.",
+          "s": "Sahih al-Bukhari 1",
+          "c": "The ultimate equalizer of human effort. It teaches that the spiritual weight of any action is determined entirely by the unseen motive behind it.",
+          "simpleT": "Indeed, actions are judged\\nby their intentions.",
+          "simpleC": "The real value of any action is judged entirely by the hidden reason behind why you did it."
+        },
+        {
+          "id": "s1h1",
+          "type": "hikmah",
+          "a": "لِتَنَالَ مَا تُحِبُّ، يَجِبُ أَنْ تَصْبِرَ عَلَى مَا تَكْرَهُ",
+          "t": "To get what you love, you must first be patient with what you hate.",
+          "s": "Imam Al-Ghazali",
+          "c": "A deep psychological truth about endurance. True spiritual and emotional elevation requires walking through the fires of discipline.",
+          "simpleT": "To get what you love, you must first be patient with what you hate.",
+          "simpleC": "A deep truth about success. Growing spiritually and emotionally means you must walk through hard discipline first."
+        }
+      ]
+    },
+    {
+      "id": "shukr",
+      "name": "الشكر",
+      "nameEn": "Gratitude",
+      "subtitle": "The Second Station",
+      "verses": [
+        {
+          "id": "s2v1",
+          "type": "quran",
+          "a": "هَلْ جَزَاءُ الْإِحْسَانِ إِلَّا الْإِحْسَانُ",
+          "t": "Is there any reward for goodness\nexcept goodness?",
+          "s": "Ar-Rahman · 55:60",
+          "c": "A universal law of spiritual physics. Every atom of grace you extend into the world is guaranteed to return to you, often in forms you cannot anticipate.",
+          "simpleT": "Is there any reward for good\\nexcept good?",
+          "simpleC": "A universal rule. Every bit of kindness you put into the world will return back to you in ways you might not expect."
+        },
+        {
+          "id": "s2v2",
+          "type": "hadith",
+          "a": "اقْرَءُوا الْقُرْآنَ فَإِنَّهُ يَأْتِي يَوْمَ الْقِيَامَةِ شَفِيعًا لأَصْحَابِهِ",
+          "t": "Read the Quran, for it will come as an intercessor for its companions.",
+          "s": "Sahih Muslim 804",
+          "c": "A direct call to action. The text is not just for passive listening; active engagement transforms the book into an active defender in the hereafter.",
+          "simpleT": "Read the Quran, because it will come on the Day of Judgment to defend its readers.",
+          "simpleC": "The text is not just for reading; deeply interacting with it turns the book into your protector in the afterlife."
+        },
+        {
+          "id": "s2v3",
+          "type": "hadith",
+          "a": "يَسِّرُوا وَلا تُعَسِّرُوا، وَبَشِّرُوا وَلا تُنَفِّرُوا",
+          "t": "Make things easy for people and do not make them difficult, give good tidings and do not repel them.",
+          "s": "Sahih al-Bukhari 69",
+          "c": "Instruction on interpersonal friction. Faith should be presented as accessible and welcoming, not as a burdensome fortress.",
+          "simpleT": "Make things easy for people, give good news, and do not push them away.",
+          "simpleC": "Faith should be welcoming and accessible. We should not make religion feel like a heavy burden to others."
+        },
+        {
+          "id": "s2v4",
+          "type": "hadith",
+          "a": "مَنْ كَانَ يُؤْمِنُ بِاللَّهِ وَالْيَوْمِ الآخِرِ فَلْيَقُلْ خَيْرًا أَوْ لِيَصْمُتْ",
+          "t": "Whoever believes in Allah and the Last Day, let him speak good or remain silent.",
+          "s": "Sahih al-Bukhari 6018",
+          "c": "A foundational advice on self-restraint and mindfulness. It teaches that silence is better than speech that harms, encouraging believers to weigh their words before speaking.",
+          "simpleT": "If you believe in God, either speak good words or stay silent.",
+          "simpleC": "A basic rule of self-control. Silence is much better than words that cause harm. Always think before you speak."
+        },
+        {
+          "id": "s2h1",
+          "type": "hikmah",
+          "a": "مَنْ لَمْ يَشْكُرِ النِّعْمَةَ فَقَدْ تَعَرَّضَ لِزَوَالِهَا، وَمَنْ شَكَرَهَا فَقَدْ قَيَّدَهَا بِعِقَالِهَا",
+          "t": "Whoever does not give thanks for a blessing risks its departure, and whoever gives thanks for it has bound it with its own chain.",
+          "s": "Ibn Ata Allah Al-Iskandari",
+          "c": "A profound law of spiritual economics. Gratitude is not merely politeness—it is the mechanism by which blessings are preserved and multiplied.",
+          "simpleT": "If you don't show thanks for a blessing, you might lose it. But if you give thanks, you tie it down so it stays.",
+          "simpleC": "Gratitude is not just being polite—it is the direct way to protect the good things you have and get even more."
+        }
+      ]
+    },
+    {
+      "id": "tawakkul",
+      "name": "التوكل",
+      "nameEn": "Reliance",
+      "subtitle": "The Third Station",
+      "verses": [
+        {
+          "id": "s3v1",
+          "type": "quran",
+          "a": "وَنَحْنُ أَقْرَبُ إِلَيْهِ مِنْ حَبْلِ الْوَرِيدِ",
+          "t": "We are closer to him\nthan his jugular vein.",
+          "s": "Qaf · 50:16",
+          "c": "A profound reminder of divine proximity. It signifies that God's knowledge and presence are more intimately connected to us than our own lifeblood, offering comfort in moments of intense isolation.",
+          "simpleT": "We are closer to him\\nthan his neck vein.",
+          "simpleC": "A reminder that God is always near. God's presence is closer to us than our own blood, offering comfort when we feel alone."
+        },
+        {
+          "id": "s3v2",
+          "type": "quran",
+          "a": "وَمَن يَتَوَكَّلْ عَلَى اللَّهِ فَهُوَ حَسْبُهُ",
+          "t": "And whoever puts their trust in Allah,\nHe is sufficient for them.",
+          "s": "At-Talaq · 65:3",
+          "c": "The ultimate promise of divine sufficiency. When you release the illusion of personal control and delegate your affairs to the Divine, you activate a cosmic safety net that no human effort could ever replicate.",
+          "simpleT": "And whoever trusts God,\\nHe is enough for them.",
+          "simpleC": "When you stop trying to control everything and give your worries to God, He provides a safety net that no human effort can match."
+        },
+        {
+          "id": "s3v3",
+          "type": "hadith",
+          "a": "الْمُسْلِمُ مَنْ سَلِمَ الْمُسْلِمُونَ مِنْ لِسَانِهِ وَيَدِهِ",
+          "t": "The true Muslim is the one from whose tongue and hand the Muslims are safe.",
+          "s": "Sahih al-Bukhari 10",
+          "c": "Actionable advice on character. Faith is not just internal belief, but external harmlessness. Your physical and verbal restraint is the primary proof of your faith.",
+          "simpleT": "A true believer is someone who does not hurt others with their words or hands.",
+          "simpleC": "Faith is not only what is in your heart. The biggest proof of your faith is that you are completely safe and harmless to others."
+        },
+        {
+          "id": "s3v4",
+          "type": "hadith",
+          "a": "الدِّينُ النَّصِيحَةُ",
+          "t": "Religion is sincerity\n(and good advice).",
+          "s": "Sahih Muslim 55",
+          "c": "A profound summarization. The core of faith is holding a sincere, well-wishing attitude toward God, His words, His leaders, and common humanity.",
+          "simpleT": "Religion is sincerity\\nand giving good advice.",
+          "simpleC": "The core of faith is having a pure, caring, and honest attitude toward God and all other people."
+        },
+        {
+          "id": "s3h1",
+          "type": "hikmah",
+          "a": "مِنْ عَلَامَاتِ الْإِخْلَاصِ: اسْتِوَاءُ الْمَدْحِ وَالذَّمِّ مِنَ الْعَامَّةِ",
+          "t": "The signs of sincerity are three: considering the praise and blame of people as equal, forgetting your good deeds, and desiring only the reward of the Hereafter.",
+          "s": "Imam An-Nawawi",
+          "c": "The ultimate test of ego. When human approval and human criticism invoke exactly the same emotional reaction in you, you have attained true freedom.",
+          "simpleT": "True sincerity is when you don't care if people praise you or insult you.",
+          "simpleC": "The ultimate test of your ego. When human approval and human hate both make you feel the same, you have finally found freedom."
+        }
+      ]
+    },
+    {
+      "id": "tawbah",
+      "name": "التوبة",
+      "nameEn": "Repentance",
+      "subtitle": "The Fourth Station",
+      "verses": [
+        {
+          "id": "s4v1",
+          "type": "quran",
+          "a": "قُلْ يَا عِبَادِيَ الَّذِينَ أَسْرَفُوا عَلَىٰ أَنفُسِهِمْ لَا تَقْنَطُوا مِن رَّحْمَةِ اللَّهِ",
+          "t": "Say: O My servants who have transgressed against themselves, do not despair of the mercy of Allah.",
+          "s": "Az-Zumar · 39:53",
+          "c": "The most comforting verse for anyone carrying the weight of past sins. God addresses the sinners not with anger but with intimate possessiveness—'My servants'—affirming that no amount of transgression severs the divine relationship.",
+          "simpleT": "Say: O My servants who have hurt themselves by sinning, do not give up hope in God's mercy.",
+          "simpleC": "A comforting promise. God calls sinners 'My servants' to show that no matter how much you sinned, He still claims you as His own."
+        },
+        {
+          "id": "s4v2",
+          "type": "hadith",
+          "a": "اتَّقِ اللَّهِ حَيْثُمَا كُنْتَ، وَأَتْبِعِ السَّيِّئَةَ الْحَسَنَةَ تَمْحُهَا، وَخَالِقِ النَّاسَ بِخُلُقٍ حَسَنٍ",
+          "t": "Fear Allah wherever you are, follow up a bad deed with a good one and it will wipe it out, and behave well towards people.",
+          "s": "Jami` at-Tirmidhi 1987",
+          "c": "A complete behavioral framework. It emphasizes private integrity, immediate course-correction after sins, and holding high moral standards in social interactions.",
+          "simpleT": "Fear God wherever you are. Follow a bad deed with a good one to erase it, and treat people nicely.",
+          "simpleC": "A complete guide on how to act. Fix your mistakes immediately with good actions, and always hold high morals with everyone."
+        },
+        {
+          "id": "s4v3",
+          "type": "quran",
+          "a": "وَهُوَ الَّذِي يَقْبَلُ التَّوْبَةَ عَنْ عِبَادِهِ وَيَعْفُو عَنِ السَّيِّئَاتِ",
+          "t": "And He is the One who accepts repentance\nfrom His servants and pardons sins.",
+          "s": "Ash-Shura · 42:25",
+          "c": "A declaration of God's active role in forgiveness. He does not merely wait for repentance—He actively accepts it, implying that the very desire to return is itself a gift from Him.",
+          "simpleT": "He is the One who accepts regret\\nfrom His servants and excuses sins.",
+          "simpleC": "God does not just wait for you to say sorry—He actively wants to accept it and completely erase the mistake."
+        },
+        {
+          "id": "s4v4",
+          "type": "hadith",
+          "a": "لَلَّهُ أَشَدُّ فَرَحًا بِتَوْبَةِ عَبْدِهِ مِنْ أَحَدِكُمْ سَقَطَ عَلَى بَعِيرِهِ وَقَدْ أَضَلَّهُ فِي أَرْضِ فَلَاةٍ",
+          "t": "Allah is more delighted with the repentance of His servant than a man who loses his camel in a barren desert and then finds it.",
+          "s": "Sahih Muslim 2747",
+          "c": "A radical reframing of God's emotional response to human repentance. He is not a reluctant judge granting pardon—He experiences overwhelming joy when you turn back to Him.",
+          "simpleT": "God is happier when you return to Him than a man who loses his camel in a deadly desert and suddenly finds it.",
+          "simpleC": "A beautiful view of God's love. He is not a mean judge waiting to punish; He feels incredible joy the moment you turn back to Him."
+        },
+        {
+          "id": "s4h1",
+          "type": "hikmah",
+          "a": "لَا نَافِعَ كَالِاضْطِرَارِ، وَلَا أَسْرَعَ فِي نَيْلِ الْمَوَاهِبِ مِنَ الذُّلِّ وَالِافْتِقَارِ",
+          "t": "Nothing pleads for you like extreme need, and nothing brings you gifts faster than absolute lowliness and humility.",
+          "s": "Ibn Ata Allah Al-Iskandari",
+          "c": "Paradoxically, your moments of absolute desperation are your most powerful currency in the court of The Almighty. Absolute brokenness is the fastest vehicle to divine grace.",
+          "simpleT": "Nothing helps you more than complete desperation. Brokenness is the fastest way to get God's gifts.",
+          "simpleC": "Oddly, your moments of extreme hurt and brokenness are your most powerful moments. Coming to God empty-handed brings His grace fastest."
+        }
+      ]
+    }
+  ]
+}

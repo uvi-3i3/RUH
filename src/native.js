@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { SplashScreen } from '@capacitor/splash-screen';
+import { App as CapApp } from '@capacitor/app';
 
 /**
  * Initialize native platform features.
@@ -15,7 +16,6 @@ export async function initNativePlatform() {
     await StatusBar.setStyle({ style: Style.Dark });
     await StatusBar.setBackgroundColor({ color: '#00000000' });
   } catch (e) {
-    // StatusBar plugin may not be available on all platforms
     console.warn('[Ruh] StatusBar init skipped:', e);
   }
 
@@ -25,6 +25,57 @@ export async function initNativePlatform() {
   } catch (e) {
     console.warn('[Ruh] SplashScreen hide skipped:', e);
   }
+}
+
+/**
+ * Keep status bar icon contrast synchronized with Daylight vs Midnight Sanctuary theme.
+ */
+export async function syncStatusBarTheme(isLightMode) {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await StatusBar.setStyle({ style: isLightMode ? Style.Light : Style.Dark });
+  } catch {
+    // Ignore on platforms where StatusBar style changes are restricted
+  }
+}
+
+/**
+ * Register Android hardware back button handling and foreground resume hooks.
+ * Returns a cleanup callback suitable for useEffect.
+ */
+export function registerNativeLifecycle({ onBackButton, onForeground } = {}) {
+  if (!Capacitor.isNativePlatform()) return () => {};
+
+  const handles = [];
+  let active = true;
+
+  CapApp.addListener('backButton', () => {
+    const handled = onBackButton?.();
+    if (!handled) {
+      CapApp.exitApp().catch(() => {});
+    }
+  })
+    .then((h) => {
+      if (active) handles.push(h);
+      else h.remove().catch(() => {});
+    })
+    .catch(() => {});
+
+  CapApp.addListener('appStateChange', ({ isActive }) => {
+    if (isActive) {
+      onForeground?.();
+    }
+  })
+    .then((h) => {
+      if (active) handles.push(h);
+      else h.remove().catch(() => {});
+    })
+    .catch(() => {});
+
+  return () => {
+    active = false;
+    handles.forEach((h) => h.remove?.().catch(() => {}));
+  };
 }
 
 /**
