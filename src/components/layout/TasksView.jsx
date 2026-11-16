@@ -118,8 +118,10 @@ export const TasksView = ({
   return (
     <div
       data-testid="tasks-scroller"
-      className="absolute inset-x-0 top-[74px] md:top-[84px] bottom-0 flex flex-col items-center transition-[opacity,transform,visibility] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] w-full overflow-y-auto hide-scrollbar pt-2 pb-8"
+      className="absolute inset-x-0 bottom-0 flex flex-col items-center transition-[opacity,transform,visibility] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] w-full overflow-y-auto hide-scrollbar pt-2"
       style={{
+        top: 'calc(72px + var(--sat))',
+        paddingBottom: 'calc(28px + var(--sab))',
         touchAction: 'pan-y',
         opacity: isTasksActive ? 1 : 0,
         visibility: isTasksActive ? 'visible' : 'hidden',

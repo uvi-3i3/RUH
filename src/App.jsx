@@ -717,7 +717,7 @@ export default function App() {
 
   return (
     <div
-      className={`w-full h-full min-h-screen ${tBg} overflow-clip font-sans relative select-none transition-colors duration-300`}
+      className={`w-full h-full ${tBg} overflow-clip font-sans relative select-none transition-colors duration-300`}
       onPointerMove={handlePointerMove}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
@@ -763,7 +763,10 @@ export default function App() {
       />
 
       {/* --- WHISPER-QUIET SPATIAL HEADER --- */}
-      <header className="absolute top-[18px] md:top-[24px] left-0 right-0 z-30 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-5 md:px-10 pointer-events-none">
+      <header
+        className="absolute left-0 right-0 z-30 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-5 md:px-10 pointer-events-none"
+        style={{ top: 'calc(12px + var(--sat))' }}
+      >
         {/* Left Cell: Editorial Hijri Date Stamp + Quiet City Location Trigger */}
         <div
           className="justify-self-start text-left min-w-0 max-w-full flex flex-col justify-center"
@@ -848,7 +851,7 @@ export default function App() {
         <div className="flex-grow min-w-0 flex flex-col items-center justify-center h-full relative">
           {/* === VIEW 1: MAIN (SUBMERSION ENGINE) === */}
           <div
-            className="absolute inset-0 flex items-center justify-center transition-[opacity,transform,visibility] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] w-full"
+            className="absolute inset-0 flex items-center justify-center pb-[96px] md:pb-[108px] pt-[52px] transition-[opacity,transform,visibility] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] w-full"
             style={{
               opacity: currentView === 'main' ? 1 : 0,
               visibility: currentView === 'main' ? 'visible' : 'hidden',
@@ -1168,8 +1171,10 @@ export default function App() {
           {/* === VIEW 3: PROFILE (THE SOUL MIRROR) === */}
           <div
             data-testid="journey-scroller"
-            className="absolute inset-x-0 top-[70px] md:top-[80px] bottom-0 flex flex-col items-center transition-[opacity,transform,visibility] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] w-full overflow-y-auto hide-scrollbar pt-1 pb-4"
+            className="absolute inset-x-0 bottom-0 flex flex-col items-center transition-[opacity,transform,visibility] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] w-full overflow-y-auto hide-scrollbar pt-1"
             style={{
+              top: 'calc(72px + var(--sat))',
+              paddingBottom: 'calc(24px + var(--sab))',
               touchAction: 'pan-y',
               opacity: currentView === 'profile' ? 1 : 0,
               visibility: currentView === 'profile' ? 'visible' : 'hidden',
@@ -1570,280 +1575,314 @@ export default function App() {
         </div>
       </div>
 
-      {/* Bottom-Right Qibla Icon Trigger */}
-      <button
-        type="button"
-        aria-label={
-          prayerTimes.hasLocation && prayerTimes.prayerData?.qiblaBearing != null
-            ? `Qibla Compass (${prayerTimes.prayerData.qiblaBearing}° ${prayerTimes.prayerData.qiblaCardinal})`
-            : 'Qibla Compass'
-        }
-        title={
-          prayerTimes.hasLocation && prayerTimes.prayerData?.qiblaBearing != null
-            ? `Qibla · ${prayerTimes.prayerData.qiblaBearing}° ${prayerTimes.prayerData.qiblaCardinal}`
-            : 'Qibla Compass'
-        }
-        onClick={() => setShowQibla(true)}
-        className={`absolute bottom-3.5 right-3.5 md:bottom-7 md:right-8 z-30 w-11 h-11 rounded-full border flex items-center justify-center transition-all duration-500 hover:scale-105 cursor-pointer pointer-events-auto ${
-          showQibla
-            ? isLightMode
-              ? 'bg-white/75 border-[#9c7533]/40 text-[#9c7533] shadow-[0_2px_12px_rgba(156,117,51,0.22)] island-light'
-              : 'bg-[#12100d]/70 border-[#d2a24b]/45 text-[#d2a24b] shadow-[0_2px_12px_rgba(210,162,75,0.22)] island-dark'
-            : isLightMode
-              ? 'bg-white/45 hover:bg-white/65 border-white/60 text-[#4a453d] hover:text-[#9c7533] engraved-light island-light'
-              : 'bg-[#12100d]/45 hover:bg-[#12100d]/65 border-white/[0.08] text-[#e4dac8]/70 hover:text-[#d2a24b] engraved-dark island-dark'
-        }`}
-      >
-        <CompassIcon size={17} />
-      </button>
-
-      {/* --- 5. FOCAL STACK (3D ROLODEX) - ONLY SHOW ON MAIN VIEW --- */}
-      {currentView === 'main' && allCompleted && reviewPrayers && (
-        <div className="absolute bottom-[174px] md:bottom-[184px] left-1/2 -translate-x-1/2 z-30 flex items-center justify-center pointer-events-auto">
-          <button
-            type="button"
-            onClick={() => setReviewPrayers(false)}
-            className={`px-3 py-1 font-serif-eng text-[8.5px] uppercase tracking-[0.2em] cursor-pointer transition-opacity opacity-75 hover:opacity-100 whitespace-nowrap ${tTextGold}`}
-          >
-            Done Reviewing
-          </button>
-        </div>
-      )}
-
+      {/* --- 5. CLEAN BOTTOM SANCTUARY DOCK (PRAYER CARD + QIBLA) - ONLY ON MAIN VIEW --- */}
       <div
-        className="absolute bottom-[56px] md:bottom-[64px] left-1/2 -translate-x-1/2 z-30 w-full max-w-[288px] sm:max-w-[308px] h-[64px] flex justify-center items-center pointer-events-none transition-[opacity,visibility] duration-500"
+        className="absolute inset-x-0 z-30 flex flex-col items-center px-4 md:px-8 pointer-events-none transition-[opacity,visibility,transform] duration-500"
         style={{
+          bottom: 'calc(18px + var(--sab))',
           opacity: currentView === 'main' ? 1 : 0,
           visibility: currentView === 'main' ? 'visible' : 'hidden',
+          transform: currentView === 'main' ? 'translateY(0)' : 'translateY(10px)',
         }}
       >
-        {PRAYERS.map((item, i) => {
-          const offset = i - focusedIndex;
-          const isActive = offset === 0;
-          const isCompletedItem = completedPrayers.includes(item.id);
-          const itemStatus = prayerStatuses[item.id] || 'ontime';
-          const isChecking = checkingId === item.id;
-
-          let yPos = offset * 48;
-          const scale = 1 - Math.abs(offset) * 0.12;
-          let opacity = isActive ? 1 : Math.max(0, 0.28 - Math.abs(offset) * 0.12);
-
-          if (isLightMode && !isActive && opacity > 0) opacity += 0.24;
-          if (Math.abs(offset) >= 3) opacity = 0;
-          if (hideStackForSeal) {
-            opacity = 0;
-            yPos += 20;
-          }
-
-          const RenderIcon = getPrayerIcon(item.iconType);
-          const isNextPrayer = prayerTimes.prayerData?.nextPrayer === item.id && !isCompletedItem;
-
-          return (
-            <div
-              key={item.id}
-              className="absolute w-full px-4 transition-[transform,opacity,visibility] duration-[700ms] ease-[cubic-bezier(0.25,1,0.3,1)]"
-              style={{
-                transform: `translateY(${yPos}px) scale(${scale})`,
-                opacity,
-                visibility: opacity > 0 && currentView === 'main' ? 'visible' : 'hidden',
-                zIndex: 10 - Math.abs(offset),
-                pointerEvents:
-                  opacity > 0 && !hideStackForSeal && currentView === 'main' ? 'auto' : 'none',
-              }}
+        <div className="w-full max-w-[348px] sm:max-w-[372px] flex flex-col items-center">
+          {/* Done Reviewing toggle when user tapped Seal to adjust a prayer */}
+          {currentView === 'main' && allCompleted && reviewPrayers && (
+            <button
+              type="button"
+              onClick={() => setReviewPrayers(false)}
+              className={`mb-1.5 px-3 py-1 font-serif-eng text-[8.5px] uppercase tracking-[0.2em] cursor-pointer pointer-events-auto transition-opacity opacity-80 hover:opacity-100 whitespace-nowrap ${tTextGold}`}
             >
+              Done Reviewing
+            </button>
+          )}
+
+          {/* Whisper-Quiet 5-Prayer Quick-Selector Strip */}
+          {!hideStackForSeal && (
+            <div
+              role="tablist"
+              aria-label="Daily Prayers"
+              className="w-full flex items-center justify-between gap-1 px-1 mb-2 pointer-events-auto"
+            >
+              {PRAYERS.map((p, idx) => {
+                const isFocused = idx === focusedIndex;
+                const isDone = completedPrayers.includes(p.id);
+                const isUpcoming = prayerTimes.prayerData?.nextPrayer === p.id && !isDone;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={isFocused}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      hapticTapLight();
+                      setFocusedIndex(idx);
+                    }}
+                    className={`min-h-[30px] flex-1 flex flex-col items-center justify-center gap-1 rounded-lg transition-all duration-300 cursor-pointer whitespace-nowrap ${
+                      isFocused
+                        ? isLightMode
+                          ? 'text-[#7c5a1e] font-semibold'
+                          : 'text-[#e5c17b] font-semibold'
+                        : isDone
+                          ? isLightMode
+                            ? 'text-[#7c5a1e]/75'
+                            : 'text-[#d2a24b]/75'
+                          : isLightMode
+                            ? 'text-[#2c2720]/60 hover:text-[#1a1814]'
+                            : 'text-[#e4dac8]/55 hover:text-[#f5eee0]'
+                    }`}
+                  >
+                    <span className="font-serif-eng text-[8.5px] uppercase tracking-[0.14em] leading-none">
+                      {p.label}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="h-[2px] rounded-full transition-all duration-300"
+                      style={{
+                        width: isFocused ? '16px' : isDone || isUpcoming ? '6px' : '3px',
+                        backgroundColor:
+                          isFocused || isDone || isUpcoming
+                            ? accentHex
+                            : isLightMode
+                              ? 'rgba(44,39,32,0.22)'
+                              : 'rgba(228,218,200,0.22)',
+                        opacity: isFocused ? 0.95 : isDone ? 0.7 : isUpcoming ? 0.65 : 0.45,
+                      }}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Bottom Aligned Row: Active Prayer Card (or Completion Seal) + Qibla Compass */}
+          <div className="w-full flex items-stretch gap-2.5 pointer-events-auto">
+            {hideStackForSeal ? (
               <button
                 type="button"
-                aria-label={`${item.label} Prayer${
-                  isCompletedItem
-                    ? itemStatus === 'qada'
-                      ? ' (Qada, tap to undo)'
-                      : ' (Completed, tap to undo)'
-                    : ''
-                }`}
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  prayerLongPressTriggered.current = false;
-                  if (isActive && !isCompletedItem && !checkingId) {
-                    prayerLongPressTimer.current = setTimeout(() => {
-                      prayerLongPressTriggered.current = true;
-                      prayerLongPressTimer.current = null;
-                      hapticTapMedium();
-                      handleTogglePrayer(item.id, 'qada');
-                    }, 480);
-                  }
-                }}
-                onPointerUp={() => {
-                  if (prayerLongPressTimer.current) {
-                    clearTimeout(prayerLongPressTimer.current);
-                    prayerLongPressTimer.current = null;
-                  }
-                }}
-                onPointerLeave={() => {
-                  if (prayerLongPressTimer.current) {
-                    clearTimeout(prayerLongPressTimer.current);
-                    prayerLongPressTimer.current = null;
-                  }
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (prayerLongPressTriggered.current) {
-                    prayerLongPressTriggered.current = false;
-                    return;
-                  }
-                  if (checkingId) return;
-                  if (!isActive) setFocusedIndex(i);
-                  else handleTogglePrayer(item.id, 'ontime');
-                }}
-                className={`group relative flex items-center justify-between w-full px-4 py-3.5 rounded-2xl transition-all duration-300 ease-out overflow-hidden border cursor-pointer ${
+                aria-label="All prayers fulfilled. Tap to review or undo prayers."
+                onClick={() => setReviewPrayers(true)}
+                className={`flex-1 min-w-0 h-[62px] px-4 rounded-2xl border flex flex-col items-center justify-center transition-all duration-500 cursor-pointer ${
                   isLightMode
-                    ? isChecking || isCompletedItem
-                      ? 'bg-white/82 border-[#9c7533]/45 island-light'
-                      : 'bg-white/80 hover:bg-white/92 border-[#9c7533]/18 island-light'
-                    : isChecking || isCompletedItem
-                      ? 'bg-[#d2a24b]/14 border-[#d2a24b]/35 island-dark'
-                      : 'bg-[#0b0e16]/76 hover:bg-[#0e1320]/88 border-white/[0.12] island-dark'
+                    ? 'bg-white/78 hover:bg-white/90 border-[#9c7533]/35 island-light'
+                    : 'bg-[#0b0e16]/78 hover:bg-[#0e1320]/90 border-[#d2a24b]/35 island-dark'
                 }`}
               >
-                <div className="flex items-center space-x-3 z-10 min-w-0">
-                  <RenderIcon
-                    size={16}
-                    className={`shrink-0 transition-all duration-500 ${
-                      isChecking || isCompletedItem
-                        ? isLightMode
-                          ? 'text-[#9c7533]'
-                          : 'text-[#d2a24b]'
-                        : isLightMode
-                          ? 'text-[#4a453d] opacity-75 group-hover:opacity-95 group-hover:text-[#9c7533]'
-                          : 'text-[#e4dac8] opacity-72 group-hover:opacity-95 group-hover:text-[#d2a24b]'
-                    }`}
-                  />
-                  <div className="flex flex-col items-start min-w-0">
-                    <span
-                      className={`font-serif-eng uppercase text-[11px] leading-tight transition-all duration-500 ${
-                        isChecking || isCompletedItem
-                          ? isLightMode
-                            ? 'text-[#9c7533] font-medium'
-                            : 'text-[#d2a24b]'
-                          : isLightMode
-                            ? 'text-[#2c2720] opacity-90 group-hover:opacity-100'
-                            : 'text-[#f2ead9] opacity-90 group-hover:opacity-100'
-                      }`}
-                      style={{ letterSpacing: '0.1em', marginRight: '-0.1em' }}
-                    >
-                      {item.label}
-                    </span>
-                    {isActive && (
-                      <span
-                        className={`font-serif-eng text-[8.5px] uppercase tracking-[0.14em] mt-0.5 leading-none ${
-                          isCompletedItem
-                            ? isLightMode
-                              ? 'text-[#9c7533]/90'
-                              : 'text-[#d2a24b]/90'
-                            : isNextPrayer
-                              ? isLightMode
-                                ? 'text-[#9c7533]/92'
-                                : 'text-[#d2a24b]/92'
-                              : `${tTextSub} opacity-72`
-                        }`}
-                      >
-                        {isCompletedItem
-                          ? itemStatus === 'qada'
-                            ? 'Qada · Tap to undo'
-                            : 'Prayed · Tap to undo'
-                          : isNextPrayer && prayerTimes.prayerData?.formattedCountdown
-                            ? `In ${prayerTimes.prayerData.formattedCountdown} · Hold Qada`
-                            : 'Tap to log · Hold Qada'}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Right Side: Prayer Time + Non-Overlapping Completion Ring */}
-                <div className="flex items-center gap-2.5 z-10 shrink-0">
-                  <span
-                    className={`font-serif-eng text-[9px] tabular-nums transition-opacity duration-500 ${
-                      isNextPrayer
-                        ? isLightMode
-                          ? 'text-[#9c7533] opacity-85'
-                          : 'text-[#d2a24b] opacity-85'
-                        : `${tTextSub} opacity-60`
-                    }`}
-                    style={{ letterSpacing: '0.06em' }}
-                  >
-                    {prayerTimes.prayerData?.formatted[item.id] ||
-                      devotionData.prayers[item.id]?.time ||
-                      ''}
-                  </span>
-
-                  <div className="relative w-5 h-5 flex items-center justify-center shrink-0">
-                    {isChecking ? (
-                      <CheckCircleIcon
-                        size={18}
-                        className={`animate-[checkmarkPop_0.4s_cubic-bezier(0.34,1.56,0.64,1)_forwards] ${
-                          isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'
-                        }`}
-                      />
-                    ) : isCompletedItem ? (
-                      <CheckCircleIcon
-                        size={18}
-                        className={isLightMode ? 'text-[#9c7533] opacity-80' : 'text-[#d2a24b] opacity-80'}
-                      />
-                    ) : (
-                      <CircleIcon
-                        size={18}
-                        className={`transition-all duration-300 ${
-                          isLightMode
-                            ? 'text-[#4a453d] opacity-20 group-hover:opacity-80 group-hover:text-[#9c7533]'
-                            : 'text-[#e4dac8] opacity-20 group-hover:opacity-100 group-hover:text-[#d2a24b]'
-                        }`}
-                      />
-                    )}
-                  </div>
-                </div>
+                <span
+                  className={`font-calligraphy text-[18px] leading-none whitespace-nowrap ${
+                    isLightMode ? 'text-[#9c7533]' : 'text-[#e5c17b]'
+                  }`}
+                  style={{
+                    textShadow: isLightMode ? 'none' : `0 0 22px ${accentRgba},0.28)`,
+                  }}
+                  dir="rtl"
+                >
+                  تَمَّتْ الصَّلَوَات
+                </span>
+                <span
+                  className={`font-serif-eng italic text-[10.5px] tracking-wide mt-1 whitespace-nowrap ${
+                    isLightMode ? 'text-[#4a453d] opacity-75' : 'text-[rgba(228,218,200,0.68)]'
+                  }`}
+                >
+                  All prayers fulfilled · Tap to adjust
+                </span>
               </button>
-            </div>
-          );
-        })}
+            ) : (
+              (() => {
+                const activeItem = PRAYERS[Math.max(0, Math.min(focusedIndex, PRAYERS.length - 1))];
+                const isCompletedItem = completedPrayers.includes(activeItem.id);
+                const itemStatus = prayerStatuses[activeItem.id] || 'ontime';
+                const isChecking = checkingId === activeItem.id;
+                const RenderIcon = getPrayerIcon(activeItem.iconType);
+                const isNextPrayer =
+                  prayerTimes.prayerData?.nextPrayer === activeItem.id && !isCompletedItem;
 
-        {/* COMPLETION NODE — Weightless Interactive Calligraphic Seal */}
-        <button
-          type="button"
-          aria-label="All prayers fulfilled. Tap to review or undo prayers."
-          onClick={() => {
-            if (hideStackForSeal) setReviewPrayers(true);
-          }}
-          className="absolute inset-x-0 flex flex-col items-center justify-center transition-all duration-[900ms] ease-[cubic-bezier(0.25,1,0.3,1)] px-4 cursor-pointer"
-          style={{
-            transform: `translateY(${hideStackForSeal ? 0 : 18}px) scale(${hideStackForSeal ? 1 : 0.94})`,
-            opacity: hideStackForSeal ? 1 : 0,
-            pointerEvents: hideStackForSeal && currentView === 'main' ? 'auto' : 'none',
-            zIndex: 20,
-          }}
-        >
-          <span
-            aria-hidden="true"
-            className="w-6 h-[1px] mb-2.5 opacity-35"
-            style={{ backgroundColor: accentHex }}
-          />
-          <span
-            className={`font-calligraphy text-[20px] leading-none whitespace-nowrap ${
-              isLightMode ? 'text-[#9c7533]' : 'text-[#e5c17b]'
-            }`}
-            style={{
-              textShadow: isLightMode ? 'none' : `0 0 24px ${accentRgba},0.28)`,
-            }}
-            dir="rtl"
-          >
-            تَمَّتْ الصَّلَوَات
-          </span>
-          <span
-            className={`font-serif-eng italic text-[11px] tracking-wide mt-1 whitespace-nowrap ${
-              isLightMode ? 'text-[#4a453d] opacity-65' : 'text-[rgba(228,218,200,0.55)]'
-            }`}
-          >
-            All prayers fulfilled · Tap to adjust
-          </span>
-        </button>
+                return (
+                  <button
+                    type="button"
+                    aria-label={`${activeItem.label} Prayer${
+                      isCompletedItem
+                        ? itemStatus === 'qada'
+                          ? ' (Qada, tap to undo)'
+                          : ' (Completed, tap to undo)'
+                        : ''
+                    }`}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      prayerLongPressTriggered.current = false;
+                      if (!isCompletedItem && !checkingId) {
+                        prayerLongPressTimer.current = setTimeout(() => {
+                          prayerLongPressTriggered.current = true;
+                          prayerLongPressTimer.current = null;
+                          hapticTapMedium();
+                          handleTogglePrayer(activeItem.id, 'qada');
+                        }, 480);
+                      }
+                    }}
+                    onPointerUp={() => {
+                      if (prayerLongPressTimer.current) {
+                        clearTimeout(prayerLongPressTimer.current);
+                        prayerLongPressTimer.current = null;
+                      }
+                    }}
+                    onPointerLeave={() => {
+                      if (prayerLongPressTimer.current) {
+                        clearTimeout(prayerLongPressTimer.current);
+                        prayerLongPressTimer.current = null;
+                      }
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (prayerLongPressTriggered.current) {
+                        prayerLongPressTriggered.current = false;
+                        return;
+                      }
+                      if (checkingId) return;
+                      handleTogglePrayer(activeItem.id, 'ontime');
+                    }}
+                    className={`group relative flex-1 min-w-0 h-[62px] flex items-center justify-between px-4 rounded-2xl transition-all duration-300 ease-out overflow-hidden border cursor-pointer ${
+                      isLightMode
+                        ? isChecking || isCompletedItem
+                          ? 'bg-white/86 border-[#9c7533]/45 island-light'
+                          : 'bg-white/82 hover:bg-white/94 border-[#9c7533]/20 island-light'
+                        : isChecking || isCompletedItem
+                          ? 'bg-[#d2a24b]/16 border-[#d2a24b]/38 island-dark'
+                          : 'bg-[#0b0e16]/82 hover:bg-[#0e1320]/92 border-white/[0.14] island-dark'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 z-10 min-w-0">
+                      <RenderIcon
+                        size={16}
+                        className={`shrink-0 transition-all duration-500 ${
+                          isChecking || isCompletedItem
+                            ? isLightMode
+                              ? 'text-[#9c7533]'
+                              : 'text-[#d2a24b]'
+                            : isLightMode
+                              ? 'text-[#4a453d] opacity-80 group-hover:text-[#9c7533]'
+                              : 'text-[#e4dac8] opacity-80 group-hover:text-[#d2a24b]'
+                        }`}
+                      />
+                      <div className="flex flex-col items-start min-w-0">
+                        <span
+                          className={`font-serif-eng uppercase text-[11.5px] leading-tight transition-all duration-500 ${
+                            isChecking || isCompletedItem
+                              ? isLightMode
+                                ? 'text-[#9c7533] font-medium'
+                                : 'text-[#d2a24b]'
+                              : isLightMode
+                                ? 'text-[#1a1814]'
+                                : 'text-[#f5eee0]'
+                          }`}
+                          style={{ letterSpacing: '0.12em' }}
+                        >
+                          {activeItem.label}
+                        </span>
+                        <span
+                          className={`font-serif-eng text-[8.5px] uppercase tracking-[0.12em] mt-0.5 leading-none truncate max-w-full ${
+                            isCompletedItem
+                              ? isLightMode
+                                ? 'text-[#9c7533]/90'
+                                : 'text-[#d2a24b]/90'
+                              : isNextPrayer
+                                ? isLightMode
+                                  ? 'text-[#9c7533]/92'
+                                  : 'text-[#d2a24b]/92'
+                                : `${tTextSub} opacity-75`
+                          }`}
+                        >
+                          {isCompletedItem
+                            ? itemStatus === 'qada'
+                              ? 'Qada · Tap to undo'
+                              : 'Prayed · Tap to undo'
+                            : isNextPrayer && prayerTimes.prayerData?.formattedCountdown
+                              ? `In ${prayerTimes.prayerData.formattedCountdown} · Hold Qada`
+                              : 'Tap to log · Hold Qada'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 z-10 shrink-0 ml-2">
+                      <span
+                        className={`font-serif-eng text-[10px] tabular-nums transition-opacity duration-500 ${
+                          isNextPrayer
+                            ? isLightMode
+                              ? 'text-[#9c7533] opacity-90'
+                              : 'text-[#d2a24b] opacity-90'
+                            : `${tTextSub} opacity-70`
+                        }`}
+                        style={{ letterSpacing: '0.05em' }}
+                      >
+                        {prayerTimes.prayerData?.formatted[activeItem.id] ||
+                          devotionData.prayers[activeItem.id]?.time ||
+                          ''}
+                      </span>
+
+                      <div className="relative w-5 h-5 flex items-center justify-center shrink-0">
+                        {isChecking ? (
+                          <CheckCircleIcon
+                            size={18}
+                            className={`animate-[checkmarkPop_0.4s_cubic-bezier(0.34,1.56,0.64,1)_forwards] ${
+                              isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'
+                            }`}
+                          />
+                        ) : isCompletedItem ? (
+                          <CheckCircleIcon
+                            size={18}
+                            className={isLightMode ? 'text-[#9c7533] opacity-85' : 'text-[#d2a24b] opacity-85'}
+                          />
+                        ) : (
+                          <CircleIcon
+                            size={18}
+                            className={`transition-all duration-300 ${
+                              isLightMode
+                                ? 'text-[#4a453d] opacity-25 group-hover:opacity-80 group-hover:text-[#9c7533]'
+                                : 'text-[#e4dac8] opacity-25 group-hover:opacity-100 group-hover:text-[#d2a24b]'
+                            }`}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })()
+            )}
+
+            {/* Aligned Qibla Compass Button */}
+            <button
+              type="button"
+              aria-label={
+                prayerTimes.hasLocation && prayerTimes.prayerData?.qiblaBearing != null
+                  ? `Qibla Compass (${prayerTimes.prayerData.qiblaBearing}° ${prayerTimes.prayerData.qiblaCardinal})`
+                  : 'Qibla Compass'
+              }
+              title={
+                prayerTimes.hasLocation && prayerTimes.prayerData?.qiblaBearing != null
+                  ? `Qibla · ${prayerTimes.prayerData.qiblaBearing}° ${prayerTimes.prayerData.qiblaCardinal}`
+                  : 'Qibla Compass'
+              }
+              onClick={() => {
+                hapticTapLight();
+                setShowQibla(true);
+              }}
+              className={`w-[54px] h-[62px] shrink-0 rounded-2xl border flex flex-col items-center justify-center gap-1 transition-all duration-300 active:scale-[0.97] cursor-pointer ${
+                showQibla
+                  ? isLightMode
+                    ? 'bg-white/86 border-[#9c7533]/45 text-[#9c7533] island-light'
+                    : 'bg-[#0b0e16]/85 border-[#d2a24b]/45 text-[#d2a24b] island-dark'
+                  : isLightMode
+                    ? 'bg-white/76 hover:bg-white/90 border-[#9c7533]/20 text-[#4a453d] hover:text-[#9c7533] island-light'
+                    : 'bg-[#0b0e16]/78 hover:bg-[#0e1320]/90 border-white/[0.14] text-[#e4dac8]/80 hover:text-[#d2a24b] island-dark'
+              }`}
+            >
+              <CompassIcon size={17} />
+              <span className="font-serif-eng text-[7.5px] uppercase tracking-[0.14em] leading-none opacity-75">
+                Qibla
+              </span>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* --- OVERLAYS & MODALS --- */}

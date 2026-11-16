@@ -20,7 +20,8 @@ export const SacredNotificationToast = ({
       role="status"
       aria-live="polite"
       data-testid="sacred-notification-toast"
-      className="fixed inset-x-0 top-3 sm:top-4 z-[200] flex justify-center px-3 pointer-events-none"
+      className="fixed inset-x-0 z-[200] flex justify-center px-3 pointer-events-none"
+      style={{ top: 'calc(12px + var(--sat))' }}
     >
       <div
         className={`pointer-events-auto relative w-full max-w-[368px] sm:max-w-[408px] rounded-[22px] border overflow-hidden animate-toast-in transition-colors duration-500 ${

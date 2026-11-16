@@ -140,7 +140,10 @@ export const QiblaModal = ({
 
       <div className="relative z-10 w-full max-w-lg mx-auto h-full flex flex-col">
         {/* Sticky Top Header */}
-        <div className="w-full flex items-center justify-between px-6 pt-8 pb-4 border-b border-current/10 shrink-0">
+        <div
+          className="w-full flex items-center justify-between px-6 pb-4 border-b border-current/10 shrink-0"
+          style={{ paddingTop: 'calc(18px + var(--sat))' }}
+        >
           <div className="flex items-center gap-3">
             <CompassIcon size={22} style={{ color: accentHex }} />
             <div>

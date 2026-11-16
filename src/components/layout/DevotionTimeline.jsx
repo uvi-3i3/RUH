@@ -3,7 +3,7 @@ import { memo } from 'react';
 export const DevotionTimeline = memo(({ completedCount, isLightMode, isHikmah, accentColor, accentGlow, isVisible = true }) => {
   const isCompleted = completedCount === 5;
 
-  const baseColor = isLightMode ? 'rgba(74, 69, 61, 0.16)' : 'rgba(228, 218, 200, 0.14)';
+  const baseColor = isLightMode ? 'rgba(74, 69, 61, 0.14)' : 'rgba(228, 218, 200, 0.13)';
 
   const activeColor = isHikmah
     ? isLightMode
@@ -13,13 +13,17 @@ export const DevotionTimeline = memo(({ completedCount, isLightMode, isHikmah, a
 
   const glowColor = isHikmah
     ? isLightMode
-      ? 'rgba(13,148,136,0.6)'
-      : 'rgba(20,184,166,0.6)'
-    : accentGlow || (isLightMode ? 'rgba(156,117,51,0.6)' : 'rgba(210,162,75,0.6)');
+      ? 'rgba(13,148,136,0.22)'
+      : 'rgba(20,184,166,0.24)'
+    : accentGlow
+      ? accentGlow.replace(/[\d.]+\)$/, '0.24)')
+      : isLightMode
+        ? 'rgba(156,117,51,0.22)'
+        : 'rgba(210,162,75,0.24)';
 
   let fillHeight = 0;
   if (completedCount > 0 && completedCount < 5) fillHeight = completedCount * 12;
-  else if (completedCount === 5) fillHeight = 180;
+  else if (completedCount === 5) fillHeight = 160;
 
   const wrapperClass = !isVisible
     ? 'left-[22px] md:left-[88px] scale-[0.65] opacity-0 z-0'
@@ -39,31 +43,21 @@ export const DevotionTimeline = memo(({ completedCount, isLightMode, isHikmah, a
       className={`fixed top-1/2 -translate-y-1/2 -translate-x-1/2 pointer-events-none mix-blend-normal ${wrapperClass}`}
       style={transitionStyle}
     >
-      <svg width="60" height="180" viewBox="0 0 60 180" className="overflow-visible w-[60px] h-[180px]">
-        <rect
-          x="0"
-          y="0"
-          width="60"
-          height="60"
-          fill="none"
-          stroke={isCompleted ? activeColor : baseColor}
-          strokeWidth={isCompleted ? '1.5' : '1.2'}
+      <svg width="60" height="160" viewBox="0 0 60 160" className="overflow-visible w-[60px] h-[160px]">
+        <line x1="30" y1="0" x2="30" y2="160" stroke={baseColor} strokeWidth="1.2" />
+        {[1, 2, 3, 4, 5].map((i) => (
+          <line key={`base-${i}`} x1="21" y1={i * 11} x2="39" y2={i * 11} stroke={baseColor} strokeWidth="1.2" />
+        ))}
+        <line
+          x1="30"
+          y1="0"
+          x2="30"
+          y2={fillHeight}
+          stroke={glowColor}
+          strokeWidth="4.5"
+          strokeLinecap="round"
           style={{ transition: 'all 1.2s cubic-bezier(0.16,1,0.3,1)' }}
         />
-        <rect
-          x="0"
-          y="0"
-          width="60"
-          height="60"
-          fill="none"
-          stroke={isCompleted ? glowColor : 'transparent'}
-          strokeWidth="4"
-          style={{ transition: 'all 1.2s cubic-bezier(0.16,1,0.3,1)', filter: 'blur(4px)' }}
-        />
-        <line x1="30" y1="0" x2="30" y2="180" stroke={baseColor} strokeWidth="1.2" />
-        {[1, 2, 3, 4, 5].map((i) => (
-          <line key={`base-${i}`} x1="20" y1={i * 10} x2="40" y2={i * 10} stroke={baseColor} strokeWidth="1.2" />
-        ))}
         <line
           x1="30"
           y1="0"
@@ -71,41 +65,34 @@ export const DevotionTimeline = memo(({ completedCount, isLightMode, isHikmah, a
           y2={fillHeight}
           stroke={activeColor}
           strokeWidth="1.5"
+          strokeLinecap="round"
           style={{ transition: 'all 1.2s cubic-bezier(0.16,1,0.3,1)' }}
-        />
-        <line
-          x1="30"
-          y1="0"
-          x2="30"
-          y2={fillHeight}
-          stroke={glowColor}
-          strokeWidth="4"
-          style={{ transition: 'all 1.2s cubic-bezier(0.16,1,0.3,1)', filter: 'blur(4px)' }}
         />
         {[1, 2, 3, 4, 5].map((i) => {
           const isActive = completedCount >= i;
           return (
             <g key={`active-${i}`}>
-              <line
-                x1="20"
-                y1={i * 10}
-                x2="40"
-                y2={i * 10}
-                stroke={isActive ? activeColor : 'transparent'}
-                strokeWidth="1.5"
-                style={{ transition: 'stroke 0.3s ease 0.6s' }}
-              />
               {isActive && (
                 <line
-                  x1="20"
-                  y1={i * 10}
-                  x2="40"
-                  y2={i * 10}
+                  x1="21"
+                  y1={i * 11}
+                  x2="39"
+                  y2={i * 11}
                   stroke={glowColor}
-                  strokeWidth="4"
-                  style={{ filter: 'blur(3px)' }}
+                  strokeWidth="4.5"
+                  strokeLinecap="round"
                 />
               )}
+              <line
+                x1="21"
+                y1={i * 11}
+                x2="39"
+                y2={i * 11}
+                stroke={isActive ? activeColor : 'transparent'}
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                style={{ transition: 'stroke 0.3s ease 0.6s' }}
+              />
             </g>
           );
         })}

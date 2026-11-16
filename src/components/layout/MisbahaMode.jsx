@@ -148,8 +148,10 @@ export const MisbahaMode = ({
       role="dialog"
       aria-modal="true"
       aria-label={`Misbaha Counter for ${activeTask.title}`}
-      className="fixed inset-0 z-[150] flex flex-col items-center justify-between py-8 px-6 select-none"
+      className="fixed inset-0 z-[150] flex flex-col items-center justify-between px-6 select-none"
       style={{
+        paddingTop: 'calc(24px + var(--sat))',
+        paddingBottom: 'calc(24px + var(--sab))',
         background: isLightMode
           ? 'radial-gradient(ellipse at 50% 42%, rgba(255,250,240,0.98), rgba(245,238,224,0.99))'
           : 'radial-gradient(ellipse at 50% 42%, rgba(16,18,26,0.98), rgba(6,7,11,0.99))',
