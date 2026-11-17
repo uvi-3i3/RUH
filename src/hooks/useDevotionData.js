@@ -2,13 +2,25 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { getLocalDateStr, computeStreaks, sanitizeBackupPayload } from '../utils/devotionLogic';
 import { evaluateBadges, getBadgeById } from '../utils/badgeLogic';
 import {
+  DEFAULT_DAILY_TODOS,
+  addDailyTodoToList,
+  clearCompletedDailyTodosInList,
+  cloneDefaultDailyTodos,
   cloneDefaultHabits,
   createHabitEntry,
+  removeDailyTodoFromList,
   removeHabitFromList,
   reorderHabitInList,
+  toggleDailyTodoInList,
   updateHabitInList,
 } from '../utils/habitLogic';
 import { DEFAULT_HABITS } from '../data/duasData';
+import {
+  sanitizeFiqhIds,
+  sanitizeSacredNodeIds,
+  toggleFiqhId,
+  toggleSacredNodeId,
+} from '../utils/sacredTreeLogic';
 import { hydrateMissingFromPreferences, mirroredRemove, mirroredSet } from '../utils/nativeStorage';
 
 const STORAGE_KEY = 'ruh_devotion_state';
@@ -71,6 +83,11 @@ const getInitialState = () => {
     favoriteDuaIds: [],
     streakPausedDates: {},
     dailyIntention: { date: currentDate, text: '' },
+    dailyTodos: { date: currentDate, items: cloneDefaultDailyTodos(DEFAULT_DAILY_TODOS) },
+    completedTreeNodeIds: [],
+    rewardedTreeNodeIds: [],
+    studiedFiqhIds: [],
+    rewardedFiqhIds: [],
     burhanNotes: {},
     maqamat: {
       currentStation: 0,
@@ -223,6 +240,18 @@ const getInitialState = () => {
       if (!parsed.dailyIntention || typeof parsed.dailyIntention !== 'object' || parsed.dailyIntention.date !== currentDate) {
         parsed.dailyIntention = { date: currentDate, text: '' };
       }
+      if (
+        !parsed.dailyTodos ||
+        typeof parsed.dailyTodos !== 'object' ||
+        parsed.dailyTodos.date !== currentDate ||
+        !Array.isArray(parsed.dailyTodos.items)
+      ) {
+        parsed.dailyTodos = { date: currentDate, items: cloneDefaultDailyTodos(DEFAULT_DAILY_TODOS) };
+      }
+      parsed.completedTreeNodeIds = sanitizeSacredNodeIds(parsed.completedTreeNodeIds);
+      parsed.rewardedTreeNodeIds = sanitizeSacredNodeIds(parsed.rewardedTreeNodeIds);
+      parsed.studiedFiqhIds = sanitizeFiqhIds(parsed.studiedFiqhIds);
+      parsed.rewardedFiqhIds = sanitizeFiqhIds(parsed.rewardedFiqhIds);
 
       return parsed;
     }
@@ -452,6 +481,11 @@ export function useDevotionData() {
       favoriteDuaIds: [],
       streakPausedDates: {},
       dailyIntention: { date: currentDate, text: '' },
+      dailyTodos: { date: currentDate, items: cloneDefaultDailyTodos(DEFAULT_DAILY_TODOS) },
+      completedTreeNodeIds: [],
+      rewardedTreeNodeIds: [],
+      studiedFiqhIds: [],
+      rewardedFiqhIds: [],
       burhanNotes: {},
       maqamat: {
         currentStation: 0,
@@ -777,6 +811,169 @@ export function useDevotionData() {
     }));
   }, []);
 
+  const addDailyTodo = useCallback((text) => {
+    const dateStr = getLocalDateStr();
+    setData((prev) => {
+      const currentItems =
+        prev.dailyTodos?.date === dateStr && Array.isArray(prev.dailyTodos.items)
+          ? prev.dailyTodos.items
+          : cloneDefaultDailyTodos(DEFAULT_DAILY_TODOS);
+      const nextItems = addDailyTodoToList(currentItems, text);
+      if (nextItems === currentItems) return prev;
+      return {
+        ...prev,
+        dailyTodos: { date: dateStr, items: nextItems },
+      };
+    });
+  }, []);
+
+  const toggleDailyTodo = useCallback((todoId) => {
+    const dateStr = getLocalDateStr();
+    setData((prev) => {
+      const currentItems =
+        prev.dailyTodos?.date === dateStr && Array.isArray(prev.dailyTodos.items)
+          ? prev.dailyTodos.items
+          : cloneDefaultDailyTodos(DEFAULT_DAILY_TODOS);
+      const prevTarget = currentItems.find((t) => t && t.id === todoId);
+      if (!prevTarget) return prev;
+      const nextItems = toggleDailyTodoInList(currentItems, todoId);
+      const wasCompleted = Boolean(prevTarget.completed);
+      const isFirstCompletion = !wasCompleted && !prevTarget.rewarded;
+      const rewardAmt = typeof prevTarget.reward === 'number' ? prevTarget.reward : 5;
+
+      const currentDayEntry = prev.history[dateStr] || { prayers: 0, verses: 0, practices: 0 };
+      const nextDayPractices = Math.max(
+        0,
+        (currentDayEntry.practices || 0) + (wasCompleted ? -1 : 1)
+      );
+      const nextHistory = { ...prev.history };
+      if (
+        (currentDayEntry.prayers || 0) === 0 &&
+        (currentDayEntry.verses || 0) === 0 &&
+        nextDayPractices === 0
+      ) {
+        delete nextHistory[dateStr];
+      } else {
+        nextHistory[dateStr] = {
+          prayers: currentDayEntry.prayers || 0,
+          verses: currentDayEntry.verses || 0,
+          practices: nextDayPractices,
+        };
+      }
+      return {
+        ...prev,
+        history: nextHistory,
+        dailyTodos: { date: dateStr, items: nextItems },
+        maqamat: isFirstCompletion
+          ? {
+              ...prev.maqamat,
+              yaqeenProgress: Math.min(100, (prev.maqamat?.yaqeenProgress || 0) + rewardAmt),
+            }
+          : prev.maqamat,
+      };
+    });
+  }, []);
+
+  const removeDailyTodo = useCallback((todoId) => {
+    const dateStr = getLocalDateStr();
+    setData((prev) => {
+      const currentItems =
+        prev.dailyTodos?.date === dateStr && Array.isArray(prev.dailyTodos.items)
+          ? prev.dailyTodos.items
+          : cloneDefaultDailyTodos(DEFAULT_DAILY_TODOS);
+      return {
+        ...prev,
+        dailyTodos: { date: dateStr, items: removeDailyTodoFromList(currentItems, todoId) },
+      };
+    });
+  }, []);
+
+  const clearCompletedDailyTodos = useCallback(() => {
+    const dateStr = getLocalDateStr();
+    setData((prev) => {
+      const currentItems =
+        prev.dailyTodos?.date === dateStr && Array.isArray(prev.dailyTodos.items)
+          ? prev.dailyTodos.items
+          : cloneDefaultDailyTodos(DEFAULT_DAILY_TODOS);
+      return {
+        ...prev,
+        dailyTodos: { date: dateStr, items: clearCompletedDailyTodosInList(currentItems) },
+      };
+    });
+  }, []);
+
+  const toggleTreeNode = useCallback((nodeId) => {
+    setData((prev) => {
+      const prevCompleted = sanitizeSacredNodeIds(prev.completedTreeNodeIds);
+      const nextCompleted = toggleSacredNodeId(prevCompleted, nodeId);
+      if (nextCompleted.length === prevCompleted.length) return prev;
+
+      const isNowCompleted = nextCompleted.includes(nodeId);
+      const prevRewarded = sanitizeSacredNodeIds(prev.rewardedTreeNodeIds);
+      const isFirstReward = isNowCompleted && !prevRewarded.includes(nodeId);
+      const nextRewarded = isFirstReward ? [...prevRewarded, nodeId] : prevRewarded;
+
+      const dateStr = getLocalDateStr();
+      const currentDayEntry = prev.history[dateStr] || { prayers: 0, verses: 0, practices: 0 };
+      const nextDayPractices = Math.max(
+        0,
+        (currentDayEntry.practices || 0) + (isNowCompleted ? 1 : -1)
+      );
+      const nextHistory = { ...prev.history };
+      if (
+        (currentDayEntry.prayers || 0) === 0 &&
+        (currentDayEntry.verses || 0) === 0 &&
+        nextDayPractices === 0
+      ) {
+        delete nextHistory[dateStr];
+      } else {
+        nextHistory[dateStr] = {
+          prayers: currentDayEntry.prayers || 0,
+          verses: currentDayEntry.verses || 0,
+          practices: nextDayPractices,
+        };
+      }
+
+      return {
+        ...prev,
+        history: nextHistory,
+        completedTreeNodeIds: nextCompleted,
+        rewardedTreeNodeIds: nextRewarded,
+        maqamat: isFirstReward
+          ? {
+              ...prev.maqamat,
+              yaqeenProgress: Math.min(100, (prev.maqamat?.yaqeenProgress || 0) + 10),
+            }
+          : prev.maqamat,
+      };
+    });
+  }, []);
+
+  const toggleFiqhBranch = useCallback((fiqhId) => {
+    setData((prev) => {
+      const prevStudied = sanitizeFiqhIds(prev.studiedFiqhIds);
+      const nextStudied = toggleFiqhId(prevStudied, fiqhId);
+      if (nextStudied.length === prevStudied.length) return prev;
+
+      const isNowStudied = nextStudied.includes(fiqhId);
+      const prevRewarded = sanitizeFiqhIds(prev.rewardedFiqhIds);
+      const isFirstReward = isNowStudied && !prevRewarded.includes(fiqhId);
+      const nextRewarded = isFirstReward ? [...prevRewarded, fiqhId] : prevRewarded;
+
+      return {
+        ...prev,
+        studiedFiqhIds: nextStudied,
+        rewardedFiqhIds: nextRewarded,
+        maqamat: isFirstReward
+          ? {
+              ...prev.maqamat,
+              yaqeenProgress: Math.min(100, (prev.maqamat?.yaqeenProgress || 0) + 3),
+            }
+          : prev.maqamat,
+      };
+    });
+  }, []);
+
   const exportBackupJson = useCallback(() => {
     return JSON.stringify(data, null, 2);
   }, [data]);
@@ -1100,6 +1297,11 @@ export function useDevotionData() {
       qada: data.qada || { prayers: { fajr: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0 }, fasts: 0, completedTotal: 0 },
       favoriteDuaIds: data.favoriteDuaIds || [],
       dailyIntention: data.dailyIntention?.text || '',
+      dailyTodos: Array.isArray(data.dailyTodos?.items)
+        ? data.dailyTodos.items
+        : DEFAULT_DAILY_TODOS,
+      completedTreeNodeIds: sanitizeSacredNodeIds(data.completedTreeNodeIds),
+      studiedFiqhIds: sanitizeFiqhIds(data.studiedFiqhIds),
       badgeStatuses: badgeEval.statuses,
       unlockedBadgeCount: badgeEval.unlockedCount,
       totalBadgeCount: badgeEval.totalCount,
@@ -1124,6 +1326,12 @@ export function useDevotionData() {
       toggleFavoriteDua,
       toggleStreakPauseToday,
       setDailyIntention,
+      addDailyTodo,
+      toggleDailyTodo,
+      removeDailyTodo,
+      clearCompletedDailyTodos,
+      toggleTreeNode,
+      toggleFiqhBranch,
       exportBackupJson,
       importBackupJson,
       completeBurhan,
@@ -1174,6 +1382,12 @@ export function useDevotionData() {
       toggleFavoriteDua,
       toggleStreakPauseToday,
       setDailyIntention,
+      addDailyTodo,
+      toggleDailyTodo,
+      removeDailyTodo,
+      clearCompletedDailyTodos,
+      toggleTreeNode,
+      toggleFiqhBranch,
       exportBackupJson,
       importBackupJson,
       completeBurhan,

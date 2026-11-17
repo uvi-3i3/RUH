@@ -175,3 +175,124 @@ export function sanitizeHabitList(habits) {
   return result;
 }
 
+export const DEFAULT_DAILY_TODOS = [
+  {
+    id: 'todo_verse_reflect',
+    text: 'Reflect on a verse',
+    reward: 5,
+    completed: false,
+    rewarded: false,
+  },
+  {
+    id: 'todo_adhkar_moment',
+    text: 'Morning or evening dhikr',
+    reward: 5,
+    completed: false,
+    rewarded: false,
+  },
+  {
+    id: 'todo_family_kindness',
+    text: 'One quiet act of kindness',
+    reward: 5,
+    completed: false,
+    rewarded: false,
+  },
+];
+
+export function cloneDefaultDailyTodos(defaults = DEFAULT_DAILY_TODOS) {
+  return Array.isArray(defaults)
+    ? defaults.map((item) => ({
+        ...item,
+        reward: typeof item.reward === 'number' ? item.reward : 5,
+        completed: Boolean(item.completed),
+        rewarded: Boolean(item.rewarded),
+      }))
+    : [];
+}
+
+export function createDailyTodoItem(text, id) {
+  const cleaned = String(text || '').trim().slice(0, 72);
+  if (!cleaned) return null;
+  return {
+    id: id || `todo_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    text: cleaned,
+    reward: 5,
+    completed: false,
+    rewarded: false,
+    isCustom: true,
+  };
+}
+
+export function addDailyTodoToList(todos = [], text, id) {
+  const list = Array.isArray(todos) ? todos : [];
+  if (list.length >= 12) return list;
+  const item = createDailyTodoItem(text, id);
+  if (!item) return list;
+  return [...list, item];
+}
+
+export function toggleDailyTodoInList(todos = [], todoId) {
+  if (!Array.isArray(todos) || !todoId) return Array.isArray(todos) ? todos : [];
+  return todos.map((item) => {
+    if (!item || item.id !== todoId) return item;
+    const nextCompleted = !item.completed;
+    return {
+      ...item,
+      completed: nextCompleted,
+      rewarded: Boolean(item.rewarded || nextCompleted),
+    };
+  });
+}
+
+export function removeDailyTodoFromList(todos = [], todoId) {
+  if (!Array.isArray(todos)) return [];
+  return todos.filter((item) => item && item.id !== todoId);
+}
+
+export function clearCompletedDailyTodosInList(todos = []) {
+  if (!Array.isArray(todos)) return [];
+  return todos.filter((item) => item && !item.completed);
+}
+
+export function computeTodaySummary({ dailyTodos = [] } = {}) {
+  const safeTodos = Array.isArray(dailyTodos) ? dailyTodos.filter(Boolean) : [];
+  const completedTodos = safeTodos.filter((t) => Boolean(t.completed)).length;
+  const totalTodos = safeTodos.length;
+  const percentage = totalTodos > 0 ? Math.round((completedTodos / totalTodos) * 100) : 0;
+  const allCompleted = totalTodos > 0 && completedTodos >= totalTodos;
+
+  return {
+    completedTodos,
+    totalTodos,
+    totalCompleted: completedTodos,
+    totalItems: totalTodos,
+    percentage,
+    allCompleted,
+  };
+}
+
+export function resolvePrayerDisplayTime(prayerId, prayerData, fallbackPrayers) {
+  if (!prayerId) return '';
+  const formattedVal = prayerData?.formatted?.[prayerId];
+  if (typeof formattedVal === 'string' && formattedVal.trim()) {
+    return formattedVal.replace(/\s*(AM|PM)/i, '').trim();
+  }
+  const rawTime = prayerData?.times?.[prayerId];
+  if (rawTime instanceof Date && !Number.isNaN(rawTime.getTime())) {
+    return rawTime
+      .toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })
+      .replace(/\s*(AM|PM)/i, '')
+      .trim();
+  }
+  if (typeof rawTime === 'string' && rawTime.trim()) {
+    return rawTime.replace(/\s*(AM|PM)/i, '').trim();
+  }
+  const fallbackVal = fallbackPrayers?.[prayerId]?.time;
+  if (typeof fallbackVal === 'string' && fallbackVal.trim()) {
+    return fallbackVal.replace(/\s*(AM|PM)/i, '').trim();
+  }
+  return '';
+}
+
+
+

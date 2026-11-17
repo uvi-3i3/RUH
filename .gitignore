@@ -22,3 +22,24 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# AI Studio & local browser test artifacts
+.aistudio/
+.playwright-cli/
+
+# Capacitor generated web assets & native build outputs (rebuilt via npm run build && npx cap sync)
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/app/src/main/res/xml/config.xml
+android/capacitor-cordova-android-plugins/
+android/.gradle/
+android/build/
+android/app/build/
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+ios/App/App/config.xml
+ios/capacitor-cordova-ios-plugins/
+ios/App/build/
+ios/App/Pods/
+

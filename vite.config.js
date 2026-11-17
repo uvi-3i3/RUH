@@ -45,6 +45,20 @@ export default defineConfig({
         importScripts: ['/sw-notifications.js'],
         cleanupOutdatedCaches: true,
         navigateFallback: null,
+        globIgnores: ['**/*.wasm'],
+        runtimeCaching: [
+          {
+            urlPattern: /\.wasm$/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'ruh-wasm-runtime-v1',
+              expiration: {
+                maxEntries: 8,
+                maxAgeSeconds: 60 * 60 * 24 * 90,
+              },
+            },
+          },
+        ],
       },
       devOptions: {
         enabled: false,
@@ -56,6 +70,9 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: true,
     hmr: env.DISABLE_HMR !== 'true',
+  },
+  worker: {
+    format: 'es',
   },
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkg.version),

@@ -1,13 +1,19 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DUA_CATEGORIES, ESSENTIAL_DUAS } from '../../data/duasData';
-import { filterDuas } from '../../utils/devotionLogic';
-import { useOptionalPreferences } from '../../context/sanctuaryStore';
+import {
+  composeGroundedDuaFallback,
+  rankDuasByMoment,
+  shouldShowDuaGuidance,
+} from '../../utils/localAiLogic';
+import { useOptionalLocalAI, useOptionalPreferences } from '../../context/sanctuaryStore';
 import {
   BookIcon,
   BookmarkIcon,
   ChevronDownIcon,
   SearchIcon,
   ShareIcon,
+  SparklesIcon,
+  XIcon,
 } from '../icons/Icons';
 import {
   hapticDetent,
@@ -23,23 +29,97 @@ export const DuasModal = ({
   isLightMode: isLightModeProp,
   favoriteDuaIds = [],
   onToggleFavorite,
+  initialQuery = '',
 }) => {
   const preferencesCtx = useOptionalPreferences();
+  const localAI = useOptionalLocalAI();
   const isLightMode = isLightModeProp ?? preferencesCtx?.isLightMode ?? false;
+
   const [category, setCategory] = useState('all');
   const [query, setQuery] = useState('');
   const [copiedId, setCopiedId] = useState(null);
+  const [guidanceState, setGuidanceState] = useState({
+    text: '',
+    sourceMode: 'fallback',
+    loading: false,
+  });
+  const guidanceReqRef = useRef(0);
 
-  const filteredDuas = useMemo(
-    () => filterDuas(ESSENTIAL_DUAS, category, query, favoriteDuaIds),
+  useEffect(() => {
+    if (isOpen) {
+      if (initialQuery) {
+        setCategory('all');
+        setQuery(initialQuery);
+      }
+    } else {
+      guidanceReqRef.current += 1;
+      localAI?.abortGeneration?.();
+      setGuidanceState({ text: '', sourceMode: 'fallback', loading: false });
+    }
+  }, [isOpen, initialQuery]);
+
+  const rankedResults = useMemo(
+    () =>
+      rankDuasByMoment(ESSENTIAL_DUAS, {
+        category,
+        query,
+        favoriteIds: favoriteDuaIds,
+      }),
     [category, query, favoriteDuaIds]
   );
+
+  const filteredDuas = useMemo(
+    () => rankedResults.map((r) => r.item),
+    [rankedResults]
+  );
+
+  const topDua = filteredDuas[0] || null;
+  const wantsGuidance = isOpen && shouldShowDuaGuidance(query) && Boolean(topDua);
+
+  useEffect(() => {
+    if (!wantsGuidance || !topDua) {
+      guidanceReqRef.current += 1;
+      setGuidanceState({ text: '', sourceMode: 'fallback', loading: false });
+      return undefined;
+    }
+
+    const epoch = ++guidanceReqRef.current;
+    const instantText = composeGroundedDuaFallback(query, topDua);
+    setGuidanceState({
+      text: instantText,
+      sourceMode: 'fallback',
+      loading: Boolean(localAI?.isReady),
+    });
+
+    if (!localAI?.isReady || !localAI?.guideForDuas) {
+      return undefined;
+    }
+
+    const timer = setTimeout(async () => {
+      const res = await localAI.guideForDuas({ query, topDua });
+      if (guidanceReqRef.current !== epoch) return;
+      if (res?.guidance) {
+        setGuidanceState({
+          text: res.guidance,
+          sourceMode: res.sourceMode || 'llm',
+          loading: false,
+        });
+      } else {
+        setGuidanceState((prev) => ({ ...prev, loading: false }));
+      }
+    }, 420);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [wantsGuidance, query, topDua?.id, localAI?.isReady]);
 
   if (!isOpen) return null;
 
   const tTextMain = isLightMode ? 'text-[#1a1814]' : 'text-[rgba(245,238,224,0.95)]';
   const tTextSub = isLightMode ? 'text-[#3a3329]' : 'text-[rgba(228,218,200,0.72)]';
   const accentHex = isLightMode ? '#8a621c' : '#d2a24b';
+  const tealHex = isLightMode ? '#0d9488' : '#14b8a6';
 
   const handleCopy = async (dua) => {
     hapticTapLight();
@@ -51,7 +131,9 @@ export const DuasModal = ({
       hapticSuccess();
       setCopiedId(dua.id);
       setTimeout(() => setCopiedId((cur) => (cur === dua.id ? null : cur)), 1800);
-    } catch {}
+    } catch {
+      // Ignore clipboard failures
+    }
   };
 
   return (
@@ -110,7 +192,7 @@ export const DuasModal = ({
         {/* Search & Category Tabs */}
         <div className="px-6 pt-3.5 pb-3 border-b border-current/10 shrink-0 space-y-3">
           <div
-            className={`flex items-center gap-2.5 px-3.5 py-2 rounded-2xl border ${
+            className={`flex items-center gap-2.5 px-3.5 py-1.5 min-h-[44px] rounded-2xl border ${
               isLightMode ? 'bg-white/80 border-black/10' : 'bg-white/[0.04] border-white/10'
             }`}
           >
@@ -119,10 +201,23 @@ export const DuasModal = ({
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              aria-label="Search Duas by moment or keyword"
-              placeholder="Search by feeling, moment, or word..."
+              aria-label="Search Duas by moment or feeling"
+              placeholder="Ask by feeling, moment, or keyword..."
               className={`w-full bg-transparent font-serif-eng text-sm outline-none ${tTextMain} placeholder:opacity-45`}
             />
+            {query && (
+              <button
+                type="button"
+                aria-label="Clear Dua search"
+                onClick={() => {
+                  hapticTapLight();
+                  setQuery('');
+                }}
+                className="w-8 h-8 rounded-full flex items-center justify-center opacity-60 hover:opacity-100 cursor-pointer shrink-0"
+              >
+                <XIcon size={14} className={tTextMain} />
+              </button>
+            )}
           </div>
 
           <div
@@ -142,7 +237,7 @@ export const DuasModal = ({
                     hapticDetent();
                     setCategory(cat.id);
                   }}
-                  className={`min-h-[36px] px-3 rounded-xl font-serif-eng text-[10px] uppercase tracking-[0.14em] transition-colors cursor-pointer shrink-0 whitespace-nowrap border ${
+                  className={`min-h-[38px] px-3 rounded-xl font-serif-eng text-[10px] uppercase tracking-[0.14em] transition-colors cursor-pointer shrink-0 whitespace-nowrap border ${
                     active
                       ? isLightMode
                         ? 'bg-[#8a621c] text-white border-[#8a621c]'
@@ -161,7 +256,44 @@ export const DuasModal = ({
         </div>
 
         {/* Duas List */}
-        <div className="flex-1 w-full overflow-y-auto hide-scrollbar px-6 py-4 space-y-4">
+        <div
+          className="flex-1 w-full overflow-y-auto hide-scrollbar px-6 py-4 space-y-4"
+          style={{ paddingBottom: 'calc(24px + var(--sab))' }}
+        >
+          {/* Moment-Aware Companion Guidance Strip */}
+          {wantsGuidance && guidanceState.text && (
+            <div
+              data-testid="dua-guidance-strip"
+              className={`w-full rounded-[20px] border p-4 transition-colors ${
+                isLightMode
+                  ? 'bg-[#0d9488]/[0.06] border-[#0d9488]/22'
+                  : 'bg-[#14b8a6]/[0.07] border-[#14b8a6]/25'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <div className="flex items-center gap-1.5">
+                  <SparklesIcon
+                    size={13}
+                    className={guidanceState.loading ? 'animate-spin' : ''}
+                    style={{ color: tealHex }}
+                  />
+                  <span
+                    className="font-serif-eng text-[9.5px] uppercase tracking-[0.18em] font-medium"
+                    style={{ color: tealHex }}
+                  >
+                    Moment Companion
+                  </span>
+                </div>
+                <span className={`font-serif-eng text-[9px] uppercase tracking-[0.12em] opacity-65 ${tTextSub}`}>
+                  {guidanceState.sourceMode === 'llm' ? 'On-Device AI' : 'Grounded Match'}
+                </span>
+              </div>
+              <p className={`font-serif-eng text-[13px] leading-relaxed ${tTextMain}`}>
+                {guidanceState.text}
+              </p>
+            </div>
+          )}
+
           {filteredDuas.length === 0 ? (
             <div className="py-12 text-center">
               <p className={`font-serif-eng italic text-sm ${tTextSub}`}>
@@ -200,7 +332,7 @@ export const DuasModal = ({
                           hapticToggle(!isFav);
                           onToggleFavorite?.(dua.id);
                         }}
-                        className={`min-w-[40px] min-h-[40px] rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
+                        className={`min-w-[44px] min-h-[44px] rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
                           isLightMode ? 'hover:bg-black/5' : 'hover:bg-white/[0.07]'
                         }`}
                         style={{ color: isFav ? accentHex : undefined }}
@@ -211,7 +343,7 @@ export const DuasModal = ({
                         type="button"
                         aria-label={`Copy ${dua.title}`}
                         onClick={() => handleCopy(dua)}
-                        className={`min-w-[40px] min-h-[40px] px-2 rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
+                        className={`min-w-[44px] min-h-[44px] px-2 rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
                           isLightMode ? 'hover:bg-black/5' : 'hover:bg-white/[0.07]'
                         }`}
                         style={{ color: isCopied ? accentHex : undefined }}

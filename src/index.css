@@ -237,7 +237,10 @@
   .animate-badge-impact,
   .animate-badge-octagon,
   .animate-badge-pulse-tap,
-  .animate-badge-flourish {
+  .animate-badge-flourish,
+  .animate-sacred-astrolabe,
+  .animate-sacred-astrolabe-rev,
+  .animate-sacred-nur {
     animation: none !important;
   }
 }
@@ -533,5 +536,38 @@
   will-change: transform;
 }
 
+@keyframes sacredAstrolabeSpin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
 
+@keyframes sacredNurGlow {
+  0%, 100% {
+    opacity: 0.42;
+  }
+  50% {
+    opacity: 0.92;
+  }
+}
+
+.animate-sacred-astrolabe {
+  animation: sacredAstrolabeSpin 120s linear infinite;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+.animate-sacred-astrolabe-rev {
+  animation: sacredAstrolabeSpin 160s linear reverse infinite;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+.animate-sacred-nur {
+  animation: sacredNurGlow 4.2s ease-in-out infinite;
+  will-change: opacity;
+}
 

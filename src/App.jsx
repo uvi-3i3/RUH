@@ -19,15 +19,17 @@ import {
   MainNavIcon,
   ProfileNavIcon,
   TasksNavIcon,
+  LearningPathNavIcon,
   ShareIcon,
   CompassIcon,
   BookIcon,
   RotateCcwIcon,
 } from './components/icons/Icons';
-import { DevotionTimeline } from './components/layout/DevotionTimeline';
 import { DevotionHeatmap } from './components/layout/DevotionHeatmap';
 import { DailyStreakTracker } from './components/layout/DailyStreakTracker';
 import { TasksView } from './components/layout/TasksView';
+import { LearningPathPage } from './components/layout/LearningPathPage';
+import { captureClickOriginFromEvent } from './utils/learningPathLogic';
 import { PRACTICE_SETS } from './data/adhkarData';
 import { TasksSideColumn } from './components/layout/TasksSideColumn';
 import { StationIndicator } from './components/layout/StationIndicator';
@@ -80,7 +82,7 @@ export default function App() {
 
   const [verseIndex, setVerseIndex] = useState(0);
   const [contentData, setContentData] = useState(null);
-  const [showAmbientTasks, setShowAmbientTasks] = useState(false);
+  const [showTodayList, setShowTodayList] = useState(false);
   const [kashfCeremony, setKashfCeremony] = useState(false);
   const kashfTimerRef = useRef(null);
   const palette = useTemporalPhase(devTimePhase);
@@ -129,6 +131,8 @@ export default function App() {
   const [showDuas, setShowDuas] = useState(false);
   const [showQada, setShowQada] = useState(false);
   const [misbahaLaunch, setMisbahaLaunch] = useState(null);
+  const [learningPathOrigin, setLearningPathOrigin] = useState(null);
+  const [learningPathClosing, setLearningPathClosing] = useState(false);
   const [reviewPrayers, setReviewPrayers] = useState(false);
   const [inspectedBadge, setInspectedBadge] = useState(null);
   const [journeyTab, setJourneyTab] = useState('streak'); // 'streak' | 'badges' | 'path'
@@ -145,8 +149,11 @@ export default function App() {
   const lastTapTime = useRef(0);
   const doubleTapCooldown = useRef(false);
 
+  const isLearningPathOpen = Boolean(learningPathOrigin);
+
   const isAnyModalOpen = Boolean(
-    tafakkurPromptId ||
+    showTodayList ||
+      tafakkurPromptId ||
       showArchive ||
       showBurhanModal ||
       showSettings ||
@@ -156,6 +163,7 @@ export default function App() {
       showDuas ||
       showQada ||
       misbahaLaunch ||
+      isLearningPathOpen ||
       inspectedBadge ||
       devotionData.activeCelebrationBadge
   );
@@ -168,9 +176,15 @@ export default function App() {
       if (typeof document !== 'undefined' && document.querySelector('[data-habit-editor-open="true"]')) {
         return;
       }
-      if (misbahaLaunch) setMisbahaLaunch(null);
+      if (learningPathOrigin) {
+        if (!learningPathClosing) {
+          hapticDismiss();
+          setLearningPathClosing(true);
+        }
+      } else if (misbahaLaunch) setMisbahaLaunch(null);
       else if (showCityPicker) setShowCityPicker(false);
       else if (tafakkurPromptId) setTafakkurPromptId(null);
+      else if (showTodayList) setShowTodayList(false);
       else if (showReminders) setShowReminders(false);
       else if (showSettings) setShowSettings(false);
       else if (showQibla) setShowQibla(false);
@@ -184,9 +198,12 @@ export default function App() {
   }, [
     devotionData.activeCelebrationBadge,
     inspectedBadge,
+    learningPathOrigin,
+    learningPathClosing,
     misbahaLaunch,
     showCityPicker,
     tafakkurPromptId,
+    showTodayList,
     showReminders,
     showSettings,
     showQibla,
@@ -211,6 +228,10 @@ export default function App() {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
       return true;
     }
+    if (learningPathOrigin) {
+      if (!learningPathClosing) setLearningPathClosing(true);
+      return true;
+    }
     if (misbahaLaunch) {
       setMisbahaLaunch(null);
       return true;
@@ -221,6 +242,10 @@ export default function App() {
     }
     if (tafakkurPromptId) {
       setTafakkurPromptId(null);
+      return true;
+    }
+    if (showTodayList) {
+      setShowTodayList(false);
       return true;
     }
     if (showReminders) {
@@ -289,14 +314,9 @@ export default function App() {
   const hideStackForSeal = allCompleted && !reviewPrayers;
 
   useEffect(() => {
-    let timer;
-    if (allCompleted) {
-      timer = setTimeout(() => setShowAmbientTasks(true), 2400);
-    } else {
-      setShowAmbientTasks(false);
+    if (!allCompleted) {
       setReviewPrayers(false);
     }
-    return () => clearTimeout(timer);
   }, [allCompleted]);
 
   useEffect(() => {
@@ -698,27 +718,22 @@ export default function App() {
         }}
       />
 
-      {/* THEOLOGICAL WATERMARK / DEVOTION TIMELINE (Main Sanctuary only) */}
-      <DevotionTimeline
-        completedCount={completedPrayers.length}
-        isLightMode={isLightMode}
-        isHikmah={isHikmah}
-        accentColor={accentHex}
-        accentGlow={`${accentRgba},0.6)`}
-        isVisible={currentView === 'main'}
-      />
-
-      {/* AMBIENT SIDE COLUMN (Materializes on the left when all 5 prayers are complete) */}
+      {/* LEFT-RAIL TODAY LIST CAPSULE & DRAWER (Main Sanctuary) */}
       <TasksSideColumn
-        isVisible={showAmbientTasks && currentView === 'main'}
-        isLightMode={isLightMode}
-        dailyTasks={devotionData.dailyTasks}
-        incrementTask={devotionData.incrementTask}
+        isVisible={currentView === 'main' && !isLearningPathOpen}
+        isOpen={showTodayList}
+        onOpen={() => setShowTodayList(true)}
+        onClose={() => setShowTodayList(false)}
+        onTogglePrayer={(id) => handleTogglePrayer(id, 'ontime')}
+        onOpenPractices={() => setCurrentView('tasks')}
+        hijriDateLabel={hijri?.formatted || ''}
         accentColor={accentHex}
       />
 
       {/* --- WHISPER-QUIET SPATIAL HEADER --- */}
       <header
+        aria-hidden={isLearningPathOpen || undefined}
+        inert={isLearningPathOpen}
         className="absolute left-0 right-0 z-30 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-5 md:px-10 pointer-events-none"
         style={{ top: 'calc(12px + var(--sat))' }}
       >
@@ -804,7 +819,11 @@ export default function App() {
       </header>
 
       {/* --- 3-COLUMN ARCHITECTURAL LAYOUT --- */}
-      <div className="absolute inset-0 z-20 flex w-full h-full px-1 md:px-10 pointer-events-none">
+      <div
+        aria-hidden={isLearningPathOpen || undefined}
+        inert={isLearningPathOpen}
+        className="absolute inset-0 z-20 flex w-full h-full px-1 md:px-10 pointer-events-none"
+      >
         {/* Left Col - Spatial Margin Spacer */}
         <div className="w-[44px] md:w-[140px] flex-shrink-0 h-full pl-1 md:pl-10" />
 
@@ -1529,6 +1548,31 @@ export default function App() {
               <TasksNavIcon size={15} />
             </button>
 
+            {/* Learning Path Window Button — expands directly from clicked point */}
+            <button
+              type="button"
+              data-testid="nav-learning-path"
+              aria-label="Learning Path"
+              aria-expanded={isLearningPathOpen}
+              onClick={(e) => {
+                const origin = captureClickOriginFromEvent(e);
+                hapticNavigate();
+                setLearningPathClosing(false);
+                setLearningPathOrigin(origin);
+              }}
+              className={`relative w-7 h-7 rounded-full transition-all duration-500 hover:scale-105 flex items-center justify-center cursor-pointer ${
+                isLearningPathOpen
+                  ? isLightMode
+                    ? 'text-[#9c7533] shadow-[0_2px_10px_rgba(156,117,51,0.2)] bg-white/65 ring-1 ring-[#9c7533]/30'
+                    : 'text-[#d2a24b] shadow-[0_2px_10px_rgba(210,162,75,0.22)] bg-white/10 ring-1 ring-[#d2a24b]/35'
+                  : isLightMode
+                    ? 'text-[#4a453d] opacity-55 hover:opacity-100'
+                    : 'text-[#e4dac8] opacity-40 hover:opacity-100'
+              }`}
+            >
+              <LearningPathNavIcon size={15} />
+            </button>
+
             {/* Soul Mirror / Profile Button */}
             <button
               type="button"
@@ -1557,11 +1601,13 @@ export default function App() {
 
       {/* --- 5. 3D PRAYER SCROLL WHEEL + ALIGNED QIBLA DOCK (MAIN VIEW ONLY) --- */}
       <div
+        aria-hidden={isLearningPathOpen || undefined}
+        inert={isLearningPathOpen}
         className="absolute inset-x-0 bottom-0 z-30 pointer-events-none transition-[opacity,visibility,transform] duration-500"
         style={{
           height: 'calc(216px + var(--sab))',
-          opacity: currentView === 'main' ? 1 : 0,
-          visibility: currentView === 'main' ? 'visible' : 'hidden',
+          opacity: currentView === 'main' && !isLearningPathOpen ? 1 : 0,
+          visibility: currentView === 'main' && !isLearningPathOpen ? 'visible' : 'hidden',
           transform: currentView === 'main' ? 'translateY(0)' : 'translateY(10px)',
         }}
       >
@@ -2085,6 +2131,20 @@ export default function App() {
         }}
       />
 
+      {/* FULL-SCREEN EXPANDING LEARNING PATH PAGE (Zero navigation chrome) */}
+      {learningPathOrigin && (
+        <LearningPathPage
+          origin={learningPathOrigin}
+          isClosing={learningPathClosing}
+          isLightMode={isLightMode}
+          onRequestClose={() => setLearningPathClosing(true)}
+          onExited={() => {
+            setLearningPathOrigin(null);
+            setLearningPathClosing(false);
+          }}
+        />
+      )}
+
       {/* KASHF (UNVEILING) CEREMONY */}
       {kashfCeremony && (
         <div
@@ -2119,19 +2179,21 @@ export default function App() {
         </div>
       )}
       {/* SERENE LOCAL PRAYER NOTIFICATION BANNER */}
-      <SacredNotificationToast
-        toast={notifications.activeToast}
-        isLightMode={isLightMode}
-        isAlreadyCompleted={Boolean(
-          notifications.activeToast?.prayerId &&
-            devotionData.dailyCompletedPrayers?.includes(notifications.activeToast.prayerId)
-        )}
-        onMarkPrayed={(prayerId) => {
-          devotionData.logPrayer(prayerId, 'ontime');
-          notifications.dismissToast();
-        }}
-        onDismiss={notifications.dismissToast}
-      />
+      {!isLearningPathOpen && (
+        <SacredNotificationToast
+          toast={notifications.activeToast}
+          isLightMode={isLightMode}
+          isAlreadyCompleted={Boolean(
+            notifications.activeToast?.prayerId &&
+              devotionData.dailyCompletedPrayers?.includes(notifications.activeToast.prayerId)
+          )}
+          onMarkPrayed={(prayerId) => {
+            devotionData.logPrayer(prayerId, 'ontime');
+            notifications.dismissToast();
+          }}
+          onDismiss={notifications.dismissToast}
+        />
+      )}
     </div>
   );
 }

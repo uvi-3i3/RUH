@@ -2,6 +2,7 @@ import { createContext, useContext } from 'react';
 
 export const PreferencesContext = createContext(null);
 export const HabitsContext = createContext(null);
+export const LocalAIContext = createContext(null);
 export const SanctuaryContext = createContext(null);
 
 export function usePreferences() {
@@ -26,6 +27,18 @@ export function useHabits() {
 
 export function useOptionalHabits() {
   return useContext(HabitsContext);
+}
+
+export function useLocalAIContext() {
+  const ctx = useContext(LocalAIContext);
+  if (!ctx) {
+    throw new Error('useLocalAIContext must be used within a SanctuaryProvider');
+  }
+  return ctx;
+}
+
+export function useOptionalLocalAI() {
+  return useContext(LocalAIContext);
 }
 
 export function useSanctuary() {

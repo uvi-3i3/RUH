@@ -1,11 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  DEFAULT_DAILY_TODOS,
   HABIT_PRESETS,
+  addDailyTodoToList,
+  clearCompletedDailyTodosInList,
+  cloneDefaultDailyTodos,
   cloneDefaultHabits,
+  computeTodaySummary,
+  createDailyTodoItem,
   createHabitEntry,
+  removeDailyTodoFromList,
   removeHabitFromList,
   reorderHabitInList,
+  resolvePrayerDisplayTime,
+  toggleDailyTodoInList,
   updateHabitInList,
 } from './habitLogic';
 import { DEFAULT_HABITS } from '../data/duasData';
@@ -93,3 +102,66 @@ test('HABIT_PRESETS provide valid customizable starters', () => {
     assert.ok(entry.arabic.length > 0);
   }
 });
+
+test('Today List todo helpers add, toggle, remove, and clear completed items cleanly', () => {
+  assert.equal(createDailyTodoItem('   '), null);
+
+  const starter = cloneDefaultDailyTodos(DEFAULT_DAILY_TODOS);
+  assert.equal(starter.length, 3);
+
+  const withAdded = addDailyTodoToList(starter, '  Read Surah Al-Kahf  ', 'todo_kahf');
+  assert.equal(withAdded.length, 4);
+  assert.equal(withAdded[3].text, 'Read Surah Al-Kahf');
+  assert.equal(withAdded[3].completed, false);
+
+  const toggled = toggleDailyTodoInList(withAdded, 'todo_kahf');
+  assert.equal(toggled.find((t) => t.id === 'todo_kahf').completed, true);
+
+  const cleared = clearCompletedDailyTodosInList(toggled);
+  assert.equal(cleared.length, 3);
+  assert.equal(cleared.some((t) => t.id === 'todo_kahf'), false);
+
+  const removed = removeDailyTodoFromList(cleared, starter[0].id);
+  assert.equal(removed.length, 2);
+});
+
+test('computeTodaySummary tracks daily quest completion and percentage cleanly', () => {
+  const todos = [
+    { id: 't1', text: 'Task 1', completed: true },
+    { id: 't2', text: 'Task 2', completed: false },
+    { id: 't3', text: 'Task 3', completed: true },
+  ];
+  const summary = computeTodaySummary({ dailyTodos: todos });
+
+  assert.equal(summary.completedTodos, 2);
+  assert.equal(summary.totalTodos, 3);
+  assert.equal(summary.totalCompleted, 2);
+  assert.equal(summary.totalItems, 3);
+  assert.equal(summary.percentage, 67);
+  assert.equal(summary.allCompleted, false);
+});
+
+test('resolvePrayerDisplayTime handles Date objects, formatted strings, and fallback times safely', () => {
+  const sampleDate = new Date(2026, 10, 17, 5, 18, 0);
+  const withFormatted = {
+    times: { fajr: sampleDate },
+    formatted: { fajr: '5:18 AM' },
+  };
+  assert.equal(resolvePrayerDisplayTime('fajr', withFormatted, {}), '5:18');
+
+  // Even if formatted is missing and times contains a raw Date object, it never throws
+  const withOnlyDate = {
+    times: { fajr: sampleDate },
+  };
+  const dateOut = resolvePrayerDisplayTime('fajr', withOnlyDate, {});
+  assert.equal(typeof dateOut, 'string');
+  assert.ok(dateOut.length > 0);
+
+  // Fallback when no city is set
+  assert.equal(
+    resolvePrayerDisplayTime('dhuhr', null, { dhuhr: { time: '12:45 PM' } }),
+    '12:45'
+  );
+});
+
+
