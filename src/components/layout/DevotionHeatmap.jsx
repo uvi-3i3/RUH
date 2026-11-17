@@ -76,7 +76,7 @@ export const DevotionHeatmap = ({ isLightMode, historyMap }) => {
 
   return (
     <div
-      className={`w-full p-3 rounded-[20px] border transition-all duration-1000 mb-2 ${
+      className={`w-full p-3.5 rounded-2xl border transition-all duration-1000 ${
         isLightMode
           ? 'bg-white/62 border-white/80 island-light'
           : 'bg-[#0b0e16]/68 border-white/[0.09] island-dark'

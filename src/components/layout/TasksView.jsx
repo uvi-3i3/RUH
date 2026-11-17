@@ -14,11 +14,23 @@ import { burhanData } from '../../data/burhanData';
 import { PRACTICE_SETS } from '../../data/adhkarData';
 import { getRecommendedAdhkarPeriod, selectActiveBurhan } from '../../utils/devotionLogic';
 import { HabitEditorSheet } from './HabitEditorSheet';
-import { hapticSuccess, hapticTapLight, hapticTapMedium } from '../../utils/haptics';
+import {
+  hapticDestructive,
+  hapticDetent,
+  hapticDismiss,
+  hapticHeavy,
+  hapticNavigate,
+  hapticSuccess,
+  hapticTapLight,
+  hapticToggle,
+  hapticUndo,
+  hapticWarning,
+} from '../../utils/haptics';
+import { useOptionalHabits, useOptionalPreferences } from '../../context/sanctuaryStore';
 
 export const TasksView = ({
   currentView,
-  isLightMode,
+  isLightMode: isLightModeProp,
   dailyTasks,
   rewardedSets = [],
   burhanCompleted,
@@ -28,21 +40,34 @@ export const TasksView = ({
   activeDays,
   onOpenBurhan,
   onOpenMisbaha,
-  habits = [],
-  dailyHabitLogs = {},
-  onLogHabitStep,
-  onAddCustomHabit,
-  onUpdateHabit,
-  onReorderHabit,
-  onResetDefaultHabits,
-  onRemoveHabit,
-  dailyIntention = '',
-  onSetDailyIntention,
+  habits: habitsProp,
+  dailyHabitLogs: dailyHabitLogsProp,
+  onLogHabitStep: onLogHabitStepProp,
+  onAddCustomHabit: onAddCustomHabitProp,
+  onUpdateHabit: onUpdateHabitProp,
+  onReorderHabit: onReorderHabitProp,
+  onResetDefaultHabits: onResetDefaultHabitsProp,
+  onRemoveHabit: onRemoveHabitProp,
+  dailyIntention: dailyIntentionProp,
+  onSetDailyIntention: onSetDailyIntentionProp,
   sunnahContext,
   qadaRemainingCount = 0,
   onOpenDuas,
   onOpenQada,
 }) => {
+  const prefsCtx = useOptionalPreferences();
+  const habitsCtx = useOptionalHabits();
+
+  const isLightMode = isLightModeProp ?? prefsCtx?.isLightMode ?? false;
+  const habits = habitsProp ?? habitsCtx?.habits ?? [];
+  const dailyHabitLogs = dailyHabitLogsProp ?? habitsCtx?.dailyHabitLogs ?? {};
+  const onLogHabitStep = onLogHabitStepProp ?? habitsCtx?.logHabitStep;
+  const onReorderHabit = onReorderHabitProp ?? habitsCtx?.reorderHabit;
+  const onResetDefaultHabits = onResetDefaultHabitsProp ?? habitsCtx?.resetDefaultHabits;
+  const onRemoveHabit = onRemoveHabitProp ?? habitsCtx?.removeHabit;
+  const dailyIntention = dailyIntentionProp ?? habitsCtx?.dailyIntention ?? '';
+  const onSetDailyIntention = onSetDailyIntentionProp ?? habitsCtx?.setDailyIntention;
+
   const tTextMain = isLightMode ? 'text-[#1a1814]' : 'text-[rgba(245,238,224,0.92)]';
   const tTextSub = isLightMode ? 'text-[#2c2720]' : 'text-[rgba(228,218,200,0.68)]';
   const glowSub = isLightMode ? '0 1px 2px rgba(255,255,255,0.75)' : '0 1px 1px rgba(0,0,0,0.8)';
@@ -79,7 +104,7 @@ export const TasksView = ({
     longPressTimer.current = setTimeout(() => {
       onOpenMisbaha?.({ setId: activeSetId, initialIndex: index });
       longPressTimer.current = null;
-      hapticTapMedium();
+      hapticHeavy();
     }, 450);
   };
 
@@ -94,6 +119,7 @@ export const TasksView = ({
   };
 
   const launchSequenceInMisbaha = () => {
+    hapticNavigate();
     const firstIncomplete = activeItems.findIndex((item) => (dailyTasks[item.id] || 0) < item.target);
     onOpenMisbaha?.({
       setId: activeSetId,
@@ -118,24 +144,26 @@ export const TasksView = ({
   return (
     <div
       data-testid="tasks-scroller"
-      className="absolute inset-x-0 bottom-0 flex flex-col items-center transition-[opacity,transform,visibility] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] w-full overflow-y-auto hide-scrollbar pt-2"
+      className="absolute inset-x-0 bottom-0 flex flex-col items-center transition-[opacity,transform,visibility] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] w-full overflow-y-auto hide-scrollbar pt-1.5"
       style={{
         top: 'calc(72px + var(--sat))',
-        paddingBottom: 'calc(28px + var(--sab))',
+        paddingBottom: 'calc(18px + var(--sab))',
         touchAction: 'pan-y',
         opacity: isTasksActive ? 1 : 0,
         visibility: isTasksActive ? 'visible' : 'hidden',
         transform: isTasksActive ? 'scale(1)' : 'scale(1.02)',
         pointerEvents: isTasksActive ? 'auto' : 'none',
         maskImage: isTasksActive
-          ? 'linear-gradient(to bottom, transparent 0px, black 16px, black calc(100% - 16px), transparent 100%)'
+          ? 'linear-gradient(to bottom, transparent 0px, black 12px, black calc(100% - 12px), transparent 100%)'
           : 'none',
         WebkitMaskImage: isTasksActive
-          ? 'linear-gradient(to bottom, transparent 0px, black 16px, black calc(100% - 16px), transparent 100%)'
+          ? 'linear-gradient(to bottom, transparent 0px, black 12px, black calc(100% - 12px), transparent 100%)'
           : 'none',
       }}
     >
-      <div className="flex flex-col items-center justify-start w-full max-w-[300px] sm:max-w-[360px] md:max-w-[440px] px-1.5 sm:px-3 mx-auto">
+      <div className="min-h-full flex flex-col items-center justify-between gap-2.5 w-full max-w-[360px] sm:max-w-[400px] md:max-w-[460px] px-1.5 sm:px-3 mx-auto">
+        {/* Top Zone: Crown, Sunnah Whisper & Segmented Practice Switcher */}
+        <div className="w-full flex flex-col items-center shrink-0">
         {/* Compact Crown & Inline Sunnah Whisper */}
         <span
           className={`font-calligraphy text-[23px] leading-none ${tTextMain} opacity-80 mb-0.5 transition-colors duration-300`}
@@ -189,7 +217,12 @@ export const TasksView = ({
                 type="button"
                 role="tab"
                 aria-selected={isActive}
-                onClick={() => setActiveSetId(tab.id)}
+                onClick={() => {
+                  if (activeSetId !== tab.id) {
+                    hapticDetent();
+                    setActiveSetId(tab.id);
+                  }
+                }}
                 className="min-h-[34px] rounded-xl font-serif-eng text-[9.5px] uppercase tracking-[0.1em] cursor-pointer flex items-center justify-center gap-1 whitespace-nowrap px-1 border"
                 style={{
                   backgroundColor: isActive
@@ -230,9 +263,11 @@ export const TasksView = ({
           })}
         </div>
 
-        {/* Unified Liquid-Glass Practice Ledger */}
+        </div>
+
+        {/* Middle Zone: Expanded Liquid-Glass Practice Ledger */}
         <div
-          className={`w-full rounded-[22px] overflow-hidden border transition-all duration-300 ${
+          className={`w-full flex-grow shrink-0 flex flex-col justify-between rounded-[22px] overflow-hidden border transition-all duration-300 ${
             isLightMode
               ? 'bg-white/62 border-white/80 island-light'
               : 'bg-[#0b0e16]/68 border-white/[0.09] island-dark'
@@ -242,7 +277,7 @@ export const TasksView = ({
             <>
               {/* Compact Inline Niyyah Row */}
               <div
-                className={`px-3.5 sm:px-4 py-2 border-b flex items-center gap-2 ${
+                className={`shrink-0 px-3.5 sm:px-4 py-2 border-b flex items-center gap-2 ${
                   isLightMode ? 'border-black/[0.06] bg-white/30' : 'border-white/[0.06] bg-white/[0.02]'
                 }`}
               >
@@ -277,14 +312,17 @@ export const TasksView = ({
 
               {/* Habits List or Empty State */}
               {habits.length === 0 ? (
-                <div className="px-4 py-6 text-center flex flex-col items-center gap-3">
+                <div className="flex-1 px-4 py-8 text-center flex flex-col items-center justify-center gap-3">
                   <p className={`font-serif-eng italic text-[12.5px] leading-relaxed ${tTextSub}`}>
                     Your habit list is clear. Add a custom practice or restore the starter Sunnah habits.
                   </p>
                   <div className="flex items-center gap-2 flex-wrap justify-center">
                     <button
                       type="button"
-                      onClick={() => setHabitEditor({ mode: 'create' })}
+                      onClick={() => {
+                        hapticNavigate();
+                        setHabitEditor({ mode: 'create' });
+                      }}
                       className="min-h-[36px] px-3.5 rounded-xl border font-serif-eng text-[10px] uppercase tracking-[0.14em] cursor-pointer flex items-center gap-1.5"
                       style={{
                         backgroundColor: isLightMode ? '#9c7533' : 'rgba(210,162,75,0.2)',
@@ -297,7 +335,10 @@ export const TasksView = ({
                     </button>
                     <button
                       type="button"
-                      onClick={() => onResetDefaultHabits?.()}
+                      onClick={() => {
+                        hapticWarning();
+                        onResetDefaultHabits?.();
+                      }}
                       className={`min-h-[36px] px-3 rounded-xl border font-serif-eng text-[10px] uppercase tracking-[0.14em] cursor-pointer ${
                         isLightMode ? 'border-black/15 text-[#2c2720]' : 'border-white/15 text-[#e4dac8]'
                       }`}
@@ -307,7 +348,7 @@ export const TasksView = ({
                   </div>
                 </div>
               ) : (
-                <div className={`divide-y ${isLightMode ? 'divide-black/[0.06]' : 'divide-white/[0.06]'}`}>
+                <div className={`flex-1 flex flex-col divide-y ${isLightMode ? 'divide-black/[0.06]' : 'divide-white/[0.06]'}`}>
                   {habits.map((habit, idx) => {
                     const count = dailyHabitLogs[habit.id] || 0;
                     const target = Math.max(1, habit.target || 1);
@@ -325,13 +366,16 @@ export const TasksView = ({
                       return (
                         <div
                           key={habit.id}
-                          className={`w-full min-h-[45px] pl-3.5 sm:pl-4 pr-2 py-1.5 flex items-center justify-between gap-2 transition-colors ${
+                          className={`w-full flex-1 min-h-[46px] pl-3.5 sm:pl-4 pr-2 py-1.5 flex items-center justify-between gap-2 transition-colors ${
                             isLightMode ? 'hover:bg-white/40' : 'hover:bg-white/[0.035]'
                           }`}
                         >
                           <button
                             type="button"
-                            onClick={() => setHabitEditor({ mode: 'edit', habit })}
+                            onClick={() => {
+                              hapticNavigate();
+                              setHabitEditor({ mode: 'edit', habit });
+                            }}
                             className="flex-1 min-w-0 text-left py-0.5 cursor-pointer"
                           >
                             <div className="flex items-center gap-1.5 min-w-0">
@@ -356,7 +400,10 @@ export const TasksView = ({
                               type="button"
                               aria-label={`Move ${habit.title} up`}
                               disabled={idx === 0}
-                              onClick={() => onReorderHabit?.(habit.id, 'up')}
+                              onClick={() => {
+                                hapticDetent();
+                                onReorderHabit?.(habit.id, 'up');
+                              }}
                               className={`w-7 h-7 rounded-lg flex items-center justify-center transition-opacity ${
                                 idx === 0
                                   ? 'opacity-20 pointer-events-none'
@@ -369,7 +416,10 @@ export const TasksView = ({
                               type="button"
                               aria-label={`Move ${habit.title} down`}
                               disabled={idx === habits.length - 1}
-                              onClick={() => onReorderHabit?.(habit.id, 'down')}
+                              onClick={() => {
+                                hapticDetent();
+                                onReorderHabit?.(habit.id, 'down');
+                              }}
                               className={`w-7 h-7 rounded-lg flex items-center justify-center transition-opacity ${
                                 idx === habits.length - 1
                                   ? 'opacity-20 pointer-events-none'
@@ -381,7 +431,10 @@ export const TasksView = ({
                             <button
                               type="button"
                               aria-label={`Edit ${habit.title}`}
-                              onClick={() => setHabitEditor({ mode: 'edit', habit })}
+                              onClick={() => {
+                                hapticNavigate();
+                                setHabitEditor({ mode: 'edit', habit });
+                              }}
                               className={`w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer transition-colors ${
                                 isLightMode ? 'hover:bg-black/5' : 'hover:bg-white/10'
                               }`}
@@ -392,7 +445,10 @@ export const TasksView = ({
                             <button
                               type="button"
                               aria-label={`Remove ${habit.title}`}
-                              onClick={() => onRemoveHabit?.(habit.id)}
+                              onClick={() => {
+                                hapticDestructive();
+                                onRemoveHabit?.(habit.id);
+                              }}
                               className={`w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer transition-colors ${
                                 isLightMode
                                   ? 'text-[#8a0000]/75 hover:bg-[#8a0000]/10'
@@ -409,7 +465,7 @@ export const TasksView = ({
                     return (
                       <div
                         key={habit.id}
-                        className={`group relative w-full min-h-[45px] flex items-center justify-between gap-1 overflow-hidden transition-colors duration-300 ${
+                        className={`group relative w-full flex-1 min-h-[46px] flex items-center justify-between gap-1 overflow-hidden transition-colors duration-300 ${
                           isLightMode ? 'hover:bg-white/40' : 'hover:bg-white/[0.035]'
                         }`}
                       >
@@ -433,7 +489,7 @@ export const TasksView = ({
                               onLogHabitStep?.(habit.id, 1);
                             }
                           }}
-                          className="relative z-10 flex-1 min-w-0 min-h-[45px] pl-3.5 sm:pl-4 pr-2 py-1.5 flex items-center gap-2.5 text-left cursor-pointer active:scale-[0.99]"
+                          className="relative z-10 flex-1 min-w-0 h-full min-h-[46px] pl-3.5 sm:pl-4 pr-2 py-1.5 flex items-center gap-2.5 text-left cursor-pointer active:scale-[0.99]"
                         >
                           <div className="relative w-5 h-5 flex items-center justify-center shrink-0">
                             {isComplete ? (
@@ -485,27 +541,31 @@ export const TasksView = ({
                           </div>
                         </button>
 
-                        <div className="relative z-10 flex items-center gap-1 pr-2.5 sm:pr-3 shrink-0">
-                          {count > 0 ? (
+                        <div className="relative z-10 flex items-center gap-1.5 pr-2.5 sm:pr-3 shrink-0">
+                          {count > 0 && (
                             <button
                               type="button"
                               aria-label={`Undo step for ${habit.title}`}
-                              onClick={() => onLogHabitStep?.(habit.id, -1)}
-                              className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs cursor-pointer transition-colors ${
-                                isLightMode ? 'hover:bg-black/10 text-[#3a3329]' : 'hover:bg-white/10 text-[#e4dac8]'
+                              onClick={() => {
+                                hapticUndo();
+                                onLogHabitStep?.(habit.id, -1);
+                              }}
+                              className={`w-6 h-6 rounded-lg border flex items-center justify-center text-[11px] leading-none cursor-pointer transition-colors ${
+                                isLightMode
+                                  ? 'border-black/10 hover:bg-black/10 text-[#3a3329]'
+                                  : 'border-white/10 hover:bg-white/10 text-[#e4dac8]'
                               }`}
                             >
                               −
                             </button>
-                          ) : (
-                            <span
-                              className="font-arabic text-[11.5px] opacity-75 px-1"
-                              style={{ color: accentHex }}
-                              dir="rtl"
-                            >
-                              {habit.arabic}
-                            </span>
                           )}
+                          <span
+                            className="font-arabic text-[12px] opacity-80 px-0.5"
+                            style={{ color: accentHex }}
+                            dir="rtl"
+                          >
+                            {habit.arabic}
+                          </span>
                         </div>
                       </div>
                     );
@@ -515,7 +575,7 @@ export const TasksView = ({
 
               {/* Calm Footer Bar: Daily Tap vs Customize Toolbar */}
               <div
-                className={`flex items-center justify-between px-3.5 sm:px-4 py-1.5 border-t ${
+                className={`shrink-0 flex items-center justify-between px-3.5 sm:px-4 py-1.5 border-t ${
                   isLightMode
                     ? 'border-black/[0.06] bg-white/35'
                     : 'border-white/[0.06] bg-black/[0.16]'
@@ -525,7 +585,10 @@ export const TasksView = ({
                   <>
                     <button
                       type="button"
-                      onClick={() => onResetDefaultHabits?.()}
+                      onClick={() => {
+                        hapticWarning();
+                        onResetDefaultHabits?.();
+                      }}
                       className={`min-h-[32px] flex items-center gap-1 font-serif-eng text-[8.5px] uppercase opacity-75 hover:opacity-100 transition-opacity cursor-pointer whitespace-nowrap ${tTextSub}`}
                       style={{ letterSpacing: '0.12em' }}
                     >
@@ -536,7 +599,10 @@ export const TasksView = ({
                     <div className="flex items-center gap-3 shrink-0">
                       <button
                         type="button"
-                        onClick={() => setHabitEditor({ mode: 'create' })}
+                        onClick={() => {
+                          hapticNavigate();
+                          setHabitEditor({ mode: 'create' });
+                        }}
                         className="min-h-[32px] flex items-center gap-1 font-serif-eng text-[8.5px] uppercase opacity-92 hover:opacity-100 transition-opacity cursor-pointer whitespace-nowrap"
                         style={{ color: accentHex, letterSpacing: '0.14em' }}
                       >
@@ -545,7 +611,10 @@ export const TasksView = ({
                       </button>
                       <button
                         type="button"
-                        onClick={() => setIsCustomizingHabits(false)}
+                        onClick={() => {
+                          hapticDismiss();
+                          setIsCustomizingHabits(false);
+                        }}
                         className="min-h-[28px] px-2.5 rounded-lg border font-serif-eng text-[8.5px] uppercase cursor-pointer transition-colors whitespace-nowrap font-medium"
                         style={{
                           backgroundColor: isLightMode ? '#9c7533' : 'rgba(210,162,75,0.2)',
@@ -564,12 +633,16 @@ export const TasksView = ({
                       className={`font-serif-eng text-[8px] uppercase ${tTextSub} opacity-75 truncate`}
                       style={{ letterSpacing: '0.14em' }}
                     >
-                      Tap row to log +1
+                      <span className="sm:hidden">Tap row +1</span>
+                      <span className="hidden sm:inline">Tap row to log +1</span>
                     </span>
                     <div className="flex items-center gap-2.5 shrink-0">
                       <button
                         type="button"
-                        onClick={() => setIsCustomizingHabits(true)}
+                        onClick={() => {
+                          hapticToggle(true);
+                          setIsCustomizingHabits(true);
+                        }}
                         className={`min-h-[32px] flex items-center gap-1 font-serif-eng text-[8.5px] uppercase opacity-80 hover:opacity-100 transition-opacity cursor-pointer whitespace-nowrap ${tTextMain}`}
                         style={{ letterSpacing: '0.14em' }}
                       >
@@ -579,7 +652,10 @@ export const TasksView = ({
                       <span className={`${tTextSub} opacity-30 text-[10px]`} aria-hidden="true">·</span>
                       <button
                         type="button"
-                        onClick={() => setHabitEditor({ mode: 'create' })}
+                        onClick={() => {
+                          hapticNavigate();
+                          setHabitEditor({ mode: 'create' });
+                        }}
                         className="min-h-[32px] pl-0.5 pr-1 -mr-1 flex items-center gap-1 font-serif-eng text-[8.5px] uppercase opacity-92 hover:opacity-100 transition-opacity cursor-pointer whitespace-nowrap"
                         style={{ color: accentHex, letterSpacing: '0.14em' }}
                       >
@@ -593,7 +669,7 @@ export const TasksView = ({
             </>
           ) : (
             <>
-              <div className={`divide-y ${isLightMode ? 'divide-black/[0.06]' : 'divide-white/[0.06]'}`}>
+              <div className={`flex-1 flex flex-col divide-y ${isLightMode ? 'divide-black/[0.06]' : 'divide-white/[0.06]'}`}>
                 {activeItems.map((task, idx) => {
                   const count = dailyTasks[task.id] || 0;
                   const progress = Math.min(1, count / task.target);
@@ -620,7 +696,7 @@ export const TasksView = ({
                           longPressTimer.current = null;
                         }
                       }}
-                      className={`group relative w-full min-h-[46px] px-3.5 sm:px-4 py-2 flex items-center justify-between gap-2 text-left overflow-hidden cursor-pointer active:scale-[0.985] transition-colors duration-300 ${
+                      className={`group relative w-full flex-1 min-h-[46px] px-3.5 sm:px-4 py-2 flex items-center justify-between gap-2 text-left overflow-hidden cursor-pointer active:scale-[0.985] transition-colors duration-300 ${
                         isLightMode ? 'hover:bg-white/40' : 'hover:bg-white/[0.035]'
                       }`}
                       style={{ touchAction: 'pan-y' }}
@@ -702,7 +778,7 @@ export const TasksView = ({
               </div>
 
               <div
-                className={`flex items-center justify-between px-4 py-1.5 border-t ${
+                className={`shrink-0 flex items-center justify-between px-4 py-1.5 border-t ${
                   isLightMode
                     ? 'border-black/[0.06] bg-white/35'
                     : 'border-white/[0.06] bg-black/[0.16]'
@@ -728,108 +804,124 @@ export const TasksView = ({
           )}
         </div>
 
-        {/* Seamless Split Utility Bar (Duas · Qada) */}
-        <div
-          className={`w-full grid grid-cols-2 divide-x rounded-[18px] border overflow-hidden mt-2.5 transition-colors ${
-            isLightMode
-              ? 'bg-white/62 border-white/80 divide-black/[0.06] island-light'
-              : 'bg-[#0b0e16]/68 border-white/[0.09] divide-white/[0.06] island-dark'
-          }`}
-        >
-          <button
-            type="button"
-            onClick={onOpenDuas}
-            className={`min-h-[42px] px-3 flex items-center justify-center gap-1.5 font-serif-eng text-[9.5px] uppercase tracking-[0.14em] transition-colors cursor-pointer ${
-              isLightMode ? 'text-[#1a1814] hover:bg-white/50' : 'text-[rgba(245,238,224,0.92)] hover:bg-white/[0.04]'
-            }`}
-          >
-            <BookIcon size={13} style={{ color: accentHex }} className="shrink-0" />
-            <span>Duas</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={onOpenQada}
-            className={`min-h-[42px] px-3 flex items-center justify-center gap-1.5 font-serif-eng text-[9.5px] uppercase tracking-[0.14em] transition-colors cursor-pointer ${
-              isLightMode ? 'text-[#1a1814] hover:bg-white/50' : 'text-[rgba(245,238,224,0.92)] hover:bg-white/[0.04]'
-            }`}
-          >
-            <RotateCcwIcon size={13} style={{ color: accentHex }} className="shrink-0" />
-            <span>Qada</span>
-            {qadaRemainingCount > 0 && (
-              <span
-                className="font-serif-eng text-[9px] tabular-nums opacity-90 shrink-0"
-                style={{ color: accentHex }}
-              >
-                ({qadaRemainingCount})
-              </span>
-            )}
-          </button>
-        </div>
-
-        {/* Compact Single-Row Daily Burhan Invitation */}
-        {currentBurhan && (
-          <button
-            type="button"
-            onClick={onOpenBurhan}
-            className={`group relative w-full text-left px-3.5 py-2.5 mt-2 rounded-[18px] overflow-hidden border transition-all duration-500 ease-out cursor-pointer active:scale-[0.985] flex items-center justify-between gap-2.5 ${
+        {/* Bottom Zone: Utility Bar & Grounded Daily Burhan Card */}
+        <div className="w-full flex flex-col gap-2.5 shrink-0">
+          {/* Seamless Split Utility Bar (Duas · Qada) */}
+          <div
+            className={`w-full grid grid-cols-2 divide-x rounded-[18px] border overflow-hidden transition-colors ${
               isLightMode
-                ? burhanCompleted
-                  ? 'bg-[#0d9488]/12 border-[#0d9488]/35 island-light'
-                  : 'bg-white/62 hover:bg-white/75 border-white/80 island-light'
-                : burhanCompleted
-                  ? 'bg-[#14b8a6]/12 border-[#14b8a6]/35 island-dark'
-                  : 'bg-[#0b0e16]/68 hover:bg-[#0b0e16]/80 border-white/[0.09] island-dark'
+                ? 'bg-white/62 border-white/80 divide-black/[0.06] island-light'
+                : 'bg-[#0b0e16]/68 border-white/[0.09] divide-white/[0.06] island-dark'
             }`}
           >
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                hapticNavigate();
+                onOpenDuas?.();
+              }}
+              className={`min-h-[46px] px-3 flex items-center justify-center gap-1.5 font-serif-eng text-[9.5px] uppercase tracking-[0.14em] transition-colors cursor-pointer ${
+                isLightMode ? 'text-[#1a1814] hover:bg-white/50' : 'text-[rgba(245,238,224,0.92)] hover:bg-white/[0.04]'
+              }`}
+            >
+              <BookIcon size={13} style={{ color: accentHex }} className="shrink-0" />
+              <span>Duas</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                hapticNavigate();
+                onOpenQada?.();
+              }}
+              className={`min-h-[46px] px-3 flex items-center justify-center gap-1.5 font-serif-eng text-[9.5px] uppercase tracking-[0.14em] transition-colors cursor-pointer ${
+                isLightMode ? 'text-[#1a1814] hover:bg-white/50' : 'text-[rgba(245,238,224,0.92)] hover:bg-white/[0.04]'
+              }`}
+            >
+              <RotateCcwIcon size={13} style={{ color: accentHex }} className="shrink-0" />
+              <span>Qada</span>
+              {qadaRemainingCount > 0 && (
                 <span
-                  className="font-calligraphy text-[12px] leading-none shrink-0"
-                  style={{ color: hikmahHex }}
-                  dir="rtl"
+                  className="font-serif-eng text-[9px] tabular-nums opacity-90 shrink-0"
+                  style={{ color: accentHex }}
                 >
-                  بُرْهَان
+                  ({qadaRemainingCount})
                 </span>
-                <span className="opacity-45 text-[9px]" style={{ color: hikmahHex }} aria-hidden="true">·</span>
+              )}
+            </button>
+          </div>
+
+          {/* Grounded Daily Burhan Invitation */}
+          {currentBurhan && (
+            <button
+              type="button"
+              onClick={() => {
+                hapticNavigate();
+                onOpenBurhan?.();
+              }}
+              className={`group relative w-full text-left px-4 py-3 rounded-[20px] overflow-hidden border transition-all duration-500 ease-out cursor-pointer active:scale-[0.985] flex flex-col gap-1.5 ${
+                isLightMode
+                  ? burhanCompleted
+                    ? 'bg-[#0d9488]/12 border-[#0d9488]/35 island-light'
+                    : 'bg-white/62 hover:bg-white/75 border-white/80 island-light'
+                  : burhanCompleted
+                    ? 'bg-[#14b8a6]/12 border-[#14b8a6]/35 island-dark'
+                    : 'bg-[#0b0e16]/68 hover:bg-[#0b0e16]/80 border-white/[0.09] island-dark'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2.5 w-full">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span
+                    className="font-calligraphy text-[13px] leading-none shrink-0"
+                    style={{ color: hikmahHex }}
+                    dir="rtl"
+                  >
+                    بُرْهَان
+                  </span>
+                  <span className="opacity-45 text-[9px]" style={{ color: hikmahHex }} aria-hidden="true">·</span>
+                  <span
+                    className="font-serif-eng text-[8.5px] uppercase truncate opacity-90"
+                    style={{ color: hikmahHex, letterSpacing: '0.14em' }}
+                  >
+                    {currentBurhan.scholar}
+                  </span>
+                </div>
+
                 <span
-                  className="font-serif-eng text-[8px] uppercase truncate opacity-90"
-                  style={{ color: hikmahHex, letterSpacing: '0.14em' }}
+                  className="flex items-center gap-1 font-serif-eng text-[8.5px] uppercase tracking-[0.14em] shrink-0 opacity-90 group-hover:opacity-100"
+                  style={{ color: hikmahHex }}
                 >
-                  {currentBurhan.scholar}
+                  {burhanCompleted && <CheckCircleIcon size={12} />}
+                  <span>{burhanCompleted ? 'Reflected' : 'Read'}</span>
+                  <ChevronRightIcon
+                    size={12}
+                    className="group-hover:translate-x-0.5 transition-transform"
+                  />
                 </span>
               </div>
+
               <h3
-                className={`font-serif-eng text-[13.5px] font-medium tracking-wide truncate mt-0.5 ${tTextMain}`}
+                className={`font-serif-eng text-[14px] font-medium tracking-wide truncate ${tTextMain}`}
               >
                 {currentBurhan.title}
               </h3>
-            </div>
 
-            <span
-              className="flex items-center gap-1 font-serif-eng text-[8.5px] uppercase tracking-[0.14em] shrink-0 opacity-90 group-hover:opacity-100"
-              style={{ color: hikmahHex }}
-            >
-              {burhanCompleted && <CheckCircleIcon size={12} />}
-              <span>{burhanCompleted ? 'Reflected' : 'Read'}</span>
-              <ChevronRightIcon
-                size={12}
-                className="group-hover:translate-x-0.5 transition-transform"
-              />
-            </span>
-          </button>
-        )}
+              {(prefsCtx?.isSimpleMode ? currentBurhan.simpleQuestion || currentBurhan.question : currentBurhan.question) && (
+                <p className={`font-serif-eng italic text-[11px] leading-snug line-clamp-2 opacity-72 ${tTextSub}`}>
+                  {prefsCtx?.isSimpleMode ? currentBurhan.simpleQuestion || currentBurhan.question : currentBurhan.question}
+                </p>
+              )}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Customizable Habit Add / Edit Sheet */}
+      {/* Customizable Habit Add / Edit Sheet (consumes Preferences & Habits contexts directly) */}
       <HabitEditorSheet
         isOpen={Boolean(habitEditor)}
-        isLightMode={isLightMode}
         editingHabit={habitEditor?.mode === 'edit' ? habitEditor.habit : null}
-        existingHabits={habits}
-        onSaveNew={(payload) => onAddCustomHabit?.(payload)}
-        onSaveEdit={(habitId, patch) => onUpdateHabit?.(habitId, patch)}
-        onDeleteHabit={(habitId) => onRemoveHabit?.(habitId)}
+        onSaveNew={onAddCustomHabitProp}
+        onSaveEdit={onUpdateHabitProp}
         onClose={() => setHabitEditor(null)}
       />
     </div>

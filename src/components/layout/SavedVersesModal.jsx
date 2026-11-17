@@ -1,6 +1,15 @@
 import { useState, useMemo } from 'react';
 import { ChevronDownIcon, BookmarkIcon, ShareIcon, EditIcon, TrashIcon, CheckCircleIcon } from '../icons/Icons';
 import { resolveVerseCopy } from '../../utils/devotionLogic';
+import { useOptionalPreferences } from '../../context/sanctuaryStore';
+import {
+  hapticDestructive,
+  hapticDetent,
+  hapticDismiss,
+  hapticNavigate,
+  hapticSuccess,
+  hapticTapLight,
+} from '../../utils/haptics';
 
 const SearchIcon = ({ size = 16, ...props }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -22,13 +31,16 @@ const normalize = (str) => stripDiacritics(str).toLowerCase().trim();
 export const SavedVersesModal = ({
   isOpen,
   onClose,
-  isLightMode,
+  isLightMode: isLightModeProp,
   savedVerses,
   allVerses,
-  isSimpleMode = false,
+  isSimpleMode: isSimpleModeProp,
   onEditNote,
   onRemoveSaved,
 }) => {
+  const preferencesCtx = useOptionalPreferences();
+  const isLightMode = isLightModeProp ?? preferencesCtx?.isLightMode ?? false;
+  const isSimpleMode = isSimpleModeProp ?? preferencesCtx?.isSimpleMode ?? false;
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
   const [sortKey, setSortKey] = useState('newest');
@@ -92,7 +104,10 @@ export const SavedVersesModal = ({
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
-        onClick={onClose}
+        onClick={() => {
+          hapticDismiss();
+          onClose?.();
+        }}
       />
 
       <div
@@ -118,7 +133,10 @@ export const SavedVersesModal = ({
           <button
             type="button"
             aria-label="Close Saved Reflections"
-            onClick={onClose}
+            onClick={() => {
+              hapticDismiss();
+              onClose?.();
+            }}
             className={`w-11 h-11 rounded-full flex items-center justify-center border transition-opacity cursor-pointer ${
               isLightMode ? 'border-black/10 hover:bg-black/5' : 'border-white/10 hover:bg-white/5'
             } ${tTextMain}`}
@@ -147,7 +165,10 @@ export const SavedVersesModal = ({
               <button
                 type="button"
                 aria-label="Clear search"
-                onClick={() => setSearchQuery('')}
+                onClick={() => {
+                  hapticTapLight();
+                  setSearchQuery('');
+                }}
                 className={`${tTextSub} opacity-60 hover:opacity-100 text-xs shrink-0 px-1`}
               >
                 ✕
@@ -161,7 +182,10 @@ export const SavedVersesModal = ({
                 <button
                   key={f}
                   type="button"
-                  onClick={() => setActiveFilter(f)}
+                  onClick={() => {
+                    hapticDetent();
+                    setActiveFilter(f);
+                  }}
                   className={`font-serif-eng text-[10px] uppercase tracking-widest px-3 py-1.5 rounded-lg border transition-all whitespace-nowrap cursor-pointer ${
                     activeFilter === f
                       ? 'border-current bg-current/10 font-medium'
@@ -182,7 +206,10 @@ export const SavedVersesModal = ({
             <select
               aria-label="Sort saved verses"
               value={sortKey}
-              onChange={(e) => setSortKey(e.target.value)}
+              onChange={(e) => {
+                hapticDetent();
+                setSortKey(e.target.value);
+              }}
               className={`font-serif-eng text-[10px] uppercase tracking-widest px-2.5 py-1.5 rounded-lg border bg-transparent outline-none cursor-pointer ${
                 isLightMode ? 'border-black/10 text-[#4a453d]' : 'border-white/10 text-[rgba(228,218,200,0.65)]'
               }`}
@@ -261,7 +288,10 @@ export const SavedVersesModal = ({
                       <button
                         type="button"
                         aria-label={`Edit reflection for ${verse.s}`}
-                        onClick={() => onEditNote && onEditNote(verse.id)}
+                        onClick={() => {
+                          hapticNavigate();
+                          if (onEditNote) onEditNote(verse.id);
+                        }}
                         className={`px-3 py-1.5 rounded-lg border text-[10px] font-serif-eng uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer ${
                           isLightMode
                             ? 'border-black/10 hover:bg-black/5 text-[#4a453d]'
@@ -276,6 +306,7 @@ export const SavedVersesModal = ({
                         type="button"
                         aria-label={`Share ${verse.s}`}
                         onClick={() => {
+                          hapticTapLight();
                           const textToShare = `${verse.a}\n\n${translation}\n\n— ${verse.s}${
                             verse.reflection ? `\n\nReflection:\n${verse.reflection}` : ''
                           }`;
@@ -285,6 +316,7 @@ export const SavedVersesModal = ({
                             navigator.clipboard
                               .writeText(textToShare)
                               .then(() => {
+                                hapticSuccess();
                                 setCopiedId(verse.id);
                                 setTimeout(() => setCopiedId((prev) => (prev === verse.id ? null : prev)), 1800);
                               })
@@ -308,7 +340,10 @@ export const SavedVersesModal = ({
                         <button
                           type="button"
                           aria-label={`Remove ${verse.s} from saved`}
-                          onClick={() => onRemoveSaved(verse.id)}
+                          onClick={() => {
+                            hapticDestructive();
+                            onRemoveSaved(verse.id);
+                          }}
                           className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-colors cursor-pointer ${
                             isLightMode
                               ? 'border-black/10 hover:bg-red-500/10 text-[#4a453d] hover:text-red-700'

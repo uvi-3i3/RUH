@@ -7,8 +7,6 @@ import {
   resolveVerseCopy,
   selectActiveBurhan,
   gregorianToHijri,
-  computeParallaxOffset,
-  lerpParallax,
   resolveBurhanCopy,
   filterBurhansByCategory,
   findResonantVerse,
@@ -84,19 +82,6 @@ test('gregorianToHijri returns valid Hijri date components', () => {
   assert.ok(hijri.year >= 1447 && hijri.year <= 1449);
   assert.ok(hijri.month >= 1 && hijri.month <= 12);
   assert.ok(hijri.day >= 1 && hijri.day <= 30);
-});
-
-test('computeParallaxOffset maps viewport coordinates to clamped opposing depth offsets', () => {
-  assert.deepEqual(computeParallaxOffset(720, 450, 1440, 900, 24, 14), { x: 0, y: 0 });
-  assert.deepEqual(computeParallaxOffset(0, 0, 1440, 900, 24, 14), { x: 24, y: 14 });
-  assert.deepEqual(computeParallaxOffset(1440, 900, 1440, 900, 24, 14), { x: -24, y: -14 });
-  assert.deepEqual(computeParallaxOffset(5000, -200, 1440, 900, 24, 14), { x: -24, y: 14 });
-  assert.deepEqual(computeParallaxOffset(100, 100, 0, 900, 24, 14), { x: 0, y: 0 });
-});
-
-test('lerpParallax smoothly interpolates toward target offset', () => {
-  assert.equal(lerpParallax(0, 20, 0.1), 2);
-  assert.equal(lerpParallax(10, 10, 0.08), 10);
 });
 
 test('resolveBurhanCopy splits Classical and Simple paragraphs, logic steps, and questions', () => {

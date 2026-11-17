@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useOptionalPreferences } from '../../context/sanctuaryStore';
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -7,7 +8,15 @@ import {
   VolumeOffIcon,
   XIcon,
 } from '../icons/Icons';
-import { hapticSuccess, hapticTapLight } from '../../utils/haptics';
+import {
+  hapticCelebrate,
+  hapticDetent,
+  hapticDismiss,
+  hapticNavigate,
+  hapticTapLight,
+  hapticToggle,
+  hapticUndo,
+} from '../../utils/haptics';
 
 export const MisbahaMode = ({
   isOpen,
@@ -15,10 +24,12 @@ export const MisbahaMode = ({
   initialIndex = 0,
   setLabel = 'Misbaha',
   dailyTasks = {},
-  isLightMode,
+  isLightMode: isLightModeProp,
   onIncrement,
   onClose,
 }) => {
+  const preferencesCtx = useOptionalPreferences();
+  const isLightMode = isLightModeProp ?? preferencesCtx?.isLightMode ?? false;
   const [activeIndex, setActiveIndex] = useState(initialIndex);
   const [ripples, setRipples] = useState([]);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -104,7 +115,7 @@ export const MisbahaMode = ({
     const reachedTarget = newCount >= target;
     playBeadTick(reachedTarget);
 
-    if (reachedTarget) hapticSuccess();
+    if (reachedTarget) hapticCelebrate();
     else hapticTapLight();
 
     const id = rippleId.current++;
@@ -126,6 +137,7 @@ export const MisbahaMode = ({
     (e) => {
       e.stopPropagation();
       if (!activeTask || count <= 0) return;
+      hapticUndo();
       if (autoAdvanceTimerRef.current) {
         clearTimeout(autoAdvanceTimerRef.current);
         autoAdvanceTimerRef.current = null;
@@ -174,6 +186,7 @@ export const MisbahaMode = ({
                 disabled={activeIndex === 0}
                 onClick={(e) => {
                   e.stopPropagation();
+                  hapticDetent();
                   goPrev();
                 }}
                 className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all cursor-pointer ${
@@ -193,6 +206,7 @@ export const MisbahaMode = ({
                 aria-label="Next Dhikr"
                 onClick={(e) => {
                   e.stopPropagation();
+                  hapticDetent();
                   goNext();
                 }}
                 className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all cursor-pointer opacity-80 hover:opacity-100 ${
@@ -211,6 +225,7 @@ export const MisbahaMode = ({
             aria-label={soundEnabled ? 'Mute Bead Sound' : 'Enable Bead Sound'}
             onClick={(e) => {
               e.stopPropagation();
+              hapticToggle(!soundEnabled);
               setSoundEnabled((s) => !s);
             }}
             className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all cursor-pointer ${
@@ -227,6 +242,7 @@ export const MisbahaMode = ({
             aria-label="Close Misbaha Mode"
             onClick={(e) => {
               e.stopPropagation();
+              hapticDismiss();
               onClose();
             }}
             className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all cursor-pointer ${
@@ -352,6 +368,7 @@ export const MisbahaMode = ({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
+                  hapticNavigate();
                   goNext();
                 }}
                 className={`min-h-[42px] px-5 py-2 rounded-full border font-serif-eng text-xs uppercase tracking-[0.18em] flex items-center gap-1.5 cursor-pointer transition-all ${

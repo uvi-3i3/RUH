@@ -5,6 +5,7 @@ import {
   getStreakCelebrationSignature,
   STREAK_MILESTONES,
 } from '../../utils/devotionLogic';
+import { hapticDetent, hapticToggle } from '../../utils/haptics';
 
 const SacredStarSeal = ({ unlocked, accentHex, isLightMode }) => {
   const strokeColor = unlocked
@@ -117,7 +118,7 @@ export const DailyStreakTracker = ({
     <section
       aria-label="Daily Streak Tracker"
       data-celebrating={isCelebrating ? 'true' : 'false'}
-      className={`relative w-full rounded-[20px] border transition-all duration-700 mb-2 overflow-hidden ${
+      className={`relative w-full rounded-2xl border transition-all duration-700 overflow-hidden ${
         isLightMode
           ? 'bg-white/62 border-white/80 island-light'
           : 'bg-[#0b0e16]/68 border-white/[0.09] island-dark'
@@ -149,29 +150,21 @@ export const DailyStreakTracker = ({
       )}
       {/* Header Strip */}
       <div className={`flex items-center justify-between gap-2 px-4 pt-2.5 pb-1.5 border-b ${dividerClass}`}>
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span
-            className={`font-serif-eng text-[8px] uppercase ${tTextSub} opacity-85 whitespace-nowrap`}
-            style={{ letterSpacing: '0.2em', textShadow: glowSub }}
-          >
-            Daily Streak
-          </span>
-          <span className={`${tTextSub} opacity-35 text-[9px]`} aria-hidden="true">
-            ·
-          </span>
-          <span
-            className={`font-serif-eng text-[8px] uppercase tabular-nums ${tTextSub} opacity-82 whitespace-nowrap`}
-            style={{ letterSpacing: '0.16em', textShadow: glowSub }}
-          >
-            Best {status.longestStreak}d
-          </span>
-        </div>
+        <span
+          className={`font-serif-eng text-[8.5px] uppercase ${tTextSub} opacity-85 whitespace-nowrap truncate min-w-0`}
+          style={{ letterSpacing: '0.18em', textShadow: glowSub }}
+        >
+          Daily Streak
+        </span>
 
         <div className="flex items-center gap-2 shrink-0">
           {onTogglePauseToday && (
             <button
               type="button"
-              onClick={onTogglePauseToday}
+              onClick={() => {
+                hapticToggle(!isTodayPauseStored);
+                onTogglePauseToday();
+              }}
               aria-pressed={isTodayPauseStored}
               aria-label={isTodayPauseStored ? 'Resume streak tracking today' : 'Rest or exempt day — protect streak'}
               className={`min-h-[26px] px-2.5 rounded-xl border font-serif-eng text-[8.5px] uppercase tracking-[0.12em] flex items-center gap-1 cursor-pointer transition-colors ${
@@ -306,7 +299,7 @@ export const DailyStreakTracker = ({
             <p
               className={`font-serif-eng text-[11px] leading-snug mt-1 truncate ${tTextSub} opacity-85`}
             >
-              {status.headline}
+              {status.headline} · <span className="tabular-nums opacity-80">Best {status.longestStreak}d</span>
             </p>
           </div>
         </div>
@@ -355,6 +348,7 @@ export const DailyStreakTracker = ({
                 <button
                   type="button"
                   onClick={() => {
+                    hapticDetent();
                     setSelectedMilestoneId(null);
                     setSelectedDateStr((cur) => (cur === day.dateStr ? null : day.dateStr));
                   }}
@@ -504,6 +498,7 @@ export const DailyStreakTracker = ({
                 key={milestone.id}
                 type="button"
                 onClick={() => {
+                  hapticDetent();
                   setSelectedDateStr(null);
                   setSelectedMilestoneId((cur) => (cur === milestone.id ? null : milestone.id));
                 }}

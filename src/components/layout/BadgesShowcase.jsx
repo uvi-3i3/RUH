@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { BadgeArtwork } from '../badges/BadgeArtwork';
 import { BADGE_TIERS, getBadgeTierStyle } from '../../utils/badgeLogic';
+import { hapticCelebrate, hapticDetent } from '../../utils/haptics';
 
 const TIER_ORDER = ['silver', 'gold', 'platinum'];
 
@@ -40,7 +41,7 @@ export const BadgesShowcase = ({
     <section
       aria-label="Sacred Badges Showcase"
       data-testid="badges-showcase"
-      className={`w-full rounded-[20px] border transition-all duration-700 mb-2 overflow-hidden ${
+      className={`w-full rounded-2xl border transition-all duration-700 overflow-hidden ${
         isLightMode
           ? 'bg-white/62 border-white/80 island-light'
           : 'bg-[#0b0e16]/68 border-white/[0.09] island-dark'
@@ -111,9 +112,11 @@ export const BadgesShowcase = ({
                     type="button"
                     onClick={() => {
                       if (badge.unlocked) {
+                        hapticCelebrate();
                         setLockedPreviewId(null);
                         onInspectBadge?.(badge);
                       } else {
+                        hapticDetent();
                         setLockedPreviewId((cur) => (cur === badge.id ? null : badge.id));
                       }
                     }}

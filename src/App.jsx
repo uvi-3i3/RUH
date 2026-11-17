@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useDevotionData } from './hooks/useDevotionData';
 import { useTemporalPhase, rgbToHex } from './hooks/useTemporalPhase';
 import { SavedVersesModal } from './components/layout/SavedVersesModal';
 import { useLocalAI } from './hooks/useLocalAI';
 import { useHijriDate } from './hooks/useHijriDate';
 import { useCanvasEngine } from './hooks/useCanvasEngine';
-import { usePrayerTimes } from './hooks/usePrayerTimes';
-import { PRAYERS, DARK_HIGH, DARK_LOW, LIGHT_HIGH, LIGHT_LOW, AMBIENT_DHIKR } from './data/constants';
+import { useHabits, usePreferences, useSanctuary } from './context/sanctuaryStore';
+import { PRAYERS, AMBIENT_DHIKR } from './data/constants';
 import {
   MoonIcon,
   SunIcon,
@@ -52,17 +51,25 @@ import { PaintedClouds } from './components/layout/PaintedClouds';
 import { BadgesShowcase } from './components/layout/BadgesShowcase';
 import { BadgeRewardOverlay } from './components/badges/BadgeRewardOverlay';
 import { SacredNotificationToast } from './components/layout/SacredNotificationToast';
-import { useLocalNotifications } from './hooks/useLocalNotifications';
-import { registerNativeLifecycle, syncStatusBarTheme } from './native';
-import { hapticSuccess, hapticTapLight, hapticTapMedium } from './utils/haptics';
-import { hydrateMissingFromPreferences, mirroredSet } from './utils/nativeStorage';
+import { registerNativeLifecycle } from './native';
+import {
+  hapticCelebrate,
+  hapticDetent,
+  hapticDismiss,
+  hapticHeavy,
+  hapticNavigate,
+  hapticSuccess,
+  hapticTapLight,
+  hapticToggle,
+  hapticUndo,
+} from './utils/haptics';
 
 export default function App() {
-  const devotionData = useDevotionData();
+  const { devotionData, prayerTimes, notifications } = useSanctuary();
+  const { isLightMode, toggleLightMode, devTimePhase } = usePreferences();
+  const { completedHabitsCount, totalHabitsCount } = useHabits();
   const localAI = useLocalAI();
   const hijri = useHijriDate();
-  const prayerTimes = usePrayerTimes();
-  const notifications = useLocalNotifications({ devotionData, prayerTimes });
   const enabledAlertsCount =
     PRAYERS.filter((p) => devotionData.prayers?.[p.id]?.enabled).length +
     (devotionData.customReminders || []).filter((r) => r.enabled).length;
@@ -76,16 +83,6 @@ export default function App() {
   const [showAmbientTasks, setShowAmbientTasks] = useState(false);
   const [kashfCeremony, setKashfCeremony] = useState(false);
   const kashfTimerRef = useRef(null);
-  const [devTimePhase, setDevTimePhase] = useState(() => {
-    try {
-      const saved = localStorage.getItem('ruh_atmosphere_phase_v1');
-      if (saved === null || saved === '') return null;
-      const n = Number(saved);
-      return Number.isInteger(n) && n >= 0 && n <= 4 ? n : null;
-    } catch {
-      return null;
-    }
-  });
   const palette = useTemporalPhase(devTimePhase);
   const temporalRef = useRef(palette);
   temporalRef.current = palette;
@@ -113,42 +110,8 @@ export default function App() {
   const verses = currentStationData?.verses || null;
   const nextStation = stations[maq.currentStation + 1] || null;
 
-  const [isLightMode, setIsLightMode] = useState(() => {
-    try {
-      return localStorage.getItem('ruh_theme_mode_v1') === 'light';
-    } catch {
-      return false;
-    }
-  });
   const [showContext, setShowContext] = useState(false);
   const [tafakkurPromptId, setTafakkurPromptId] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    hydrateMissingFromPreferences(['ruh_theme_mode_v1']).then((recovered) => {
-      if (!cancelled && recovered.ruh_theme_mode_v1) {
-        setIsLightMode(recovered.ruh_theme_mode_v1 === 'light');
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    mirroredSet('ruh_theme_mode_v1', isLightMode ? 'light' : 'dark');
-    syncStatusBarTheme(isLightMode);
-  }, [isLightMode]);
-
-  useEffect(() => {
-    try {
-      if (devTimePhase === null || devTimePhase === undefined) {
-        localStorage.removeItem('ruh_atmosphere_phase_v1');
-      } else {
-        localStorage.setItem('ruh_atmosphere_phase_v1', String(devTimePhase));
-      }
-    } catch {}
-  }, [devTimePhase]);
 
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [checkingId, setCheckingId] = useState(null);
@@ -171,6 +134,14 @@ export default function App() {
   const [journeyTab, setJourneyTab] = useState('streak'); // 'streak' | 'badges' | 'path'
   const prayerLongPressTimer = useRef(null);
   const prayerLongPressTriggered = useRef(false);
+  const wheelDragRef = useRef({
+    active: false,
+    pointerId: null,
+    startY: 0,
+    startIndex: 0,
+    lastStepIndex: 0,
+    didDrag: false,
+  });
   const lastTapTime = useRef(0);
   const doubleTapCooldown = useRef(false);
 
@@ -309,13 +280,11 @@ export default function App() {
 
   const canvasRef = useRef(null);
   const verseWrapRef = useRef(null);
-  const avatarRef = useRef(null);
   const engineRef = useRef({});
   const hikmahRef = useRef(false);
 
   const completedPrayers = devotionData.dailyCompletedPrayers || [];
   const prayerStatuses = devotionData.dailyPrayerStatuses || {};
-  const targetHealth = completedPrayers.length / PRAYERS.length;
   const allCompleted = completedPrayers.length === PRAYERS.length;
   const hideStackForSeal = allCompleted && !reviewPrayers;
 
@@ -340,26 +309,12 @@ export default function App() {
   }, [prayerTimes.prayerData?.nextPrayer]);
 
   const stateRef = useRef({
-    health: 0,
-    theme: 0,
-    hikmahBlend: 0,
-    pointerX: typeof window !== 'undefined' ? window.innerWidth / 2 : 0,
-    pointerY: typeof window !== 'undefined' ? window.innerHeight / 2 : 0,
-    currentPointerX: typeof window !== 'undefined' ? window.innerWidth / 2 : 0,
-    currentPointerY: typeof window !== 'undefined' ? window.innerHeight / 2 : 0,
     isPressing: false,
     pressProgress: 0,
     lastPressP: -1,
-    orbX: typeof window !== 'undefined' ? window.innerWidth / 2 : 0,
-    orbY: typeof window !== 'undefined' ? window.innerHeight / 2 : 0,
-    orbVx: 0,
-    orbVy: 0,
-    lastInteractionTime: 0,
+    pointerStartX: 0,
+    pointerStartY: 0,
   });
-
-  useEffect(() => {
-    stateRef.current.lastInteractionTime = Date.now();
-  }, []);
 
   const isLightModeRef = useRef(isLightMode);
   useEffect(() => {
@@ -384,6 +339,7 @@ export default function App() {
   const advanceVerse = useCallback(
     (dir = 1) => {
       if (inTransit || viewRef.current !== 'main' || !verses || verses.length === 0) return;
+      hapticDetent();
       setInTransit(true);
       setShowContext(false);
 
@@ -425,7 +381,6 @@ export default function App() {
   useCanvasEngine({
     canvasRef,
     verseWrapRef,
-    avatarRef,
     engineRef,
     stateRef,
     temporalRef,
@@ -433,11 +388,6 @@ export default function App() {
     inTransitRef,
     hikmahRef,
     viewRef,
-    targetHealth,
-    DARK_HIGH,
-    DARK_LOW,
-    LIGHT_HIGH,
-    LIGHT_LOW,
   });
 
   // Clamp verseIndex defensively
@@ -456,7 +406,8 @@ export default function App() {
   const handleBookmarkAndReflect = useCallback(
     (verse) => {
       if (!verse) return;
-      hapticTapLight();
+      if (!isSaved) hapticSuccess();
+      else hapticToggle(false);
       devotionData.toggleSaveVerse(verse.id);
       if (!isSaved) {
         setTafakkurPromptId(verse.id);
@@ -493,7 +444,7 @@ export default function App() {
     stateRef.current.pointerStartX = e.clientX || (e.touches && e.touches[0]?.clientX) || 0;
     stateRef.current.pointerStartY = e.clientY || (e.touches && e.touches[0]?.clientY) || 0;
     stateRef.current.isPressing = true;
-    stateRef.current.lastInteractionTime = Date.now();
+    engineRef.current.startPressLoop?.();
   };
 
   const handleTextPointerUp = (e) => {
@@ -506,27 +457,21 @@ export default function App() {
   };
 
   const handlePointerMove = (e) => {
+    if (!stateRef.current.isPressing) return;
     const clientX = e.clientX || (e.touches && e.touches[0]?.clientX);
     const clientY = e.clientY || (e.touches && e.touches[0]?.clientY);
     if (!clientX || !clientY) return;
 
-    stateRef.current.pointerX = clientX;
-    stateRef.current.pointerY = clientY;
-    stateRef.current.lastInteractionTime = Date.now();
-
-    if (stateRef.current.isPressing) {
-      const dist = Math.hypot(
-        clientX - stateRef.current.pointerStartX,
-        clientY - stateRef.current.pointerStartY
-      );
-      if (dist > 20) stateRef.current.isPressing = false;
-    }
+    const dist = Math.hypot(
+      clientX - stateRef.current.pointerStartX,
+      clientY - stateRef.current.pointerStartY
+    );
+    if (dist > 20) stateRef.current.isPressing = false;
   };
 
   const handleTouchStart = (e) => {
     if (isAnyModalOpen || e.target.closest?.('[role="dialog"]')) return;
     touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    stateRef.current.lastInteractionTime = Date.now();
   };
 
   const handleTouchEnd = (e) => {
@@ -555,7 +500,6 @@ export default function App() {
     ) {
       return;
     }
-    stateRef.current.lastInteractionTime = Date.now();
     if (Math.abs(e.deltaY) > 20) {
       scrollCooldown.current = true;
       setFocusedIndex((p) =>
@@ -567,9 +511,9 @@ export default function App() {
 
   const handleTogglePrayer = (prayerId, status = 'ontime') => {
     if (checkingId) return;
-    stateRef.current.lastInteractionTime = Date.now();
 
     if (completedPrayers.includes(prayerId)) {
+      hapticUndo();
       devotionData.togglePrayer(prayerId);
       return;
     }
@@ -577,7 +521,8 @@ export default function App() {
     setCheckingId(prayerId);
     if (engineRef.current.triggerButtonBurst) engineRef.current.triggerButtonBurst();
     const nextCount = completedPrayers.length + 1;
-    if (nextCount === PRAYERS.length) hapticSuccess();
+    if (nextCount === PRAYERS.length) hapticCelebrate();
+    else if (status === 'qada') hapticHeavy();
     else hapticTapLight();
 
     setTimeout(() => {
@@ -612,6 +557,7 @@ export default function App() {
   // Kashf ceremony trigger
   useEffect(() => {
     if (maq.yaqeenProgress >= 100 && nextStation && !kashfCeremony) {
+      hapticCelebrate();
       setKashfCeremony(true);
       if (kashfTimerRef.current) clearTimeout(kashfTimerRef.current);
       kashfTimerRef.current = setTimeout(() => {
@@ -622,6 +568,13 @@ export default function App() {
       }, 3200);
     }
   }, [maq.yaqeenProgress, nextStation, kashfCeremony, devotionData]);
+
+  const celebrationBadgeId = devotionData.activeCelebrationBadge?.id;
+  useEffect(() => {
+    if (celebrationBadgeId) {
+      hapticCelebrate();
+    }
+  }, [celebrationBadgeId]);
 
   useEffect(() => {
     return () => {
@@ -657,6 +610,7 @@ export default function App() {
   const handleShare = (e, verse) => {
     e.stopPropagation();
     if (!verse) return;
+    hapticTapLight();
     const { translation } = resolveVerseCopy(verse, devotionData.isSimpleMode);
     const textToShare = `${verse.a}\n\n${translation}\n\n— ${verse.s}`;
     if (navigator.share) {
@@ -665,6 +619,7 @@ export default function App() {
       navigator.clipboard
         .writeText(textToShare)
         .then(() => {
+          hapticSuccess();
           setCopiedFeedback(true);
           setTimeout(() => setCopiedFeedback(false), 1800);
         })
@@ -723,10 +678,10 @@ export default function App() {
       onTouchEnd={handleTouchEnd}
       onWheel={handleWheel}
     >
-      {/* Painterly Studio Ghibli-Style Gouache Cloud Backdrops (Animated + Mouse Parallax Depth Planes) */}
+      {/* Calm Static Gouache Cloud Backdrop */}
       <PaintedClouds isLightMode={isLightMode} />
 
-      {/* Atmospheric Canvas (Optical Nur, Subtle Temporal Clouds & Embers) */}
+      {/* On-Demand Interactive Effects Canvas (Press Ring & Celebration Embers) */}
       <canvas ref={canvasRef} className="absolute inset-0 z-[1] pointer-events-none block" />
 
       {/* Measured Contrast & Atmosphere Scrim */}
@@ -780,7 +735,10 @@ export default function App() {
           </span>
           <button
             type="button"
-            onClick={() => setShowCityPicker(true)}
+            onClick={() => {
+              hapticNavigate();
+              setShowCityPicker(true);
+            }}
             aria-label={
               prayerTimes.hasLocation
                 ? `Location: ${prayerTimes.cityLabel}. Tap to change city.`
@@ -831,7 +789,10 @@ export default function App() {
         <button
           type="button"
           aria-label={isLightMode ? 'Switch to Night Mode' : 'Switch to Daylight Mode'}
-          onClick={() => setIsLightMode(!isLightMode)}
+          onClick={() => {
+            hapticToggle(!isLightMode);
+            toggleLightMode();
+          }}
           className={`justify-self-end pointer-events-auto min-w-[44px] min-h-[44px] -mr-2 flex items-center justify-center rounded-full transition-all duration-500 hover:scale-110 cursor-pointer ${
             isLightMode
               ? 'text-[#9c7533] hover:bg-[#9c7533]/10'
@@ -851,7 +812,7 @@ export default function App() {
         <div className="flex-grow min-w-0 flex flex-col items-center justify-center h-full relative">
           {/* === VIEW 1: MAIN (SUBMERSION ENGINE) === */}
           <div
-            className="absolute inset-0 flex items-center justify-center pb-[96px] md:pb-[108px] pt-[52px] transition-[opacity,transform,visibility] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] w-full"
+            className="absolute inset-0 flex items-center justify-center pb-[154px] md:pb-[168px] pt-[52px] transition-[opacity,transform,visibility] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] w-full"
             style={{
               opacity: currentView === 'main' ? 1 : 0,
               visibility: currentView === 'main' ? 'visible' : 'hidden',
@@ -885,6 +846,7 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => {
+                          hapticTapLight();
                           setContentError(false);
                           fetch('/data/content.json')
                             .then((r) => r.json())
@@ -1026,15 +988,18 @@ export default function App() {
                             type="button"
                             aria-expanded={showContext}
                             onPointerDown={(e) => e.stopPropagation()}
-                            onClick={() => setShowContext(!showContext)}
+                            onClick={() => {
+                              hapticToggle(!showContext);
+                              setShowContext(!showContext);
+                            }}
                             className={`min-h-[40px] px-2.5 flex items-center justify-center gap-1 transition-all duration-300 hover:scale-105 cursor-pointer ${
                               showContext
                                 ? isLightMode
                                   ? 'text-[#7c5a1e] opacity-100'
                                   : 'text-[#d2a24b] opacity-100'
                                 : isLightMode
-                                  ? 'text-[#2c2720] opacity-72 hover:opacity-100'
-                                  : 'text-[#e4dac8] opacity-60 hover:opacity-100'
+                                  ? 'text-[#2c2720] opacity-78 hover:opacity-100'
+                                  : 'text-[#e4dac8] opacity-72 hover:opacity-100'
                             }`}
                           >
                             <span
@@ -1062,8 +1027,8 @@ export default function App() {
                                   ? 'text-[#7c5a1e] opacity-95'
                                   : 'text-[#d2a24b] opacity-95'
                                 : isLightMode
-                                  ? 'text-[#2c2720] opacity-65 hover:opacity-100'
-                                  : 'text-[#e4dac8] opacity-55 hover:opacity-100'
+                                  ? 'text-[#2c2720] opacity-75 hover:opacity-100'
+                                  : 'text-[#e4dac8] opacity-68 hover:opacity-100'
                             }`}
                           >
                             <BookmarkIcon size={12} filled={isSaved} />
@@ -1080,8 +1045,8 @@ export default function App() {
                                   ? 'text-[#7c5a1e] opacity-100'
                                   : 'text-[#d2a24b] opacity-100'
                                 : isLightMode
-                                  ? 'text-[#2c2720] opacity-65 hover:opacity-100'
-                                  : 'text-[#e4dac8] opacity-55 hover:opacity-100'
+                                  ? 'text-[#2c2720] opacity-75 hover:opacity-100'
+                                  : 'text-[#e4dac8] opacity-68 hover:opacity-100'
                             }`}
                           >
                             {copiedFeedback ? (
@@ -1142,7 +1107,6 @@ export default function App() {
           {/* === VIEW 2: TASKS (DAILY DEVOTION & BURHAN) === */}
           <TasksView
             currentView={currentView}
-            isLightMode={isLightMode}
             dailyTasks={devotionData.dailyTasks}
             rewardedSets={devotionData.rewardedSets}
             burhanCompleted={devotionData.burhanCompleted}
@@ -1152,16 +1116,6 @@ export default function App() {
             activeDays={devotionData.activeDays}
             onOpenBurhan={() => setShowBurhanModal(true)}
             onOpenMisbaha={(launch) => setMisbahaLaunch(launch)}
-            habits={devotionData.habits}
-            dailyHabitLogs={devotionData.dailyHabitLogs}
-            onLogHabitStep={devotionData.logHabitStep}
-            onAddCustomHabit={devotionData.addCustomHabit}
-            onUpdateHabit={devotionData.updateHabit}
-            onReorderHabit={devotionData.reorderHabit}
-            onResetDefaultHabits={devotionData.resetDefaultHabits}
-            onRemoveHabit={devotionData.removeHabit}
-            dailyIntention={devotionData.dailyIntention}
-            onSetDailyIntention={devotionData.setDailyIntention}
             sunnahContext={sunnahContext}
             qadaRemainingCount={qadaTotals.totalRemaining}
             onOpenDuas={() => setShowDuas(true)}
@@ -1171,155 +1125,134 @@ export default function App() {
           {/* === VIEW 3: PROFILE (THE SOUL MIRROR) === */}
           <div
             data-testid="journey-scroller"
-            className="absolute inset-x-0 bottom-0 flex flex-col items-center transition-[opacity,transform,visibility] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] w-full overflow-y-auto hide-scrollbar pt-1"
+            className="absolute inset-x-0 bottom-0 flex flex-col items-center transition-[opacity,transform,visibility] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] w-full overflow-y-auto hide-scrollbar pt-2"
             style={{
               top: 'calc(72px + var(--sat))',
               paddingBottom: 'calc(24px + var(--sab))',
               touchAction: 'pan-y',
               opacity: currentView === 'profile' ? 1 : 0,
               visibility: currentView === 'profile' ? 'visible' : 'hidden',
-              transform: currentView === 'profile' ? 'scale(1)' : 'scale(1.02)',
+              transform: currentView === 'profile' ? 'scale(1)' : 'scale(1.015)',
               pointerEvents: currentView === 'profile' ? 'auto' : 'none',
               maskImage: currentView === 'profile'
-                ? 'linear-gradient(to bottom, transparent 0px, black 12px, black calc(100% - 12px), transparent 100%)'
+                ? 'linear-gradient(to bottom, transparent 0px, black 12px, black calc(100% - 14px), transparent 100%)'
                 : 'none',
               WebkitMaskImage: currentView === 'profile'
-                ? 'linear-gradient(to bottom, transparent 0px, black 12px, black calc(100% - 12px), transparent 100%)'
+                ? 'linear-gradient(to bottom, transparent 0px, black 12px, black calc(100% - 14px), transparent 100%)'
                 : 'none',
             }}
           >
-            <div className="flex flex-col items-center justify-start w-full max-w-[300px] sm:max-w-[360px] md:max-w-[460px] px-1.5 sm:px-3 mx-auto">
-              {/* Top Anchor */}
-              <span
-                className={`font-calligraphy text-[19px] leading-none ${tTextMain} opacity-75 mb-0.5 transition-colors duration-300`}
-                dir="rtl"
-              >
-                الرحلة
-              </span>
-
-              {/* Avatar + Streak Integration (Optical Nur Orb centers behind this ring) */}
-              <div
-                ref={avatarRef}
-                className="relative w-16 h-16 flex items-center justify-center mb-1.5 mx-auto shrink-0"
-              >
-                <svg
-                  className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none"
-                  viewBox="0 0 100 100"
+            <div className="w-full max-w-[360px] sm:max-w-[420px] md:max-w-[460px] px-3 sm:px-4 mx-auto flex flex-col items-center gap-3 pb-4">
+              {/* Quiet Editorial Identity Crest */}
+              <div className="w-full flex flex-col items-center text-center pt-1">
+                <span
+                  className={`font-calligraphy text-[18px] leading-none ${tTextMain} opacity-75 mb-2 transition-colors duration-300`}
+                  dir="rtl"
                 >
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="48"
-                    fill="none"
-                    stroke={isLightMode ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)'}
-                    strokeWidth="1"
-                    strokeDasharray="2 4"
-                  />
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="48"
-                    fill="none"
-                    stroke={isLightMode ? '#9c7533' : '#d2a24b'}
-                    strokeWidth="1.5"
-                    strokeDasharray={circumference}
-                    strokeDashoffset={dynamicDashOffset}
-                    strokeLinecap="round"
-                    className="transition-all duration-1000 ease-out"
-                  />
-                </svg>
+                  الرحلة
+                </span>
 
-                <div
-                  className={`flex flex-col items-center justify-center w-[48px] h-[48px] rounded-full border transition-all duration-300 z-10 ${
-                    isLightMode
-                      ? 'bg-white/65 border-white/85 island-light'
-                      : 'bg-[#0b0e16]/65 border-white/[0.14] island-dark'
-                  }`}
-                >
-                  <span
-                    className={`font-serif-eng text-base font-light ${tTextMain} transition-colors duration-300`}
-                    style={{
-                      letterSpacing: '0.1em',
-                      marginRight: '-0.1em',
-                      textShadow: glowSub,
-                    }}
+                <div className="relative w-14 h-14 flex items-center justify-center mb-2">
+                  <svg
+                    className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none"
+                    viewBox="0 0 100 100"
+                    aria-hidden="true"
                   >
-                    {userProfile.initials || 'SK'}
-                  </span>
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="47"
+                      fill="none"
+                      stroke={isLightMode ? 'rgba(26,24,20,0.1)' : 'rgba(255,255,255,0.1)'}
+                      strokeWidth="1.25"
+                      strokeDasharray="2 4"
+                    />
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="47"
+                      fill="none"
+                      stroke={isLightMode ? '#9c7533' : '#d2a24b'}
+                      strokeWidth="2"
+                      strokeDasharray={circumference}
+                      strokeDashoffset={dynamicDashOffset}
+                      strokeLinecap="round"
+                      className="transition-all duration-1000 ease-out"
+                    />
+                  </svg>
+
+                  <div
+                    className={`flex items-center justify-center w-[42px] h-[42px] rounded-full border transition-colors duration-300 ${
+                      isLightMode
+                        ? 'bg-white/75 border-black/[0.08]'
+                        : 'bg-[#0b0e16]/75 border-white/[0.12]'
+                    }`}
+                  >
+                    <span
+                      className={`font-serif-eng text-[15px] font-light ${tTextMain}`}
+                      style={{ letterSpacing: '0.08em', marginRight: '-0.08em' }}
+                    >
+                      {userProfile.initials || 'SK'}
+                    </span>
+                  </div>
                 </div>
+
+                <h2
+                  className={`font-serif-eng text-[20px] font-medium ${tTextMain} leading-tight tracking-[0.04em]`}
+                  style={{ textShadow: glowSub }}
+                >
+                  {userProfile.name}
+                </h2>
+                <p
+                  className={`font-serif-eng italic text-[11.5px] leading-snug mt-0.5 ${tTextGold}`}
+                >
+                  {currentStationData?.subtitle || 'Station of Patience'} · {maq.yaqeenProgress}% Yaqeen
+                  {totalHabitsCount > 0 ? ` · ${completedHabitsCount}/${totalHabitsCount} Habits` : ''}
+                </p>
               </div>
 
-              {/* User Identity */}
-              <h2
-                className={`font-serif-eng text-[18px] font-medium ${tTextMain} leading-tight transition-colors duration-300 flex items-center justify-center`}
-                style={{
-                  textShadow: glowSub,
-                  letterSpacing: '0.05em',
-                  marginRight: '-0.05em',
-                }}
-              >
-                {userProfile.name}
-              </h2>
-              <p
-                className={`font-serif-eng text-[8.5px] uppercase ${tTextGold} mb-2 transition-colors duration-300 text-center`}
-                style={{ letterSpacing: '0.18em', marginRight: '-0.18em' }}
-              >
-                {currentStationData?.subtitle || 'Station of Patience'} · {maq.yaqeenProgress}% Yaqeen
-              </p>
-
-              {/* Compact 3-Pillar Lifetime Summary Strip */}
+              {/* Unboxed Open Hairline Summary Ledger */}
               <div
-                className={`w-full grid grid-cols-3 divide-x rounded-[16px] border transition-all duration-300 mb-2 ${
+                className={`w-full grid grid-cols-3 divide-x border-y py-2.5 ${
                   isLightMode
-                    ? 'bg-white/68 border-white/85 divide-black/[0.06] island-light'
-                    : 'bg-[#0b0e16]/68 border-white/[0.09] divide-white/[0.06] island-dark'
+                    ? 'border-black/[0.08] divide-black/[0.07]'
+                    : 'border-white/[0.08] divide-white/[0.07]'
                 }`}
               >
-                <div className="flex flex-col items-center justify-center py-2 px-2">
-                  <span className={`font-serif-eng text-[17px] leading-none font-light tabular-nums ${tTextMain}`}>
+                <div className="flex flex-col items-center justify-center px-2">
+                  <span className={`font-serif-eng text-[19px] leading-none font-light tabular-nums ${tTextMain}`}>
                     {devotionData.totalPrayers}
                   </span>
-                  <span
-                    className={`font-serif-eng text-[7px] uppercase ${tTextSub} mt-1 opacity-80`}
-                    style={{ letterSpacing: '0.14em' }}
-                  >
+                  <span className={`font-serif-eng text-[8.5px] uppercase tracking-[0.16em] ${tTextSub} mt-1 opacity-75`}>
                     Prayers
                   </span>
                 </div>
 
-                <div className="flex flex-col items-center justify-center py-2 px-2">
-                  <span className={`font-serif-eng text-[17px] leading-none font-light tabular-nums ${tTextMain}`}>
+                <div className="flex flex-col items-center justify-center px-2">
+                  <span className={`font-serif-eng text-[19px] leading-none font-light tabular-nums ${tTextMain}`}>
                     {devotionData.totalVerses}
                   </span>
-                  <span
-                    className={`font-serif-eng text-[7px] uppercase ${tTextSub} mt-1 opacity-80`}
-                    style={{ letterSpacing: '0.14em' }}
-                  >
+                  <span className={`font-serif-eng text-[8.5px] uppercase tracking-[0.16em] ${tTextSub} mt-1 opacity-75`}>
                     Verses
                   </span>
                 </div>
 
-                <div className="flex flex-col items-center justify-center py-2 px-2">
-                  <span className={`font-serif-eng text-[17px] leading-none font-light tabular-nums ${tTextMain}`}>
+                <div className="flex flex-col items-center justify-center px-2">
+                  <span className={`font-serif-eng text-[19px] leading-none font-light tabular-nums ${tTextMain}`}>
                     {devotionData.activeDays}
                   </span>
-                  <span
-                    className={`font-serif-eng text-[7px] uppercase ${tTextSub} mt-1 opacity-80 whitespace-nowrap`}
-                    style={{ letterSpacing: '0.14em' }}
-                  >
+                  <span className={`font-serif-eng text-[8.5px] uppercase tracking-[0.16em] ${tTextSub} mt-1 opacity-75 whitespace-nowrap`}>
                     Active Days
                   </span>
                 </div>
               </div>
 
-              {/* Clean Segmented Journey Switcher (Streak | Badges | Path) */}
+              {/* Sleek Architectural Underline Tab Bar */}
               <div
                 role="tablist"
                 aria-label="Journey Sections"
-                className={`w-full grid grid-cols-3 p-1 rounded-2xl border mb-2 backdrop-blur-md transition-colors ${
-                  isLightMode
-                    ? 'bg-[#e6dfd1]/75 border-black/[0.08]'
-                    : 'bg-[#0b0e16]/75 border-white/[0.09]'
+                className={`w-full grid grid-cols-3 border-b ${
+                  isLightMode ? 'border-black/[0.08]' : 'border-white/[0.08]'
                 }`}
               >
                 {[
@@ -1334,171 +1267,206 @@ export default function App() {
                       type="button"
                       role="tab"
                       aria-selected={active}
-                      onClick={() => setJourneyTab(tab.id)}
-                      className="min-h-[34px] rounded-xl font-serif-eng text-[9px] uppercase tracking-[0.11em] cursor-pointer flex items-center justify-center whitespace-nowrap px-1 border"
+                      onClick={() => {
+                        if (journeyTab !== tab.id) {
+                          hapticDetent();
+                          setJourneyTab(tab.id);
+                        }
+                      }}
+                      className="relative min-h-[40px] font-serif-eng text-[10px] uppercase tracking-[0.14em] cursor-pointer flex items-center justify-center whitespace-nowrap px-1.5 transition-colors"
                       style={{
-                        backgroundColor: active
-                          ? isLightMode
-                            ? '#fcfaf5'
-                            : 'rgba(255,255,255,0.14)'
-                          : 'transparent',
-                        borderColor: active
-                          ? isLightMode
-                            ? 'rgba(156,117,51,0.28)'
-                            : 'rgba(210,162,75,0.28)'
-                          : 'transparent',
-                        boxShadow: active
-                          ? isLightMode
-                            ? '0 2px 6px rgba(26,24,20,0.09)'
-                            : '0 2px 8px rgba(0,0,0,0.35)'
-                          : 'none',
                         color: active
                           ? isLightMode
-                            ? '#7c5a1e'
+                            ? '#8a6423'
                             : '#e5c17b'
                           : isLightMode
-                            ? 'rgba(44,39,32,0.72)'
-                            : 'rgba(228,218,200,0.68)',
+                            ? 'rgba(44,39,32,0.62)'
+                            : 'rgba(228,218,200,0.58)',
                         fontWeight: active ? 600 : 400,
                       }}
                     >
-                      {tab.label}
+                      <span>{tab.label}</span>
+                      {active && (
+                        <span
+                          aria-hidden="true"
+                          className="absolute bottom-[-1px] left-3 right-3 h-[1.5px] rounded-full"
+                          style={{ backgroundColor: isLightMode ? '#9c7533' : '#d2a24b' }}
+                        />
+                      )}
                     </button>
                   );
                 })}
               </div>
 
-              {/* Tab Panel */}
-              {journeyTab === 'streak' && (
-                <DailyStreakTracker
-                  historyMap={devotionData.history}
-                  pausedDates={devotionData.streakPausedDates}
-                  onTogglePauseToday={devotionData.toggleStreakPauseToday}
-                  isLightMode={isLightMode}
-                  isVisible={currentView === 'profile' && journeyTab === 'streak'}
-                />
-              )}
+              {/* Active Journey Panel */}
+              <div className="w-full">
+                {journeyTab === 'streak' && (
+                  <DailyStreakTracker
+                    historyMap={devotionData.history}
+                    pausedDates={devotionData.streakPausedDates}
+                    onTogglePauseToday={devotionData.toggleStreakPauseToday}
+                    isLightMode={isLightMode}
+                    isVisible={currentView === 'profile' && journeyTab === 'streak'}
+                  />
+                )}
 
-              {journeyTab === 'badges' && (
-                <BadgesShowcase
-                  badgeStatuses={devotionData.badgeStatuses}
-                  unlockedCount={devotionData.unlockedBadgeCount}
-                  totalCount={devotionData.totalBadgeCount}
-                  isLightMode={isLightMode}
-                  onInspectBadge={(badge) => setInspectedBadge(badge)}
-                />
-              )}
+                {journeyTab === 'badges' && (
+                  <BadgesShowcase
+                    badgeStatuses={devotionData.badgeStatuses}
+                    unlockedCount={devotionData.unlockedBadgeCount}
+                    totalCount={devotionData.totalBadgeCount}
+                    isLightMode={isLightMode}
+                    onInspectBadge={(badge) => setInspectedBadge(badge)}
+                  />
+                )}
 
-              {journeyTab === 'path' && (
-                <div className="w-full">
-                  {stations.length > 0 && (
-                    <StationIndicator
-                      stations={stations}
-                      currentStation={maq.currentStation}
-                      unlockedStations={maq.unlockedStations || [0]}
-                      yaqeenProgress={maq.yaqeenProgress}
-                      accentHex={accentHex}
-                      isLightMode={isLightMode}
-                      onSelectStation={(idx) => {
-                        setVerseIndex(0);
-                        devotionData.goToStation(idx);
-                      }}
-                    />
-                  )}
-                  <DevotionHeatmap isLightMode={isLightMode} historyMap={devotionData.history} />
+                {journeyTab === 'path' && (
+                  <div className="w-full flex flex-col gap-2">
+                    {stations.length > 0 && (
+                      <StationIndicator
+                        stations={stations}
+                        currentStation={maq.currentStation}
+                        unlockedStations={maq.unlockedStations || [0]}
+                        yaqeenProgress={maq.yaqeenProgress}
+                        accentHex={accentHex}
+                        isLightMode={isLightMode}
+                        onSelectStation={(idx) => {
+                          if (idx !== maq.currentStation) hapticNavigate();
+                          setVerseIndex(0);
+                          devotionData.goToStation(idx);
+                        }}
+                      />
+                    )}
+                    <DevotionHeatmap isLightMode={isLightMode} historyMap={devotionData.history} />
+                  </div>
+                )}
+              </div>
+
+              {/* Unified Sanctuary Ledger Menu */}
+              <div
+                className={`w-full rounded-2xl border overflow-hidden divide-y transition-colors ${
+                  isLightMode
+                    ? 'bg-white/62 border-white/80 divide-black/[0.06] island-light'
+                    : 'bg-[#0b0e16]/68 border-white/[0.09] divide-white/[0.07] island-dark'
+                }`}
+              >
+                <div className={`grid grid-cols-2 divide-x ${isLightMode ? 'divide-black/[0.06]' : 'divide-white/[0.07]'}`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      hapticNavigate();
+                      setShowDuas(true);
+                    }}
+                    className={`min-h-[46px] px-3.5 py-2.5 flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                      isLightMode ? 'hover:bg-black/[0.025]' : 'hover:bg-white/[0.035]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <BookIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
+                      <span className={`font-serif-eng text-[10.5px] uppercase tracking-[0.12em] truncate ${tTextMain}`}>
+                        Duas
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className={`font-serif-eng text-[11px] tabular-nums ${tTextSub} opacity-70`}>
+                        {devotionData.favoriteDuaIds?.length || 0}
+                      </span>
+                      <ChevronRightIcon size={12} className={`${tTextSub} opacity-40`} />
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      hapticNavigate();
+                      setShowQada(true);
+                    }}
+                    className={`min-h-[46px] px-3.5 py-2.5 flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                      isLightMode ? 'hover:bg-black/[0.025]' : 'hover:bg-white/[0.035]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <RotateCcwIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
+                      <span className={`font-serif-eng text-[10.5px] uppercase tracking-[0.12em] truncate ${tTextMain}`}>
+                        Qada
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className={`font-serif-eng text-[11px] tabular-nums ${tTextSub} opacity-70`}>
+                        {qadaTotals.totalRemaining}
+                      </span>
+                      <ChevronRightIcon size={12} className={`${tTextSub} opacity-40`} />
+                    </div>
+                  </button>
                 </div>
-              )}
 
-              {/* Compact 2-Column Sanctuary Menu */}
-              <div className="w-full grid grid-cols-2 gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setShowDuas(true)}
-                  className={`min-h-[44px] px-3 py-2 rounded-[16px] border flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-                    isLightMode
-                      ? 'bg-white/50 hover:bg-white/75 border-white/65 island-light'
-                      : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] island-dark'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <BookIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
-                    <span className={`font-serif-eng text-[10px] uppercase tracking-[0.12em] truncate ${tTextMain}`}>
-                      Duas ({devotionData.favoriteDuaIds?.length || 0})
-                    </span>
-                  </div>
-                  <ChevronRightIcon size={13} className={`${tTextSub} opacity-45 shrink-0`} />
-                </button>
+                <div className={`grid grid-cols-2 divide-x ${isLightMode ? 'divide-black/[0.06]' : 'divide-white/[0.07]'}`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      hapticNavigate();
+                      setShowArchive(true);
+                    }}
+                    className={`min-h-[46px] px-3.5 py-2.5 flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                      isLightMode ? 'hover:bg-black/[0.025]' : 'hover:bg-white/[0.035]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <BookmarkIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
+                      <span className={`font-serif-eng text-[10.5px] uppercase tracking-[0.12em] truncate ${tTextMain}`}>
+                        Saved
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className={`font-serif-eng text-[11px] tabular-nums ${tTextSub} opacity-70`}>
+                        {devotionData.savedVerses.length}
+                      </span>
+                      <ChevronRightIcon size={12} className={`${tTextSub} opacity-40`} />
+                    </div>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => setShowQada(true)}
-                  className={`min-h-[44px] px-3 py-2 rounded-[16px] border flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-                    isLightMode
-                      ? 'bg-white/50 hover:bg-white/75 border-white/65 island-light'
-                      : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] island-dark'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <RotateCcwIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
-                    <span className={`font-serif-eng text-[10px] uppercase tracking-[0.12em] truncate ${tTextMain}`}>
-                      Qada ({qadaTotals.totalRemaining})
-                    </span>
-                  </div>
-                  <ChevronRightIcon size={13} className={`${tTextSub} opacity-45 shrink-0`} />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowArchive(true)}
-                  className={`min-h-[44px] px-3 py-2 rounded-[16px] border flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-                    isLightMode
-                      ? 'bg-white/50 hover:bg-white/75 border-white/65 island-light'
-                      : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] island-dark'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <BookmarkIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
-                    <span className={`font-serif-eng text-[10px] uppercase tracking-[0.12em] truncate ${tTextMain}`}>
-                      Saved ({devotionData.savedVerses.length})
-                    </span>
-                  </div>
-                  <ChevronRightIcon size={13} className={`${tTextSub} opacity-45 shrink-0`} />
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      hapticNavigate();
+                      setShowReminders(true);
+                    }}
+                    className={`min-h-[46px] px-3.5 py-2.5 flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                      isLightMode ? 'hover:bg-black/[0.025]' : 'hover:bg-white/[0.035]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <BellIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
+                      <span className={`font-serif-eng text-[10.5px] uppercase tracking-[0.12em] truncate ${tTextMain}`}>
+                        Alerts
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className={`font-serif-eng text-[11px] tabular-nums ${tTextSub} opacity-70`}>
+                        {enabledAlertsCount}
+                      </span>
+                      <ChevronRightIcon size={12} className={`${tTextSub} opacity-40`} />
+                    </div>
+                  </button>
+                </div>
 
                 <button
                   type="button"
-                  onClick={() => setShowReminders(true)}
-                  className={`min-h-[44px] px-3 py-2 rounded-[16px] border flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-                    isLightMode
-                      ? 'bg-white/50 hover:bg-white/75 border-white/65 island-light'
-                      : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] island-dark'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <BellIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
-                    <span className={`font-serif-eng text-[10px] uppercase tracking-[0.12em] truncate ${tTextMain}`}>
-                      Alerts{enabledAlertsCount > 0 ? ` (${enabledAlertsCount})` : ''}
-                    </span>
-                  </div>
-                  <ChevronRightIcon size={13} className={`${tTextSub} opacity-45 shrink-0`} />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowSettings(true)}
-                  className={`col-span-2 min-h-[44px] px-3.5 py-2 rounded-[16px] border flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-                    isLightMode
-                      ? 'bg-white/50 hover:bg-white/75 border-white/65 island-light'
-                      : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] island-dark'
+                  onClick={() => {
+                    hapticNavigate();
+                    setShowSettings(true);
+                  }}
+                  className={`w-full min-h-[46px] px-3.5 py-2.5 flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                    isLightMode ? 'hover:bg-black/[0.025]' : 'hover:bg-white/[0.035]'
                   }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
                     <SettingsIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
-                    <span className={`font-serif-eng text-[10px] uppercase tracking-[0.14em] truncate ${tTextMain}`}>
+                    <span className={`font-serif-eng text-[10.5px] uppercase tracking-[0.13em] truncate ${tTextMain}`}>
                       Preferences &amp; Backup
                     </span>
                   </div>
-                  <ChevronRightIcon size={14} className={`${tTextSub} opacity-45 shrink-0`} />
+                  <ChevronRightIcon size={13} className={`${tTextSub} opacity-40 shrink-0`} />
                 </button>
               </div>
             </div>
@@ -1520,15 +1488,19 @@ export default function App() {
               type="button"
               aria-label="Sanctuary"
               aria-current={currentView === 'main' ? 'page' : undefined}
-              onClick={() => setCurrentView('main')}
+              onClick={() => {
+                if (currentView === 'main') hapticDetent();
+                else hapticNavigate();
+                setCurrentView('main');
+              }}
               className={`relative w-7 h-7 rounded-full transition-all duration-500 hover:scale-105 flex items-center justify-center cursor-pointer ${
                 currentView === 'main'
                   ? isLightMode
-                    ? 'text-[#9c7533] shadow-[0_2px_10px_rgba(156,117,51,0.2)] bg-white/50'
-                    : 'text-[#d2a24b] shadow-[0_2px_10px_rgba(210,162,75,0.2)] bg-white/5'
+                    ? 'text-[#9c7533] shadow-[0_2px_10px_rgba(156,117,51,0.2)] bg-white/65 ring-1 ring-[#9c7533]/30'
+                    : 'text-[#d2a24b] shadow-[0_2px_10px_rgba(210,162,75,0.22)] bg-white/10 ring-1 ring-[#d2a24b]/35'
                   : isLightMode
-                    ? 'text-[#4a453d] opacity-50 hover:opacity-100'
-                    : 'text-[#e4dac8] opacity-30 hover:opacity-100'
+                    ? 'text-[#4a453d] opacity-55 hover:opacity-100'
+                    : 'text-[#e4dac8] opacity-40 hover:opacity-100'
               }`}
             >
               <MainNavIcon size={15} />
@@ -1539,15 +1511,19 @@ export default function App() {
               type="button"
               aria-label="Practices"
               aria-current={currentView === 'tasks' ? 'page' : undefined}
-              onClick={() => setCurrentView('tasks')}
+              onClick={() => {
+                if (currentView === 'tasks') hapticDetent();
+                else hapticNavigate();
+                setCurrentView('tasks');
+              }}
               className={`relative w-7 h-7 rounded-full transition-all duration-500 hover:scale-105 flex items-center justify-center cursor-pointer ${
                 currentView === 'tasks'
                   ? isLightMode
-                    ? 'text-[#9c7533] shadow-[0_2px_10px_rgba(156,117,51,0.2)] bg-white/50'
-                    : 'text-[#d2a24b] shadow-[0_2px_10px_rgba(210,162,75,0.2)] bg-white/5'
+                    ? 'text-[#9c7533] shadow-[0_2px_10px_rgba(156,117,51,0.2)] bg-white/65 ring-1 ring-[#9c7533]/30'
+                    : 'text-[#d2a24b] shadow-[0_2px_10px_rgba(210,162,75,0.22)] bg-white/10 ring-1 ring-[#d2a24b]/35'
                   : isLightMode
-                    ? 'text-[#4a453d] opacity-50 hover:opacity-100'
-                    : 'text-[#e4dac8] opacity-30 hover:opacity-100'
+                    ? 'text-[#4a453d] opacity-55 hover:opacity-100'
+                    : 'text-[#e4dac8] opacity-40 hover:opacity-100'
               }`}
             >
               <TasksNavIcon size={15} />
@@ -1558,15 +1534,19 @@ export default function App() {
               type="button"
               aria-label="Journey"
               aria-current={currentView === 'profile' ? 'page' : undefined}
-              onClick={() => setCurrentView('profile')}
+              onClick={() => {
+                if (currentView === 'profile') hapticDetent();
+                else hapticNavigate();
+                setCurrentView('profile');
+              }}
               className={`relative w-7 h-7 rounded-full transition-all duration-500 hover:scale-105 flex items-center justify-center cursor-pointer ${
                 currentView === 'profile'
                   ? isLightMode
-                    ? 'text-[#9c7533] shadow-[0_2px_10px_rgba(156,117,51,0.2)] bg-white/50'
-                    : 'text-[#d2a24b] shadow-[0_2px_10px_rgba(210,162,75,0.2)] bg-white/5'
+                    ? 'text-[#9c7533] shadow-[0_2px_10px_rgba(156,117,51,0.2)] bg-white/65 ring-1 ring-[#9c7533]/30'
+                    : 'text-[#d2a24b] shadow-[0_2px_10px_rgba(210,162,75,0.22)] bg-white/10 ring-1 ring-[#d2a24b]/35'
                   : isLightMode
-                    ? 'text-[#4a453d] opacity-50 hover:opacity-100'
-                    : 'text-[#e4dac8] opacity-30 hover:opacity-100'
+                    ? 'text-[#4a453d] opacity-55 hover:opacity-100'
+                    : 'text-[#e4dac8] opacity-40 hover:opacity-100'
               }`}
             >
               <ProfileNavIcon size={15} />
@@ -1575,212 +1555,310 @@ export default function App() {
         </div>
       </div>
 
-      {/* --- 5. CLEAN BOTTOM SANCTUARY DOCK (PRAYER CARD + QIBLA) - ONLY ON MAIN VIEW --- */}
+      {/* --- 5. 3D PRAYER SCROLL WHEEL + ALIGNED QIBLA DOCK (MAIN VIEW ONLY) --- */}
       <div
-        className="absolute inset-x-0 z-30 flex flex-col items-center px-4 md:px-8 pointer-events-none transition-[opacity,visibility,transform] duration-500"
+        className="absolute inset-x-0 bottom-0 z-30 pointer-events-none transition-[opacity,visibility,transform] duration-500"
         style={{
-          bottom: 'calc(18px + var(--sab))',
+          height: 'calc(216px + var(--sab))',
           opacity: currentView === 'main' ? 1 : 0,
           visibility: currentView === 'main' ? 'visible' : 'hidden',
           transform: currentView === 'main' ? 'translateY(0)' : 'translateY(10px)',
         }}
       >
-        <div className="w-full max-w-[348px] sm:max-w-[372px] flex flex-col items-center">
-          {/* Done Reviewing toggle when user tapped Seal to adjust a prayer */}
-          {currentView === 'main' && allCompleted && reviewPrayers && (
+        {/* Done Reviewing toggle floating just above the scroll wheel when adjusting completed prayers */}
+        {currentView === 'main' && allCompleted && reviewPrayers && (
+          <div
+            className="absolute left-1/2 -translate-x-1/2 z-40 flex justify-center"
+            style={{ bottom: 'calc(176px + var(--sab))' }}
+          >
             <button
               type="button"
-              onClick={() => setReviewPrayers(false)}
-              className={`mb-1.5 px-3 py-1 font-serif-eng text-[8.5px] uppercase tracking-[0.2em] cursor-pointer pointer-events-auto transition-opacity opacity-80 hover:opacity-100 whitespace-nowrap ${tTextGold}`}
+              onClick={() => {
+                hapticDismiss();
+                setReviewPrayers(false);
+              }}
+              className={`px-3.5 py-1.5 rounded-full font-serif-eng text-[8.5px] uppercase tracking-[0.2em] cursor-pointer pointer-events-auto transition-all opacity-85 hover:opacity-100 whitespace-nowrap border ${
+                isLightMode
+                  ? 'bg-white/75 border-[#9c7533]/25 text-[#9c7533]'
+                  : 'bg-[#0b0e16]/75 border-[#d2a24b]/25 text-[#e5c17b]'
+              }`}
             >
               Done Reviewing
             </button>
-          )}
+          </div>
+        )}
 
-          {/* Whisper-Quiet 5-Prayer Quick-Selector Strip */}
-          {!hideStackForSeal && (
-            <div
-              role="tablist"
-              aria-label="Daily Prayers"
-              className="w-full flex items-center justify-between gap-1 px-1 mb-2 pointer-events-auto"
+        {/* All-Prayers-Fulfilled Seal (aligned at the wheel focal height) */}
+        {hideStackForSeal ? (
+          <div
+            className="absolute left-1/2 -translate-x-1/2 w-[calc(100%-130px)] max-w-[308px] pointer-events-auto"
+            style={{ bottom: 'calc(67px + var(--sab))' }}
+          >
+            <button
+              type="button"
+              aria-label="All prayers fulfilled. Tap to review or undo prayers."
+              onClick={() => {
+                hapticNavigate();
+                setReviewPrayers(true);
+              }}
+              className={`w-full h-[56px] px-4 rounded-2xl border flex flex-col items-center justify-center transition-all duration-500 cursor-pointer ${
+                isLightMode
+                  ? 'bg-white/80 hover:bg-white/92 border-[#9c7533]/35 island-light'
+                  : 'bg-[#0b0e16]/80 hover:bg-[#0e1320]/92 border-[#d2a24b]/35 island-dark'
+              }`}
             >
-              {PRAYERS.map((p, idx) => {
-                const isFocused = idx === focusedIndex;
-                const isDone = completedPrayers.includes(p.id);
-                const isUpcoming = prayerTimes.prayerData?.nextPrayer === p.id && !isDone;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={isFocused}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      hapticTapLight();
-                      setFocusedIndex(idx);
-                    }}
-                    className={`min-h-[30px] flex-1 flex flex-col items-center justify-center gap-1 rounded-lg transition-all duration-300 cursor-pointer whitespace-nowrap ${
-                      isFocused
-                        ? isLightMode
-                          ? 'text-[#7c5a1e] font-semibold'
-                          : 'text-[#e5c17b] font-semibold'
-                        : isDone
-                          ? isLightMode
-                            ? 'text-[#7c5a1e]/75'
-                            : 'text-[#d2a24b]/75'
-                          : isLightMode
-                            ? 'text-[#2c2720]/60 hover:text-[#1a1814]'
-                            : 'text-[#e4dac8]/55 hover:text-[#f5eee0]'
-                    }`}
-                  >
-                    <span className="font-serif-eng text-[8.5px] uppercase tracking-[0.14em] leading-none">
-                      {p.label}
-                    </span>
-                    <span
-                      aria-hidden="true"
-                      className="h-[2px] rounded-full transition-all duration-300"
-                      style={{
-                        width: isFocused ? '16px' : isDone || isUpcoming ? '6px' : '3px',
-                        backgroundColor:
-                          isFocused || isDone || isUpcoming
-                            ? accentHex
-                            : isLightMode
-                              ? 'rgba(44,39,32,0.22)'
-                              : 'rgba(228,218,200,0.22)',
-                        opacity: isFocused ? 0.95 : isDone ? 0.7 : isUpcoming ? 0.65 : 0.45,
-                      }}
-                    />
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Bottom Aligned Row: Active Prayer Card (or Completion Seal) + Qibla Compass */}
-          <div className="w-full flex items-stretch gap-2.5 pointer-events-auto">
-            {hideStackForSeal ? (
-              <button
-                type="button"
-                aria-label="All prayers fulfilled. Tap to review or undo prayers."
-                onClick={() => setReviewPrayers(true)}
-                className={`flex-1 min-w-0 h-[62px] px-4 rounded-2xl border flex flex-col items-center justify-center transition-all duration-500 cursor-pointer ${
-                  isLightMode
-                    ? 'bg-white/78 hover:bg-white/90 border-[#9c7533]/35 island-light'
-                    : 'bg-[#0b0e16]/78 hover:bg-[#0e1320]/90 border-[#d2a24b]/35 island-dark'
+              <span
+                className={`font-calligraphy text-[17px] leading-none whitespace-nowrap ${
+                  isLightMode ? 'text-[#9c7533]' : 'text-[#e5c17b]'
+                }`}
+                style={{
+                  textShadow: isLightMode ? 'none' : `0 0 22px ${accentRgba},0.28)`,
+                }}
+                dir="rtl"
+              >
+                تَمَّتْ الصَّلَوَات
+              </span>
+              <span
+                className={`font-serif-eng italic text-[10px] tracking-wide mt-1 whitespace-nowrap ${
+                  isLightMode ? 'text-[#4a453d] opacity-75' : 'text-[rgba(228,218,200,0.68)]'
                 }`}
               >
-                <span
-                  className={`font-calligraphy text-[18px] leading-none whitespace-nowrap ${
-                    isLightMode ? 'text-[#9c7533]' : 'text-[#e5c17b]'
+                All prayers fulfilled · Tap to adjust
+              </span>
+            </button>
+          </div>
+        ) : (
+          /* 3D Vertical Rolodex Prayer Scroll Wheel */
+          <div
+            role="listbox"
+            aria-label="Daily Prayers Scroll Wheel"
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
+            onPointerDown={(e) => {
+              if (e.button !== undefined && e.button !== 0 && e.pointerType === 'mouse') return;
+              wheelDragRef.current = {
+                active: true,
+                pointerId: e.pointerId,
+                startY: e.clientY,
+                startIndex: focusedIndex,
+                lastStepIndex: focusedIndex,
+                didDrag: false,
+              };
+            }}
+            onPointerMove={(e) => {
+              const drag = wheelDragRef.current;
+              if (!drag.active) return;
+              const deltaY = e.clientY - drag.startY;
+              if (Math.abs(deltaY) > 8) {
+                if (!drag.didDrag) {
+                  drag.didDrag = true;
+                  try {
+                    e.currentTarget.setPointerCapture?.(e.pointerId);
+                  } catch {}
+                }
+                if (prayerLongPressTimer.current) {
+                  clearTimeout(prayerLongPressTimer.current);
+                  prayerLongPressTimer.current = null;
+                }
+              }
+              if (drag.didDrag) {
+                const steps = Math.round(-deltaY / 32);
+                const nextIdx = Math.max(0, Math.min(PRAYERS.length - 1, drag.startIndex + steps));
+                if (nextIdx !== drag.lastStepIndex) {
+                  drag.lastStepIndex = nextIdx;
+                  hapticDetent();
+                  setFocusedIndex(nextIdx);
+                }
+              }
+            }}
+            onPointerUp={(e) => {
+              wheelDragRef.current.active = false;
+              try {
+                if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+                  e.currentTarget.releasePointerCapture(e.pointerId);
+                }
+              } catch {}
+              if (wheelDragRef.current.didDrag) {
+                setTimeout(() => {
+                  wheelDragRef.current.didDrag = false;
+                }, 60);
+              }
+            }}
+            onPointerCancel={(e) => {
+              wheelDragRef.current.active = false;
+              wheelDragRef.current.didDrag = false;
+              try {
+                if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+                  e.currentTarget.releasePointerCapture(e.pointerId);
+                }
+              } catch {}
+              if (prayerLongPressTimer.current) {
+                clearTimeout(prayerLongPressTimer.current);
+                prayerLongPressTimer.current = null;
+              }
+            }}
+            className="absolute left-1/2 -translate-x-1/2 w-[calc(100%-130px)] max-w-[308px] h-[150px] pointer-events-auto select-none"
+            style={{
+              bottom: 'calc(20px + var(--sab))',
+              touchAction: 'none',
+              perspective: '720px',
+              WebkitMaskImage:
+                'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.92) 10%, #000 18%, #000 82%, rgba(0,0,0,0.92) 90%, transparent 100%)',
+              maskImage:
+                'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.92) 10%, #000 18%, #000 82%, rgba(0,0,0,0.92) 90%, transparent 100%)',
+            }}
+          >
+            {PRAYERS.map((item, i) => {
+              const offset = i - focusedIndex;
+              const absOffset = Math.abs(offset);
+              const isVisible = absOffset <= 2;
+              const isActive = offset === 0;
+              const isAdjacent = absOffset === 1;
+              const isCompletedItem = completedPrayers.includes(item.id);
+              const itemStatus = prayerStatuses[item.id] || 'ontime';
+              const isChecking = checkingId === item.id;
+              const RenderIcon = getPrayerIcon(item.iconType);
+              const isNextPrayer =
+                prayerTimes.prayerData?.nextPrayer === item.id && !isCompletedItem;
+
+              const yPos =
+                offset === 0
+                  ? 0
+                  : offset > 0
+                    ? absOffset === 1
+                      ? 41
+                      : 71
+                    : absOffset === 1
+                      ? -41
+                      : -71;
+              const scale = isActive ? 1 : isAdjacent ? 0.89 : 0.76;
+              const rotateX = isActive ? 0 : isAdjacent ? offset * -23 : offset * -38;
+              const cardOpacity = !isVisible
+                ? 0
+                : isActive
+                  ? 1
+                  : isAdjacent
+                    ? isLightMode
+                      ? 0.68
+                      : 0.6
+                    : isLightMode
+                      ? 0.25
+                      : 0.22;
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="option"
+                  aria-selected={isActive}
+                  aria-hidden={!isVisible}
+                  tabIndex={isActive ? 0 : -1}
+                  aria-label={`${item.label} Prayer${
+                    isCompletedItem
+                      ? itemStatus === 'qada'
+                        ? ' (Qada, tap to undo)'
+                        : ' (Completed, tap to undo)'
+                      : ''
+                  }`}
+                  onPointerDown={() => {
+                    if (!isActive) return;
+                    prayerLongPressTriggered.current = false;
+                    if (!isCompletedItem && !checkingId) {
+                      prayerLongPressTimer.current = setTimeout(() => {
+                        if (wheelDragRef.current.didDrag) return;
+                        prayerLongPressTriggered.current = true;
+                        prayerLongPressTimer.current = null;
+                        handleTogglePrayer(item.id, 'qada');
+                      }, 480);
+                    }
+                  }}
+                  onPointerUp={() => {
+                    if (prayerLongPressTimer.current) {
+                      clearTimeout(prayerLongPressTimer.current);
+                      prayerLongPressTimer.current = null;
+                    }
+                  }}
+                  onPointerLeave={() => {
+                    if (prayerLongPressTimer.current) {
+                      clearTimeout(prayerLongPressTimer.current);
+                      prayerLongPressTimer.current = null;
+                    }
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (wheelDragRef.current.didDrag) {
+                      wheelDragRef.current.didDrag = false;
+                      return;
+                    }
+                    if (!isActive) {
+                      hapticDetent();
+                      setFocusedIndex(i);
+                      return;
+                    }
+                    if (prayerLongPressTriggered.current) {
+                      prayerLongPressTriggered.current = false;
+                      return;
+                    }
+                    if (checkingId) return;
+                    handleTogglePrayer(item.id, 'ontime');
+                  }}
+                  className={`group absolute left-0 right-0 top-1/2 flex items-center justify-between px-3 sm:px-4 rounded-2xl transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] overflow-hidden border cursor-pointer ${
+                    isActive ? 'h-[56px]' : 'h-[48px]'
+                  } ${
+                    isLightMode
+                      ? isActive
+                        ? isChecking || isCompletedItem
+                          ? 'bg-white/88 border-[#9c7533]/48 island-light'
+                          : 'bg-white/84 hover:bg-white/94 border-[#9c7533]/24 island-light'
+                        : 'bg-white/66 border-[#9c7533]/16'
+                      : isActive
+                        ? isChecking || isCompletedItem
+                          ? 'bg-[#d2a24b]/16 border-[#d2a24b]/42 island-dark'
+                          : 'bg-[#0b0e16]/86 hover:bg-[#0e1320]/94 border-white/[0.16] island-dark'
+                        : 'bg-[#0b0e16]/68 border-white/[0.11]'
                   }`}
                   style={{
-                    textShadow: isLightMode ? 'none' : `0 0 22px ${accentRgba},0.28)`,
+                    transform: `translate3d(0, calc(-50% + ${yPos}px), 0) scale(${scale}) rotateX(${rotateX}deg)`,
+                    transformOrigin: 'center center',
+                    backfaceVisibility: 'hidden',
+                    opacity: cardOpacity,
+                    zIndex: isActive ? 30 : isAdjacent ? 20 : 10,
+                    pointerEvents: isVisible ? 'auto' : 'none',
                   }}
-                  dir="rtl"
                 >
-                  تَمَّتْ الصَّلَوَات
-                </span>
-                <span
-                  className={`font-serif-eng italic text-[10.5px] tracking-wide mt-1 whitespace-nowrap ${
-                    isLightMode ? 'text-[#4a453d] opacity-75' : 'text-[rgba(228,218,200,0.68)]'
-                  }`}
-                >
-                  All prayers fulfilled · Tap to adjust
-                </span>
-              </button>
-            ) : (
-              (() => {
-                const activeItem = PRAYERS[Math.max(0, Math.min(focusedIndex, PRAYERS.length - 1))];
-                const isCompletedItem = completedPrayers.includes(activeItem.id);
-                const itemStatus = prayerStatuses[activeItem.id] || 'ontime';
-                const isChecking = checkingId === activeItem.id;
-                const RenderIcon = getPrayerIcon(activeItem.iconType);
-                const isNextPrayer =
-                  prayerTimes.prayerData?.nextPrayer === activeItem.id && !isCompletedItem;
-
-                return (
-                  <button
-                    type="button"
-                    aria-label={`${activeItem.label} Prayer${
-                      isCompletedItem
-                        ? itemStatus === 'qada'
-                          ? ' (Qada, tap to undo)'
-                          : ' (Completed, tap to undo)'
-                        : ''
-                    }`}
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      prayerLongPressTriggered.current = false;
-                      if (!isCompletedItem && !checkingId) {
-                        prayerLongPressTimer.current = setTimeout(() => {
-                          prayerLongPressTriggered.current = true;
-                          prayerLongPressTimer.current = null;
-                          hapticTapMedium();
-                          handleTogglePrayer(activeItem.id, 'qada');
-                        }, 480);
-                      }
-                    }}
-                    onPointerUp={() => {
-                      if (prayerLongPressTimer.current) {
-                        clearTimeout(prayerLongPressTimer.current);
-                        prayerLongPressTimer.current = null;
-                      }
-                    }}
-                    onPointerLeave={() => {
-                      if (prayerLongPressTimer.current) {
-                        clearTimeout(prayerLongPressTimer.current);
-                        prayerLongPressTimer.current = null;
-                      }
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (prayerLongPressTriggered.current) {
-                        prayerLongPressTriggered.current = false;
-                        return;
-                      }
-                      if (checkingId) return;
-                      handleTogglePrayer(activeItem.id, 'ontime');
-                    }}
-                    className={`group relative flex-1 min-w-0 h-[62px] flex items-center justify-between px-4 rounded-2xl transition-all duration-300 ease-out overflow-hidden border cursor-pointer ${
-                      isLightMode
-                        ? isChecking || isCompletedItem
-                          ? 'bg-white/86 border-[#9c7533]/45 island-light'
-                          : 'bg-white/82 hover:bg-white/94 border-[#9c7533]/20 island-light'
-                        : isChecking || isCompletedItem
-                          ? 'bg-[#d2a24b]/16 border-[#d2a24b]/38 island-dark'
-                          : 'bg-[#0b0e16]/82 hover:bg-[#0e1320]/92 border-white/[0.14] island-dark'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 z-10 min-w-0">
-                      <RenderIcon
-                        size={16}
-                        className={`shrink-0 transition-all duration-500 ${
+                  <div className="flex items-center gap-2 sm:gap-3 z-10 min-w-0">
+                    <RenderIcon
+                      size={isActive ? 15 : 14}
+                      className={`shrink-0 transition-all duration-300 ${
+                        isChecking || isCompletedItem
+                          ? isLightMode
+                            ? 'text-[#9c7533]'
+                            : 'text-[#d2a24b]'
+                          : isLightMode
+                            ? 'text-[#4a453d] opacity-80 group-hover:text-[#9c7533]'
+                            : 'text-[#e4dac8] opacity-80 group-hover:text-[#d2a24b]'
+                      }`}
+                    />
+                    <div className="flex flex-col items-start min-w-0">
+                      <span
+                        className={`font-serif-eng uppercase leading-tight transition-all duration-300 ${
+                          isActive ? 'text-[11px] sm:text-[11.5px]' : 'text-[10.5px]'
+                        } ${
                           isChecking || isCompletedItem
                             ? isLightMode
-                              ? 'text-[#9c7533]'
+                              ? 'text-[#9c7533] font-medium'
                               : 'text-[#d2a24b]'
                             : isLightMode
-                              ? 'text-[#4a453d] opacity-80 group-hover:text-[#9c7533]'
-                              : 'text-[#e4dac8] opacity-80 group-hover:text-[#d2a24b]'
+                              ? 'text-[#1a1814]'
+                              : 'text-[#f5eee0]'
                         }`}
-                      />
-                      <div className="flex flex-col items-start min-w-0">
+                        style={{ letterSpacing: '0.12em' }}
+                      >
+                        {item.label}
+                      </span>
+                      {isActive && (
                         <span
-                          className={`font-serif-eng uppercase text-[11.5px] leading-tight transition-all duration-500 ${
-                            isChecking || isCompletedItem
-                              ? isLightMode
-                                ? 'text-[#9c7533] font-medium'
-                                : 'text-[#d2a24b]'
-                              : isLightMode
-                                ? 'text-[#1a1814]'
-                                : 'text-[#f5eee0]'
-                          }`}
-                          style={{ letterSpacing: '0.12em' }}
-                        >
-                          {activeItem.label}
-                        </span>
-                        <span
-                          className={`font-serif-eng text-[8.5px] uppercase tracking-[0.12em] mt-0.5 leading-none truncate max-w-full ${
+                          className={`font-serif-eng text-[7.5px] sm:text-[8.5px] uppercase tracking-[0.06em] sm:tracking-[0.1em] mt-0.5 leading-none truncate max-w-full ${
                             isCompletedItem
                               ? isLightMode
                                 ? 'text-[#9c7533]/90'
@@ -1800,89 +1878,92 @@ export default function App() {
                               ? `In ${prayerTimes.prayerData.formattedCountdown} · Hold Qada`
                               : 'Tap to log · Hold Qada'}
                         </span>
-                      </div>
+                      )}
                     </div>
+                  </div>
 
-                    <div className="flex items-center gap-2.5 z-10 shrink-0 ml-2">
-                      <span
-                        className={`font-serif-eng text-[10px] tabular-nums transition-opacity duration-500 ${
-                          isNextPrayer
-                            ? isLightMode
-                              ? 'text-[#9c7533] opacity-90'
-                              : 'text-[#d2a24b] opacity-90'
-                            : `${tTextSub} opacity-70`
-                        }`}
-                        style={{ letterSpacing: '0.05em' }}
-                      >
-                        {prayerTimes.prayerData?.formatted[activeItem.id] ||
-                          devotionData.prayers[activeItem.id]?.time ||
-                          ''}
-                      </span>
+                  <div className="flex items-center gap-1.5 sm:gap-2.5 z-10 shrink-0 ml-1.5">
+                    <span
+                      className={`font-serif-eng tabular-nums transition-opacity duration-300 ${
+                        isActive ? 'text-[9.5px] sm:text-[10px]' : 'text-[9.5px]'
+                      } ${
+                        isNextPrayer
+                          ? isLightMode
+                            ? 'text-[#9c7533] opacity-90'
+                            : 'text-[#d2a24b] opacity-90'
+                          : `${tTextSub} opacity-75`
+                      }`}
+                      style={{ letterSpacing: '0.04em' }}
+                    >
+                      {prayerTimes.prayerData?.formatted[item.id] ||
+                        devotionData.prayers[item.id]?.time ||
+                        ''}
+                    </span>
 
-                      <div className="relative w-5 h-5 flex items-center justify-center shrink-0">
-                        {isChecking ? (
-                          <CheckCircleIcon
-                            size={18}
-                            className={`animate-[checkmarkPop_0.4s_cubic-bezier(0.34,1.56,0.64,1)_forwards] ${
-                              isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'
-                            }`}
-                          />
-                        ) : isCompletedItem ? (
-                          <CheckCircleIcon
-                            size={18}
-                            className={isLightMode ? 'text-[#9c7533] opacity-85' : 'text-[#d2a24b] opacity-85'}
-                          />
-                        ) : (
-                          <CircleIcon
-                            size={18}
-                            className={`transition-all duration-300 ${
-                              isLightMode
-                                ? 'text-[#4a453d] opacity-25 group-hover:opacity-80 group-hover:text-[#9c7533]'
-                                : 'text-[#e4dac8] opacity-25 group-hover:opacity-100 group-hover:text-[#d2a24b]'
-                            }`}
-                          />
-                        )}
-                      </div>
+                    <div className="relative w-5 h-5 flex items-center justify-center shrink-0">
+                      {isChecking ? (
+                        <CheckCircleIcon
+                          size={isActive ? 18 : 15}
+                          className={`animate-[checkmarkPop_0.4s_cubic-bezier(0.34,1.56,0.64,1)_forwards] ${
+                            isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'
+                          }`}
+                        />
+                      ) : isCompletedItem ? (
+                        <CheckCircleIcon
+                          size={isActive ? 18 : 15}
+                          className={isLightMode ? 'text-[#9c7533] opacity-85' : 'text-[#d2a24b] opacity-85'}
+                        />
+                      ) : (
+                        <CircleIcon
+                          size={isActive ? 18 : 15}
+                          className={`transition-all duration-300 ${
+                            isLightMode
+                              ? 'text-[#4a453d] opacity-28 group-hover:opacity-80 group-hover:text-[#9c7533]'
+                              : 'text-[#e4dac8] opacity-28 group-hover:opacity-100 group-hover:text-[#d2a24b]'
+                          }`}
+                        />
+                      )}
                     </div>
-                  </button>
-                );
-              })()
-            )}
-
-            {/* Aligned Qibla Compass Button */}
-            <button
-              type="button"
-              aria-label={
-                prayerTimes.hasLocation && prayerTimes.prayerData?.qiblaBearing != null
-                  ? `Qibla Compass (${prayerTimes.prayerData.qiblaBearing}° ${prayerTimes.prayerData.qiblaCardinal})`
-                  : 'Qibla Compass'
-              }
-              title={
-                prayerTimes.hasLocation && prayerTimes.prayerData?.qiblaBearing != null
-                  ? `Qibla · ${prayerTimes.prayerData.qiblaBearing}° ${prayerTimes.prayerData.qiblaCardinal}`
-                  : 'Qibla Compass'
-              }
-              onClick={() => {
-                hapticTapLight();
-                setShowQibla(true);
-              }}
-              className={`w-[54px] h-[62px] shrink-0 rounded-2xl border flex flex-col items-center justify-center gap-1 transition-all duration-300 active:scale-[0.97] cursor-pointer ${
-                showQibla
-                  ? isLightMode
-                    ? 'bg-white/86 border-[#9c7533]/45 text-[#9c7533] island-light'
-                    : 'bg-[#0b0e16]/85 border-[#d2a24b]/45 text-[#d2a24b] island-dark'
-                  : isLightMode
-                    ? 'bg-white/76 hover:bg-white/90 border-[#9c7533]/20 text-[#4a453d] hover:text-[#9c7533] island-light'
-                    : 'bg-[#0b0e16]/78 hover:bg-[#0e1320]/90 border-white/[0.14] text-[#e4dac8]/80 hover:text-[#d2a24b] island-dark'
-              }`}
-            >
-              <CompassIcon size={17} />
-              <span className="font-serif-eng text-[7.5px] uppercase tracking-[0.14em] leading-none opacity-75">
-                Qibla
-              </span>
-            </button>
+                  </div>
+                </button>
+              );
+            })}
           </div>
-        </div>
+        )}
+
+        {/* Qibla Compass Button aligned cleanly beside the focal slot of the wheel */}
+        <button
+          type="button"
+          aria-label={
+            prayerTimes.hasLocation && prayerTimes.prayerData?.qiblaBearing != null
+              ? `Qibla Compass (${prayerTimes.prayerData.qiblaBearing}° ${prayerTimes.prayerData.qiblaCardinal})`
+              : 'Qibla Compass'
+          }
+          title={
+            prayerTimes.hasLocation && prayerTimes.prayerData?.qiblaBearing != null
+              ? `Qibla · ${prayerTimes.prayerData.qiblaBearing}° ${prayerTimes.prayerData.qiblaCardinal}`
+              : 'Qibla Compass'
+          }
+          onClick={() => {
+            hapticNavigate();
+            setShowQibla(true);
+          }}
+          style={{ bottom: 'calc(67px + var(--sab))' }}
+          className={`pointer-events-auto absolute right-3 sm:right-6 w-[44px] h-[56px] rounded-2xl border flex flex-col items-center justify-center gap-1 transition-all duration-300 active:scale-[0.97] cursor-pointer z-30 ${
+            showQibla
+              ? isLightMode
+                ? 'bg-white/88 border-[#9c7533]/48 text-[#9c7533] island-light'
+                : 'bg-[#0b0e16]/88 border-[#d2a24b]/48 text-[#d2a24b] island-dark'
+              : isLightMode
+                ? 'bg-white/78 hover:bg-white/90 border-[#9c7533]/22 text-[#4a453d] hover:text-[#9c7533] island-light'
+                : 'bg-[#0b0e16]/80 hover:bg-[#0e1320]/90 border-white/[0.14] text-[#e4dac8]/80 hover:text-[#d2a24b] island-dark'
+          }`}
+        >
+          <CompassIcon size={16} />
+          <span className="font-serif-eng text-[7px] uppercase tracking-[0.14em] leading-none opacity-75">
+            Qibla
+          </span>
+        </button>
       </div>
 
       {/* --- OVERLAYS & MODALS --- */}
@@ -1930,21 +2011,12 @@ export default function App() {
       <SettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
-        isLightMode={isLightMode}
-        devotionData={devotionData}
-        prayerTimes={prayerTimes}
-        devTimePhase={devTimePhase}
-        setDevTimePhase={setDevTimePhase}
         onOpenCityPicker={() => setShowCityPicker(true)}
       />
 
       <RemindersModal
         isOpen={showReminders}
         onClose={() => setShowReminders(false)}
-        isLightMode={isLightMode}
-        devotionData={devotionData}
-        prayerTimes={prayerTimes}
-        notifications={notifications}
         onOpenCityPicker={() => setShowCityPicker(true)}
       />
 

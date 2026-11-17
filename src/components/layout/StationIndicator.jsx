@@ -20,7 +20,7 @@ export const StationIndicator = memo(({
   return (
     <section
       aria-label="Spiritual Stations (Maqamat)"
-      className={`w-full rounded-[20px] overflow-hidden border transition-all duration-1000 mb-2 ${
+      className={`w-full rounded-2xl overflow-hidden border transition-all duration-1000 ${
         isLightMode
           ? 'bg-white/62 border-white/80 island-light'
           : 'bg-[#0b0e16]/68 border-white/[0.09] island-dark'

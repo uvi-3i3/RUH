@@ -15,6 +15,7 @@ import './index.css';
 import { initNativePlatform } from './native.js';
 import { registerSW } from 'virtual:pwa-register';
 import { AppErrorBoundary } from './components/layout/AppErrorBoundary.jsx';
+import { SanctuaryProvider } from './context/SanctuaryContext.jsx';
 
 // Register PWA Service Worker in production builds; in dev, clear any stale SW/caches
 // so preview iframes always load live Vite modules cleanly.
@@ -41,7 +42,9 @@ initNativePlatform();
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <AppErrorBoundary>
-      <App />
+      <SanctuaryProvider>
+        <App />
+      </SanctuaryProvider>
     </AppErrorBoundary>
   </React.StrictMode>,
 );

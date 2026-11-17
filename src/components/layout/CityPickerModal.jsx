@@ -2,8 +2,19 @@ import { useState, useMemo } from 'react';
 import { CITY_PRESETS } from '../../data/cities';
 import { filterCities } from '../../utils/devotionLogic';
 import { MapPinIcon, SearchIcon, XIcon, CheckCircleIcon } from '../icons/Icons';
+import { useOptionalPreferences, useOptionalSanctuary } from '../../context/sanctuaryStore';
+import { hapticDismiss, hapticSuccess } from '../../utils/haptics';
 
-export const CityPickerModal = ({ isOpen, onClose, isLightMode, prayerTimes }) => {
+export const CityPickerModal = ({
+  isOpen,
+  onClose,
+  isLightMode: isLightModeProp,
+  prayerTimes: prayerTimesProp,
+}) => {
+  const sanctuaryCtx = useOptionalSanctuary();
+  const preferencesCtx = useOptionalPreferences();
+  const isLightMode = isLightModeProp ?? preferencesCtx?.isLightMode ?? false;
+  const prayerTimes = prayerTimesProp ?? sanctuaryCtx?.prayerTimes;
   const [query, setQuery] = useState('');
 
   const filteredCities = useMemo(() => filterCities(CITY_PRESETS, query), [query]);
@@ -16,12 +27,14 @@ export const CityPickerModal = ({ isOpen, onClose, isLightMode, prayerTimes }) =
   const activeCityId = prayerTimes?.location?.cityId;
 
   const handleSelectCity = (city) => {
+    hapticSuccess();
     prayerTimes?.selectCity(city);
     setQuery('');
     onClose();
   };
 
   const handleUseGps = () => {
+    hapticSuccess();
     prayerTimes?.requestLocation();
     onClose();
   };
@@ -39,7 +52,10 @@ export const CityPickerModal = ({ isOpen, onClose, isLightMode, prayerTimes }) =
           background: isLightMode ? 'rgba(240,236,228,0.72)' : 'rgba(4,5,10,0.78)',
           backdropFilter: 'blur(16px)',
         }}
-        onClick={onClose}
+        onClick={() => {
+          hapticDismiss();
+          onClose?.();
+        }}
       />
 
       <div
@@ -70,7 +86,10 @@ export const CityPickerModal = ({ isOpen, onClose, isLightMode, prayerTimes }) =
           <button
             type="button"
             aria-label="Close Location Picker"
-            onClick={onClose}
+            onClick={() => {
+              hapticDismiss();
+              onClose?.();
+            }}
             className={`w-11 h-11 rounded-full flex items-center justify-center border cursor-pointer transition-colors ${
               isLightMode
                 ? 'border-black/10 text-[#4a453d] hover:bg-black/5'

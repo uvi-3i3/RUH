@@ -6,17 +6,34 @@ import {
   HABIT_UNIT_SUGGESTIONS,
 } from '../../utils/habitLogic';
 import { PlusIcon, TrashIcon, XIcon } from '../icons/Icons';
+import { useOptionalHabits, useOptionalPreferences } from '../../context/sanctuaryStore';
+import {
+  hapticDestructive,
+  hapticDetent,
+  hapticDismiss,
+  hapticSuccess,
+  hapticWarning,
+} from '../../utils/haptics';
 
 export const HabitEditorSheet = ({
   isOpen,
-  isLightMode,
+  isLightMode: isLightModeProp,
   editingHabit = null,
-  existingHabits = [],
-  onSaveNew,
-  onSaveEdit,
-  onDeleteHabit,
+  existingHabits: existingHabitsProp,
+  onSaveNew: onSaveNewProp,
+  onSaveEdit: onSaveEditProp,
+  onDeleteHabit: onDeleteHabitProp,
   onClose,
 }) => {
+  const prefsCtx = useOptionalPreferences();
+  const habitsCtx = useOptionalHabits();
+
+  const isLightMode = isLightModeProp ?? prefsCtx?.isLightMode ?? false;
+  const existingHabits = existingHabitsProp ?? habitsCtx?.habits ?? [];
+  const onSaveNew = onSaveNewProp ?? habitsCtx?.addCustomHabit;
+  const onSaveEdit = onSaveEditProp ?? habitsCtx?.updateHabit;
+  const onDeleteHabit = onDeleteHabitProp ?? habitsCtx?.removeHabit;
+
   const [title, setTitle] = useState('');
   const [arabic, setArabic] = useState('');
   const [target, setTarget] = useState('1');
@@ -66,11 +83,13 @@ export const HabitEditorSheet = ({
   );
 
   const stepTarget = (delta) => {
+    hapticDetent();
     const next = Math.max(1, Math.min(999, (Number(target) || 1) + delta));
     setTarget(String(next));
   };
 
   const applyPreset = (preset) => {
+    hapticDetent();
     setTitle(preset.title);
     setArabic(preset.arabic || '');
     setTarget(String(preset.target || 1));
@@ -83,6 +102,7 @@ export const HabitEditorSheet = ({
     e.preventDefault();
     const cleanedTitle = title.trim();
     if (!cleanedTitle) {
+      hapticWarning();
       setErrorMsg('Please enter a habit name.');
       return;
     }
@@ -95,6 +115,7 @@ export const HabitEditorSheet = ({
       cadence,
     };
 
+    hapticSuccess();
     if (isEditing && editingHabit) {
       onSaveEdit?.(editingHabit.id, payload);
     } else {
@@ -118,7 +139,10 @@ export const HabitEditorSheet = ({
           background: isLightMode ? 'rgba(244,240,232,0.82)' : 'rgba(6,8,14,0.82)',
           backdropFilter: 'blur(16px)',
         }}
-        onClick={onClose}
+        onClick={() => {
+          hapticDismiss();
+          onClose?.();
+        }}
       />
 
       {/* Dialog Surface */}
@@ -147,7 +171,10 @@ export const HabitEditorSheet = ({
           <button
             type="button"
             aria-label="Close habit editor"
-            onClick={onClose}
+            onClick={() => {
+              hapticDismiss();
+              onClose?.();
+            }}
             className={`w-10 h-10 rounded-full border flex items-center justify-center cursor-pointer transition-colors ${
               isLightMode
                 ? 'border-black/10 text-[#4a453d] hover:bg-black/5'
@@ -325,7 +352,10 @@ export const HabitEditorSheet = ({
                 <button
                   key={u}
                   type="button"
-                  onClick={() => setUnit(u)}
+                  onClick={() => {
+                    hapticDetent();
+                    setUnit(u);
+                  }}
                   className={`min-h-[28px] px-2.5 rounded-lg border font-serif-eng text-[10px] cursor-pointer transition-colors ${
                     selected
                       ? isLightMode
@@ -355,7 +385,10 @@ export const HabitEditorSheet = ({
                     key={item}
                     type="button"
                     aria-pressed={active}
-                    onClick={() => setCadence(item)}
+                    onClick={() => {
+                      hapticDetent();
+                      setCadence(item);
+                    }}
                     className={`min-h-[36px] px-2.5 rounded-xl border font-serif-eng text-[11px] cursor-pointer transition-colors ${
                       active
                         ? isLightMode
@@ -384,6 +417,7 @@ export const HabitEditorSheet = ({
                 type="button"
                 aria-label={`Delete ${editingHabit.title}`}
                 onClick={() => {
+                  hapticDestructive();
                   onDeleteHabit?.(editingHabit.id);
                   onClose?.();
                 }}
@@ -403,7 +437,10 @@ export const HabitEditorSheet = ({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={() => {
+                  hapticDismiss();
+                  onClose?.();
+                }}
                 className={`min-h-[40px] px-4 rounded-xl font-serif-eng text-[10px] uppercase tracking-[0.14em] cursor-pointer transition-opacity opacity-75 hover:opacity-100 ${tTextSub}`}
               >
                 Cancel

@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { CheckCircleIcon } from '../icons/Icons';
 import { WIRD_TASKS as DHIKR_TASKS } from '../../data/adhkarData';
+import { hapticHeavy, hapticSuccess, hapticTapLight } from '../../utils/haptics';
 
 export const TasksSideColumn = ({
   isVisible,
@@ -23,13 +24,13 @@ export const TasksSideColumn = ({
 
   const startPress = (id, current, target) => {
     if (current >= target) return;
-    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(10);
+    hapticTapLight();
 
     longPressTimer.current = setTimeout(() => {
       incrementTask(id, target - current);
       triggerPulse(id);
       longPressTimer.current = null;
-      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(40);
+      hapticHeavy();
     }, 600);
   };
 
@@ -38,6 +39,7 @@ export const TasksSideColumn = ({
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
+      if (current + 1 >= target) hapticSuccess();
       incrementTask(id, 1);
       triggerPulse(id);
     }

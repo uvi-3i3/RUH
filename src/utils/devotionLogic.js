@@ -217,36 +217,6 @@ export function gregorianToHijri(gDate = new Date()) {
   return { year: hijriYear, month: hijriMonth, day: hijriDay };
 }
 
-/**
- * Compute subtle opposing depth parallax target (in px) from pointer coordinates.
- * Normalizes cursor to [-1, 1] around viewport center and clamps bounds cleanly.
- */
-export function computeParallaxOffset(
-  clientX,
-  clientY,
-  viewportWidth,
-  viewportHeight,
-  maxShiftX = 24,
-  maxShiftY = 14
-) {
-  if (!viewportWidth || viewportWidth <= 0 || !viewportHeight || viewportHeight <= 0) {
-    return { x: 0, y: 0 };
-  }
-  const nx = Math.max(-1, Math.min(1, (clientX / viewportWidth - 0.5) * 2));
-  const ny = Math.max(-1, Math.min(1, (clientY / viewportHeight - 0.5) * 2));
-  return {
-    x: Number((-nx * maxShiftX).toFixed(3)) || 0,
-    y: Number((-ny * maxShiftY).toFixed(3)) || 0,
-  };
-}
-
-/**
- * Smoothly interpolate current parallax coordinate toward target.
- */
-export function lerpParallax(current, target, factor = 0.08) {
-  return current + (target - current) * factor;
-}
-
 const STOP_WORDS = new Set([
   'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with',
   'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has',

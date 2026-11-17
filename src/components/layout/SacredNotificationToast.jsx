@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom';
 import { BellIcon, CheckCircleIcon, MoonIcon, SunIcon, XIcon } from '../icons/Icons';
+import { hapticDismiss, hapticSuccess } from '../../utils/haptics';
 
 export const SacredNotificationToast = ({
   toast,
@@ -84,7 +85,10 @@ export const SacredNotificationToast = ({
               <button
                 type="button"
                 aria-label="Dismiss prayer notification"
-                onClick={onDismiss}
+                onClick={() => {
+                  hapticDismiss();
+                  onDismiss?.();
+                }}
                 className={`w-7 h-7 -mr-1 -mt-1 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
                   isLightMode ? 'text-[#4a453d]/70 hover:bg-black/5' : 'text-[#e4dac8]/70 hover:bg-white/10'
                 }`}
@@ -111,7 +115,10 @@ export const SacredNotificationToast = ({
                 ) : (
                   <button
                     type="button"
-                    onClick={() => onMarkPrayed?.(toast.prayerId)}
+                    onClick={() => {
+                      hapticSuccess();
+                      onMarkPrayed?.(toast.prayerId);
+                    }}
                     className="min-h-[30px] px-3 rounded-xl border font-serif-eng text-[9px] uppercase tracking-[0.14em] font-medium flex items-center gap-1.5 cursor-pointer transition-all active:scale-[0.98]"
                     style={{
                       backgroundColor: isLightMode ? '#9c7533' : 'rgba(210,162,75,0.2)',
@@ -126,7 +133,10 @@ export const SacredNotificationToast = ({
 
                 <button
                   type="button"
-                  onClick={onDismiss}
+                  onClick={() => {
+                    hapticDismiss();
+                    onDismiss?.();
+                  }}
                   className={`min-h-[30px] px-2.5 rounded-xl font-serif-eng text-[9px] uppercase tracking-[0.14em] cursor-pointer transition-opacity opacity-75 hover:opacity-100 ${tTextSub}`}
                 >
                   Later

@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDownIcon, CheckCircleIcon, ShareIcon } from '../icons/Icons';
 import { resolveBurhanCopy, filterBurhansByCategory } from '../../utils/devotionLogic';
+import { useOptionalPreferences } from '../../context/sanctuaryStore';
+import {
+  hapticCelebrate,
+  hapticDetent,
+  hapticDismiss,
+  hapticNavigate,
+  hapticSuccess,
+  hapticTapLight,
+  hapticToggle,
+} from '../../utils/haptics';
 
 const ARCHIVE_FILTERS = [
   { key: 'all', label: 'All' },
@@ -13,13 +23,16 @@ export const BurhanOverlay = ({
   burhan,
   allBurhans = [],
   burhanNotes = {},
-  isLightMode,
+  isLightMode: isLightModeProp,
   isCompleted,
-  isSimpleMode = false,
+  isSimpleMode: isSimpleModeProp,
   onSaveNote,
   onComplete,
   onClose,
 }) => {
+  const preferencesCtx = useOptionalPreferences();
+  const isLightMode = isLightModeProp ?? preferencesCtx?.isLightMode ?? false;
+  const isSimpleMode = isSimpleModeProp ?? preferencesCtx?.isSimpleMode ?? false;
   const [showContent, setShowContent] = useState(false);
   const [localSimple, setLocalSimple] = useState(isSimpleMode);
   const [selectedId, setSelectedId] = useState(null);
@@ -69,15 +82,21 @@ export const BurhanOverlay = ({
   const visibleArchiveItems = filterBurhansByCategory(allBurhans, archiveCategory);
   const islamCount = filterBurhansByCategory(allBurhans, 'islam').length;
 
-  const handleSaveTakeaway = () => {
+  const handleSaveTakeaway = ({ silent = false } = {}) => {
     if (onSaveNote && activeBurhan?.id) {
+      const existing = (burhanNotes?.[activeBurhan.id] || '').trim();
+      const next = noteDraft.trim();
       onSaveNote(activeBurhan.id, noteDraft);
+      if (!silent && next !== existing) {
+        hapticSuccess();
+      }
       setNoteSavedToast(true);
       setTimeout(() => setNoteSavedToast(false), 1600);
     }
   };
 
   const handleShare = () => {
+    hapticTapLight();
     const body = paragraphs.join('\n\n');
     const logicText =
       premises.length > 0
@@ -90,6 +109,7 @@ export const BurhanOverlay = ({
       navigator.clipboard
         .writeText(text)
         .then(() => {
+          hapticSuccess();
           setCopiedFeedback(true);
           setTimeout(() => setCopiedFeedback(false), 1800);
         })
@@ -109,6 +129,7 @@ export const BurhanOverlay = ({
 
   const handleHeaderTouchEnd = () => {
     if (dragOffsetY > 90) {
+      hapticDismiss();
       onClose();
     } else {
       setDragOffsetY(0);
@@ -125,7 +146,10 @@ export const BurhanOverlay = ({
     >
       {/* Translucent Scrim letting the painted Ghibli sky breathe behind */}
       <div
-        onClick={onClose}
+        onClick={() => {
+          hapticDismiss();
+          onClose?.();
+        }}
         className="absolute inset-0 transition-opacity duration-500"
         style={{
           opacity: showContent ? 1 : 0,
@@ -186,7 +210,10 @@ export const BurhanOverlay = ({
             >
               <button
                 type="button"
-                onClick={() => setLocalSimple(false)}
+                onClick={() => {
+                  hapticDetent();
+                  setLocalSimple(false);
+                }}
                 className={`min-h-[34px] px-2.5 rounded-lg font-serif-eng text-[10px] uppercase tracking-wider transition-colors cursor-pointer ${
                   !localSimple
                     ? isLightMode
@@ -199,7 +226,10 @@ export const BurhanOverlay = ({
               </button>
               <button
                 type="button"
-                onClick={() => setLocalSimple(true)}
+                onClick={() => {
+                  hapticDetent();
+                  setLocalSimple(true);
+                }}
                 className={`min-h-[34px] px-2.5 rounded-lg font-serif-eng text-[10px] uppercase tracking-wider transition-colors cursor-pointer ${
                   localSimple
                     ? isLightMode
@@ -218,7 +248,10 @@ export const BurhanOverlay = ({
                 <button
                   type="button"
                   aria-expanded={showLibrary}
-                  onClick={() => setShowLibrary((v) => !v)}
+                  onClick={() => {
+                    hapticToggle(!showLibrary);
+                    setShowLibrary((v) => !v);
+                  }}
                   className={`min-h-[38px] px-3 rounded-xl border font-serif-eng text-[10px] uppercase tracking-[0.16em] transition-all cursor-pointer ${
                     showLibrary
                       ? isLightMode
@@ -253,7 +286,10 @@ export const BurhanOverlay = ({
               <button
                 type="button"
                 aria-label="Close contemplation"
-                onClick={onClose}
+                onClick={() => {
+                  hapticDismiss();
+                  onClose?.();
+                }}
                 className={`w-10 h-10 rounded-full border flex items-center justify-center transition-colors cursor-pointer ${
                   isLightMode
                     ? 'bg-white/55 border-black/10 text-[#1a1814]'
@@ -296,7 +332,10 @@ export const BurhanOverlay = ({
                     type="button"
                     role="tab"
                     aria-selected={active}
-                    onClick={() => setArchiveCategory(cat.key)}
+                    onClick={() => {
+                      hapticDetent();
+                      setArchiveCategory(cat.key);
+                    }}
                     className={`min-h-[36px] px-3 rounded-xl border font-serif-eng text-[9.5px] uppercase tracking-[0.14em] transition-all cursor-pointer whitespace-nowrap ${
                       active
                         ? isLightMode
@@ -331,6 +370,7 @@ export const BurhanOverlay = ({
                     key={item.id}
                     type="button"
                     onClick={() => {
+                      hapticNavigate();
                       setSelectedId(item.id);
                       setShowLibrary(false);
                     }}
@@ -562,7 +602,7 @@ export const BurhanOverlay = ({
                       type="text"
                       value={noteDraft}
                       onChange={(e) => setNoteDraft(e.target.value)}
-                      onBlur={handleSaveTakeaway}
+                      onBlur={() => handleSaveTakeaway({ silent: true })}
                       placeholder="Write a quiet takeaway for yourself..."
                       aria-label="Personal contemplation takeaway"
                       className={`flex-1 min-w-0 bg-transparent border rounded-xl px-3 py-2 font-serif-eng text-[13px] outline-none transition-colors ${
@@ -574,7 +614,7 @@ export const BurhanOverlay = ({
                     {noteDraft.trim() !== (burhanNotes?.[activeBurhan.id] || '').trim() && (
                       <button
                         type="button"
-                        onClick={handleSaveTakeaway}
+                        onClick={() => handleSaveTakeaway()}
                         className="min-h-[36px] px-3 rounded-xl font-serif-eng text-[9px] uppercase tracking-[0.16em] border shrink-0 cursor-pointer"
                         style={{
                           color: accentColor,
@@ -602,7 +642,8 @@ export const BurhanOverlay = ({
               <button
                 type="button"
                 onClick={() => {
-                  handleSaveTakeaway();
+                  hapticNavigate();
+                  handleSaveTakeaway({ silent: true });
                   if (burhan?.id) setSelectedId(burhan.id);
                 }}
                 className={`flex items-center justify-center gap-2 w-full max-w-[320px] h-12 rounded-2xl border font-serif-eng text-xs uppercase tracking-[0.2em] font-medium transition-all cursor-pointer ${
@@ -617,7 +658,8 @@ export const BurhanOverlay = ({
               <button
                 type="button"
                 onClick={() => {
-                  handleSaveTakeaway();
+                  hapticCelebrate();
+                  handleSaveTakeaway({ silent: true });
                   onComplete();
                   setTimeout(onClose, 500);
                 }}

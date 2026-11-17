@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { getLocalDateStr, computeStreaks, sanitizeBackupPayload } from '../utils/devotionLogic';
 import { evaluateBadges, getBadgeById } from '../utils/badgeLogic';
 import {
@@ -235,6 +235,8 @@ const getInitialState = () => {
 export function useDevotionData() {
   const [data, setData] = useState(getInitialState);
   const [pendingBadgeQueue, setPendingBadgeQueue] = useState([]);
+  const dataRef = useRef(data);
+  dataRef.current = data;
 
   useEffect(() => {
     let cancelled = false;
@@ -254,6 +256,32 @@ export function useDevotionData() {
       console.warn('Could not save devotion state', e);
     }
   }, [data]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handleStorage = (e) => {
+      if (e.key === STORAGE_KEY) {
+        setData(getInitialState());
+      }
+    };
+
+    const flushPersistence = () => {
+      if (document.visibilityState && document.visibilityState !== 'hidden') return;
+      try {
+        mirroredSet(STORAGE_KEY, JSON.stringify(dataRef.current));
+      } catch {}
+    };
+
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('pagehide', flushPersistence);
+    document.addEventListener('visibilitychange', flushPersistence);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('pagehide', flushPersistence);
+      document.removeEventListener('visibilitychange', flushPersistence);
+    };
+  }, []);
 
   const badgeEval = useMemo(
     () => evaluateBadges(data, data.unlockedBadges),
@@ -622,13 +650,22 @@ export function useDevotionData() {
   }, []);
 
   const removeHabit = useCallback((habitId) => {
-    setData((prev) => ({
-      ...prev,
-      habits: removeHabitFromList(
+    setData((prev) => {
+      const nextHabits = removeHabitFromList(
         Array.isArray(prev.habits) ? prev.habits : cloneDefaultHabits(DEFAULT_HABITS),
         habitId
-      ),
-    }));
+      );
+      if (!prev.dailyHabitLogs?.counts || !(habitId in prev.dailyHabitLogs.counts)) {
+        return { ...prev, habits: nextHabits };
+      }
+      const nextCounts = { ...prev.dailyHabitLogs.counts };
+      delete nextCounts[habitId];
+      return {
+        ...prev,
+        habits: nextHabits,
+        dailyHabitLogs: { ...prev.dailyHabitLogs, counts: nextCounts },
+      };
+    });
   }, []);
 
   const setQadaCount = useCallback((key, value) => {
@@ -1032,81 +1069,133 @@ export function useDevotionData() {
     });
   }, []);
 
-  return {
-    totalVerses: data.totalVerses,
-    totalPrayers: data.totalPrayers,
-    history: data.history,
-    savedVerses: data.savedVerses,
-    dailyCompletedPrayers: data.dailyPrayers?.completed || [],
-    dailyPrayerStatuses: data.dailyPrayers?.statuses || {},
-    dailyTasks: data.dailyTasks?.counters || {},
-    burhanCompleted: data.dailyTasks?.burhanCompleted || false,
-    burhanNotes: data.burhanNotes || {},
-    rewardedIds: data.dailyTasks?.rewardedIds || [],
-    rewardedSets: data.dailyTasks?.rewardedSets || [],
-    maqamat: data.maqamat,
-    isSimpleMode: data.settings?.isSimpleMode || false,
-    isAmbientEnabled: data.settings?.isAmbientEnabled || false,
-    notificationLeadMinutes: data.settings?.notificationLeadMinutes || 0,
-    notificationChime: data.settings?.notificationChime !== false,
-    prayers: data.settings?.prayers || {},
-    customReminders: data.settings?.customReminders || [],
-    profile: data.profile,
-    activeDays,
-    currentStreak,
-    longestStreak,
-    streakPausedDates: data.streakPausedDates || {},
-    isStreakPausedToday,
-    habits: data.habits || DEFAULT_HABITS,
-    dailyHabitLogs: data.dailyHabitLogs?.counts || {},
-    qada: data.qada || { prayers: { fajr: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0 }, fasts: 0, completedTotal: 0 },
-    favoriteDuaIds: data.favoriteDuaIds || [],
-    dailyIntention: data.dailyIntention?.text || '',
-    badgeStatuses: badgeEval.statuses,
-    unlockedBadgeCount: badgeEval.unlockedCount,
-    totalBadgeCount: badgeEval.totalCount,
-    activeCelebrationBadge: pendingBadgeQueue[0] ? getBadgeById(pendingBadgeQueue[0]) : null,
-    pendingBadgeCount: pendingBadgeQueue.length,
-    dismissCelebrationBadge,
-    logPrayer,
-    togglePrayer,
-    logVerseSwipe,
-    toggleSaveVerse,
-    updateVerseNote,
-    incrementTask,
-    logHabitStep,
-    addCustomHabit,
-    updateHabit,
-    reorderHabit,
-    resetDefaultHabits,
-    removeHabit,
-    setQadaCount,
-    bulkAddQadaYears,
-    completeOneQada,
-    toggleFavoriteDua,
-    toggleStreakPauseToday,
-    setDailyIntention,
-    exportBackupJson,
-    importBackupJson,
-    completeBurhan,
-    saveBurhanNote,
-    markTaskRewarded,
-    markAdhkarSetRewarded,
-    addYaqeen,
-    advanceStation,
-    goToStation,
-    toggleSimpleMode,
-    toggleAmbientMode,
-    togglePrayerReminder,
-    updatePrayerTime,
-    setNotificationLeadMinutes,
-    toggleNotificationChime,
-    setAllPrayerRemindersEnabled,
-    syncPrayerReminderTimes,
-    addCustomReminder,
-    toggleCustomReminder,
-    deleteCustomReminder,
-    setProfile,
-    resetData,
-  };
+  return useMemo(
+    () => ({
+      totalVerses: data.totalVerses,
+      totalPrayers: data.totalPrayers,
+      history: data.history,
+      savedVerses: data.savedVerses,
+      dailyCompletedPrayers: data.dailyPrayers?.completed || [],
+      dailyPrayerStatuses: data.dailyPrayers?.statuses || {},
+      dailyTasks: data.dailyTasks?.counters || {},
+      burhanCompleted: data.dailyTasks?.burhanCompleted || false,
+      burhanNotes: data.burhanNotes || {},
+      rewardedIds: data.dailyTasks?.rewardedIds || [],
+      rewardedSets: data.dailyTasks?.rewardedSets || [],
+      maqamat: data.maqamat,
+      isSimpleMode: data.settings?.isSimpleMode || false,
+      isAmbientEnabled: data.settings?.isAmbientEnabled || false,
+      notificationLeadMinutes: data.settings?.notificationLeadMinutes || 0,
+      notificationChime: data.settings?.notificationChime !== false,
+      prayers: data.settings?.prayers || {},
+      customReminders: data.settings?.customReminders || [],
+      profile: data.profile,
+      activeDays,
+      currentStreak,
+      longestStreak,
+      streakPausedDates: data.streakPausedDates || {},
+      isStreakPausedToday,
+      habits: Array.isArray(data.habits) ? data.habits : DEFAULT_HABITS,
+      dailyHabitLogs: data.dailyHabitLogs?.counts || {},
+      qada: data.qada || { prayers: { fajr: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0 }, fasts: 0, completedTotal: 0 },
+      favoriteDuaIds: data.favoriteDuaIds || [],
+      dailyIntention: data.dailyIntention?.text || '',
+      badgeStatuses: badgeEval.statuses,
+      unlockedBadgeCount: badgeEval.unlockedCount,
+      totalBadgeCount: badgeEval.totalCount,
+      activeCelebrationBadge: pendingBadgeQueue[0] ? getBadgeById(pendingBadgeQueue[0]) : null,
+      pendingBadgeCount: pendingBadgeQueue.length,
+      dismissCelebrationBadge,
+      logPrayer,
+      togglePrayer,
+      logVerseSwipe,
+      toggleSaveVerse,
+      updateVerseNote,
+      incrementTask,
+      logHabitStep,
+      addCustomHabit,
+      updateHabit,
+      reorderHabit,
+      resetDefaultHabits,
+      removeHabit,
+      setQadaCount,
+      bulkAddQadaYears,
+      completeOneQada,
+      toggleFavoriteDua,
+      toggleStreakPauseToday,
+      setDailyIntention,
+      exportBackupJson,
+      importBackupJson,
+      completeBurhan,
+      saveBurhanNote,
+      markTaskRewarded,
+      markAdhkarSetRewarded,
+      addYaqeen,
+      advanceStation,
+      goToStation,
+      toggleSimpleMode,
+      toggleAmbientMode,
+      togglePrayerReminder,
+      updatePrayerTime,
+      setNotificationLeadMinutes,
+      toggleNotificationChime,
+      setAllPrayerRemindersEnabled,
+      syncPrayerReminderTimes,
+      addCustomReminder,
+      toggleCustomReminder,
+      deleteCustomReminder,
+      setProfile,
+      resetData,
+    }),
+    [
+      data,
+      activeDays,
+      currentStreak,
+      longestStreak,
+      isStreakPausedToday,
+      badgeEval,
+      pendingBadgeQueue,
+      dismissCelebrationBadge,
+      logPrayer,
+      togglePrayer,
+      logVerseSwipe,
+      toggleSaveVerse,
+      updateVerseNote,
+      incrementTask,
+      logHabitStep,
+      addCustomHabit,
+      updateHabit,
+      reorderHabit,
+      resetDefaultHabits,
+      removeHabit,
+      setQadaCount,
+      bulkAddQadaYears,
+      completeOneQada,
+      toggleFavoriteDua,
+      toggleStreakPauseToday,
+      setDailyIntention,
+      exportBackupJson,
+      importBackupJson,
+      completeBurhan,
+      saveBurhanNote,
+      markTaskRewarded,
+      markAdhkarSetRewarded,
+      addYaqeen,
+      advanceStation,
+      goToStation,
+      toggleSimpleMode,
+      toggleAmbientMode,
+      togglePrayerReminder,
+      updatePrayerTime,
+      setNotificationLeadMinutes,
+      toggleNotificationChime,
+      setAllPrayerRemindersEnabled,
+      syncPrayerReminderTimes,
+      addCustomReminder,
+      toggleCustomReminder,
+      deleteCustomReminder,
+      setProfile,
+      resetData,
+    ]
+  );
 }

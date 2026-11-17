@@ -6,6 +6,7 @@ export const NATIVE_MIRRORED_KEYS = [
   'ruh_location_v1',
   'ruh_prayer_method_v1',
   'ruh_theme_mode_v1',
+  'ruh_atmosphere_phase_v1',
 ];
 
 function isNative() {

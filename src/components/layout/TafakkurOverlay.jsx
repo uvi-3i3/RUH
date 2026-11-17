@@ -1,16 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
 import { ChevronDownIcon, CheckCircleIcon, SparklesIcon } from '../icons/Icons';
+import { useOptionalPreferences } from '../../context/sanctuaryStore';
+import { hapticDismiss, hapticSuccess, hapticTapMedium } from '../../utils/haptics';
 
 export const TafakkurOverlay = ({
   isOpen,
   verse,
-  isLightMode,
+  isLightMode: isLightModeProp,
   initialNote = '',
   onSave,
   onClose,
   localAI,
   allVerses,
 }) => {
+  const preferencesCtx = useOptionalPreferences();
+  const isLightMode = isLightModeProp ?? preferencesCtx?.isLightMode ?? false;
   const [note, setNote] = useState(initialNote);
   const [companionVerse, setCompanionVerse] = useState(null);
   const textareaRef = useRef(null);
@@ -36,13 +40,16 @@ export const TafakkurOverlay = ({
   const accentColor = isLightMode ? '#0d9488' : '#14b8a6';
 
   const handleSave = () => {
+    hapticSuccess();
     if (onSave) onSave(verse.id, note);
   };
 
   const findCompanion = async () => {
     if (!localAI?.isReady || !note.trim()) return;
+    hapticTapMedium();
     const match = await localAI.findCompanionVerse(note, allVerses, verse.id);
     if (match) {
+      hapticSuccess();
       setCompanionVerse(match);
     }
   };
@@ -67,7 +74,10 @@ export const TafakkurOverlay = ({
         <button
           type="button"
           aria-label="Close reflection journal"
-          onClick={onClose}
+          onClick={() => {
+            hapticDismiss();
+            onClose?.();
+          }}
           className={`w-10 h-10 shrink-0 rounded-full border flex items-center justify-center opacity-70 hover:opacity-100 transition-opacity cursor-pointer ${
             isLightMode ? 'border-black/10' : 'border-white/10'
           } ${tTextMain}`}

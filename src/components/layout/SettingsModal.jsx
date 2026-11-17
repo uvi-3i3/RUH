@@ -2,6 +2,18 @@ import { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { ChevronDownIcon, SettingsIcon } from '../icons/Icons';
+import { useOptionalPreferences, useOptionalSanctuary } from '../../context/sanctuaryStore';
+import {
+  HAPTIC_TYPES,
+  hapticDestructive,
+  hapticDetent,
+  hapticDismiss,
+  hapticNavigate,
+  hapticSuccess,
+  hapticToggle,
+  hapticWarning,
+  triggerHaptic,
+} from '../../utils/haptics';
 
 const TIME_PHASES = [
   { id: null, label: 'Auto (Solar)' },
@@ -15,15 +27,26 @@ const TIME_PHASES = [
 export const SettingsModal = ({
   isOpen,
   onClose,
-  isLightMode,
-  devotionData,
-  prayerTimes,
-  devTimePhase,
-  setDevTimePhase,
+  isLightMode: isLightModeProp,
+  devotionData: devotionDataProp,
+  prayerTimes: prayerTimesProp,
+  devTimePhase: devTimePhaseProp,
+  setDevTimePhase: setDevTimePhaseProp,
   onOpenCityPicker,
 }) => {
+  const sanctuaryCtx = useOptionalSanctuary();
+  const prefsCtx = useOptionalPreferences();
+
+  const devotionData = devotionDataProp ?? sanctuaryCtx?.devotionData;
+  const prayerTimes = prayerTimesProp ?? sanctuaryCtx?.prayerTimes;
+  const isLightMode = isLightModeProp ?? prefsCtx?.isLightMode ?? false;
+  const devTimePhase = devTimePhaseProp !== undefined ? devTimePhaseProp : prefsCtx?.devTimePhase ?? null;
+  const setDevTimePhase = setDevTimePhaseProp ?? prefsCtx?.setDevTimePhase;
+  const isHapticsEnabled = prefsCtx?.isHapticsEnabled ?? true;
+  const toggleHapticsEnabled = prefsCtx?.toggleHapticsEnabled;
+
   const [confirmingReset, setConfirmingReset] = useState(false);
-  const [nameInput, setNameInput] = useState(devotionData.profile?.name || 'Seeker');
+  const [nameInput, setNameInput] = useState(devotionData?.profile?.name || 'Seeker');
   const [nameSaved, setNameSaved] = useState(false);
   const [backupNotice, setBackupNotice] = useState(null);
   const fileInputRef = useRef(null);
@@ -51,9 +74,10 @@ export const SettingsModal = ({
   const accentHex = isLightMode ? '#9c7533' : '#d2a24b';
 
   const handleAmbientToggle = async () => {
+    const willEnable = !devotionData.isAmbientEnabled;
+    hapticToggle(willEnable);
     devotionData.toggleAmbientMode();
     if (Capacitor.isNativePlatform()) {
-      const willEnable = !devotionData.isAmbientEnabled;
       if (willEnable) {
         const p = await LocalNotifications.requestPermissions();
         if (p.display === 'granted') {
@@ -78,16 +102,22 @@ export const SettingsModal = ({
   const handleSaveName = (e) => {
     e.preventDefault();
     if (nameInput.trim().length >= 2) {
+      hapticSuccess();
       devotionData.setProfile(nameInput.trim());
       setNameSaved(true);
       setTimeout(() => setNameSaved(false), 2000);
+    } else {
+      hapticWarning();
     }
   };
 
   const handleExportBackup = () => {
     try {
       const json = devotionData.exportBackupJson?.();
-      if (!json) return;
+      if (!json) {
+        hapticWarning();
+        return;
+      }
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -98,8 +128,10 @@ export const SettingsModal = ({
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      hapticSuccess();
       setBackupNotice({ type: 'success', text: 'Backup exported to your device.' });
     } catch {
+      hapticWarning();
       setBackupNotice({ type: 'error', text: 'Unable to export backup right now.' });
     }
   };
@@ -112,11 +144,14 @@ export const SettingsModal = ({
       const text = await file.text();
       const ok = devotionData.importBackupJson?.(text);
       if (ok) {
+        hapticSuccess();
         setBackupNotice({ type: 'success', text: 'Sanctuary restored from backup.' });
       } else {
+        hapticWarning();
         setBackupNotice({ type: 'error', text: 'Invalid backup file. Please choose a Ruh JSON export.' });
       }
     } catch {
+      hapticWarning();
       setBackupNotice({ type: 'error', text: 'Could not read the selected file.' });
     }
   };
@@ -134,12 +169,18 @@ export const SettingsModal = ({
           background: isLightMode ? 'rgba(244,240,232,0.94)' : 'rgba(8,7,6,0.95)',
           backdropFilter: 'blur(24px)',
         }}
-        onClick={onClose}
+        onClick={() => {
+          hapticDismiss();
+          onClose?.();
+        }}
       />
 
       <div className="relative z-10 w-full max-w-xl mx-auto h-full flex flex-col">
         {/* Sticky Top Header */}
-        <div className="w-full flex items-center justify-between px-6 pt-8 pb-4 border-b border-current/10 shrink-0">
+        <div
+          className="w-full flex items-center justify-between px-6 pb-4 border-b border-current/10 shrink-0"
+          style={{ paddingTop: 'calc(18px + var(--sat))' }}
+        >
           <div className="flex items-center gap-3">
             <SettingsIcon size={22} style={{ color: accentHex }} />
             <div>
@@ -152,7 +193,10 @@ export const SettingsModal = ({
           <button
             type="button"
             aria-label="Close Settings"
-            onClick={onClose}
+            onClick={() => {
+              hapticDismiss();
+              onClose?.();
+            }}
             className={`w-11 h-11 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
               isLightMode ? 'bg-white/70 border-black/10 text-[#4a453d]' : 'bg-white/5 border-white/10 text-white'
             }`}
@@ -162,7 +206,10 @@ export const SettingsModal = ({
         </div>
 
         {/* Scrollable Content */}
-        <div className="flex-1 w-full overflow-y-auto hide-scrollbar px-6 py-6 flex flex-col gap-5">
+        <div
+          className="flex-1 w-full overflow-y-auto hide-scrollbar px-6 pt-5 flex flex-col gap-5"
+          style={{ paddingBottom: 'calc(24px + var(--sab))' }}
+        >
           {/* Seeker Identity Card */}
           <form
             onSubmit={handleSaveName}
@@ -223,7 +270,10 @@ export const SettingsModal = ({
                   <button
                     key={String(phase.id)}
                     type="button"
-                    onClick={() => setDevTimePhase && setDevTimePhase(phase.id)}
+                    onClick={() => {
+                      hapticDetent();
+                      if (setDevTimePhase) setDevTimePhase(phase.id);
+                    }}
                     className={`px-3 py-2 rounded-xl font-serif-eng text-xs border transition-all cursor-pointer whitespace-nowrap ${
                       isSelected
                         ? isLightMode
@@ -294,7 +344,10 @@ export const SettingsModal = ({
                 role="switch"
                 aria-checked={devotionData.isSimpleMode}
                 aria-label="Toggle Simple English Translation"
-                onClick={devotionData.toggleSimpleMode}
+                onClick={() => {
+                  hapticToggle(!devotionData.isSimpleMode);
+                  devotionData.toggleSimpleMode();
+                }}
                 className={`w-12 h-6 rounded-full transition-all duration-300 flex items-center px-1 cursor-pointer ${
                   devotionData.isSimpleMode
                     ? isLightMode
@@ -314,6 +367,48 @@ export const SettingsModal = ({
             </div>
             <p className={`font-serif-eng text-xs leading-relaxed opacity-70 ${tTextSub}`}>
               Translates classical theological commentary and proofs into clear, everyday English across all stations.
+            </p>
+          </div>
+
+          {/* Tactile Haptics Card */}
+          <div
+            className={`w-full p-5 rounded-3xl border flex flex-col gap-3 ${
+              isLightMode ? 'bg-white/70 border-black/10 shadow-xs' : 'bg-white/[0.03] border-white/10'
+            }`}
+          >
+            <div className="flex justify-between items-center">
+              <span className={`font-serif-eng text-base font-medium ${tTextMain}`}>Tactile Haptics</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isHapticsEnabled}
+                aria-label="Toggle Tactile Haptics"
+                onClick={() => {
+                  const nextEnabled = !isHapticsEnabled;
+                  triggerHaptic(nextEnabled ? HAPTIC_TYPES.TOGGLE_ON : HAPTIC_TYPES.TOGGLE_OFF, {
+                    force: true,
+                  });
+                  toggleHapticsEnabled?.();
+                }}
+                className={`w-12 h-6 rounded-full transition-all duration-300 flex items-center px-1 cursor-pointer ${
+                  isHapticsEnabled
+                    ? isLightMode
+                      ? 'bg-[#9c7533]'
+                      : 'bg-[#d2a24b]'
+                    : isLightMode
+                      ? 'bg-black/15'
+                      : 'bg-white/15'
+                }`}
+              >
+                <div
+                  className={`w-4 h-4 rounded-full bg-white shadow-xs transition-transform duration-300 ${
+                    isHapticsEnabled ? 'translate-x-6' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+            <p className={`font-serif-eng text-xs leading-relaxed opacity-70 ${tTextSub}`}>
+              Distinct Capacitor haptic pulses calibrated for scroll detents, switches, prayer logs, and celebrations.
             </p>
           </div>
 
@@ -337,7 +432,10 @@ export const SettingsModal = ({
             {onOpenCityPicker && (
               <button
                 type="button"
-                onClick={onOpenCityPicker}
+                onClick={() => {
+                  hapticNavigate();
+                  onOpenCityPicker();
+                }}
                 className={`w-full min-h-[42px] px-3.5 py-2 rounded-xl border font-serif-eng text-xs uppercase tracking-[0.14em] flex items-center justify-between cursor-pointer transition-colors ${
                   isLightMode
                     ? 'border-black/12 text-[#1a1814] hover:bg-black/5'
@@ -352,7 +450,10 @@ export const SettingsModal = ({
               <select
                 aria-label="Prayer calculation method"
                 value={prayerTimes?.method || 'MoonsightingCommittee'}
-                onChange={(e) => prayerTimes?.setMethod(e.target.value)}
+                onChange={(e) => {
+                  hapticDetent();
+                  prayerTimes?.setMethod(e.target.value);
+                }}
                 className={`flex-1 min-w-0 w-full truncate font-serif-eng text-xs px-3 py-2.5 rounded-xl border outline-none transition-all cursor-pointer ${
                   isLightMode ? 'bg-white border-black/15 text-[#1a1814]' : 'bg-[#12100d] border-white/15 text-white'
                 }`}
@@ -397,7 +498,10 @@ export const SettingsModal = ({
               </button>
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => {
+                  hapticNavigate();
+                  fileInputRef.current?.click();
+                }}
                 className={`min-h-[40px] px-3 py-2 rounded-xl font-serif-eng uppercase text-xs tracking-wider border transition-colors cursor-pointer ${
                   isLightMode
                     ? 'border-black/15 text-[#1a1814] hover:bg-black/5'
@@ -449,6 +553,7 @@ export const SettingsModal = ({
               type="button"
               onClick={() => {
                 if (confirmingReset) {
+                  hapticDestructive();
                   if (resetConfirmTimerRef.current) {
                     clearTimeout(resetConfirmTimerRef.current);
                     resetConfirmTimerRef.current = null;
@@ -457,6 +562,7 @@ export const SettingsModal = ({
                   setConfirmingReset(false);
                   onClose();
                 } else {
+                  hapticWarning();
                   setConfirmingReset(true);
                   if (resetConfirmTimerRef.current) clearTimeout(resetConfirmTimerRef.current);
                   resetConfirmTimerRef.current = setTimeout(() => {

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { DUA_CATEGORIES, ESSENTIAL_DUAS } from '../../data/duasData';
 import { filterDuas } from '../../utils/devotionLogic';
+import { useOptionalPreferences } from '../../context/sanctuaryStore';
 import {
   BookIcon,
   BookmarkIcon,
@@ -8,14 +9,23 @@ import {
   SearchIcon,
   ShareIcon,
 } from '../icons/Icons';
+import {
+  hapticDetent,
+  hapticDismiss,
+  hapticSuccess,
+  hapticTapLight,
+  hapticToggle,
+} from '../../utils/haptics';
 
 export const DuasModal = ({
   isOpen,
   onClose,
-  isLightMode,
+  isLightMode: isLightModeProp,
   favoriteDuaIds = [],
   onToggleFavorite,
 }) => {
+  const preferencesCtx = useOptionalPreferences();
+  const isLightMode = isLightModeProp ?? preferencesCtx?.isLightMode ?? false;
   const [category, setCategory] = useState('all');
   const [query, setQuery] = useState('');
   const [copiedId, setCopiedId] = useState(null);
@@ -32,11 +42,13 @@ export const DuasModal = ({
   const accentHex = isLightMode ? '#8a621c' : '#d2a24b';
 
   const handleCopy = async (dua) => {
+    hapticTapLight();
     const text = `${dua.arabic}\n\n${dua.transliteration}\n"${dua.translation}"\n— ${dua.source}`;
     try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
       }
+      hapticSuccess();
       setCopiedId(dua.id);
       setTimeout(() => setCopiedId((cur) => (cur === dua.id ? null : cur)), 1800);
     } catch {}
@@ -56,12 +68,18 @@ export const DuasModal = ({
           background: isLightMode ? 'rgba(244,240,232,0.96)' : 'rgba(8,9,13,0.96)',
           backdropFilter: 'blur(24px)',
         }}
-        onClick={onClose}
+        onClick={() => {
+          hapticDismiss();
+          onClose?.();
+        }}
       />
 
       <div className="relative z-10 w-full max-w-xl mx-auto h-full flex flex-col">
         {/* Header */}
-        <div className="w-full flex items-center justify-between px-6 pt-7 pb-3.5 border-b border-current/10 shrink-0">
+        <div
+          className="w-full flex items-center justify-between px-6 pb-3.5 border-b border-current/10 shrink-0"
+          style={{ paddingTop: 'calc(18px + var(--sat))' }}
+        >
           <div className="flex items-center gap-3">
             <BookIcon size={21} style={{ color: accentHex }} />
             <div>
@@ -77,7 +95,10 @@ export const DuasModal = ({
           <button
             type="button"
             aria-label="Close Duas Treasury"
-            onClick={onClose}
+            onClick={() => {
+              hapticDismiss();
+              onClose?.();
+            }}
             className={`w-11 h-11 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
               isLightMode ? 'bg-white/75 border-black/10 text-[#3a3329]' : 'bg-white/5 border-white/12 text-white'
             }`}
@@ -117,7 +138,10 @@ export const DuasModal = ({
                   type="button"
                   role="tab"
                   aria-selected={active}
-                  onClick={() => setCategory(cat.id)}
+                  onClick={() => {
+                    hapticDetent();
+                    setCategory(cat.id);
+                  }}
                   className={`min-h-[36px] px-3 rounded-xl font-serif-eng text-[10px] uppercase tracking-[0.14em] transition-colors cursor-pointer shrink-0 whitespace-nowrap border ${
                     active
                       ? isLightMode
@@ -172,7 +196,10 @@ export const DuasModal = ({
                       <button
                         type="button"
                         aria-label={isFav ? `Remove ${dua.title} from saved Duas` : `Save ${dua.title}`}
-                        onClick={() => onToggleFavorite?.(dua.id)}
+                        onClick={() => {
+                          hapticToggle(!isFav);
+                          onToggleFavorite?.(dua.id);
+                        }}
                         className={`min-w-[40px] min-h-[40px] rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
                           isLightMode ? 'hover:bg-black/5' : 'hover:bg-white/[0.07]'
                         }`}

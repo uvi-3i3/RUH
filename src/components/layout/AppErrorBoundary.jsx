@@ -1,4 +1,5 @@
 import React from 'react';
+import { hapticDestructive, hapticNavigate } from '../../utils/haptics';
 
 export class AppErrorBoundary extends React.Component {
   constructor(props) {
@@ -18,10 +19,12 @@ export class AppErrorBoundary extends React.Component {
   }
 
   handleReload = () => {
+    hapticNavigate();
     window.location.reload();
   };
 
   handleResetAndReload = () => {
+    hapticDestructive();
     try {
       localStorage.removeItem('ruh_devotion_state');
       localStorage.removeItem('ruh_sent_notifications_v1');

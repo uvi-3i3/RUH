@@ -1,6 +1,14 @@
 import { useMemo, useState } from 'react';
 import { computeQadaTotals } from '../../utils/devotionLogic';
 import { CheckCircleIcon, ChevronDownIcon, EditIcon } from '../icons/Icons';
+import { useOptionalPreferences } from '../../context/sanctuaryStore';
+import {
+  hapticDetent,
+  hapticDismiss,
+  hapticHeavy,
+  hapticSuccess,
+  hapticToggle,
+} from '../../utils/haptics';
 
 const PRAYER_ROWS = [
   { id: 'fajr', label: 'Fajr', arabic: 'فَجْر' },
@@ -14,12 +22,14 @@ const PRAYER_ROWS = [
 export const QadaModal = ({
   isOpen,
   onClose,
-  isLightMode,
+  isLightMode: isLightModeProp,
   qada,
   onSetCount,
   onBulkAddYears,
   onCompleteOne,
 }) => {
+  const preferencesCtx = useOptionalPreferences();
+  const isLightMode = isLightModeProp ?? preferencesCtx?.isLightMode ?? false;
   const [editing, setEditing] = useState(false);
 
   const totals = useMemo(() => computeQadaTotals(qada), [qada]);
@@ -47,12 +57,18 @@ export const QadaModal = ({
           background: isLightMode ? 'rgba(244,240,232,0.96)' : 'rgba(8,9,13,0.96)',
           backdropFilter: 'blur(24px)',
         }}
-        onClick={onClose}
+        onClick={() => {
+          hapticDismiss();
+          onClose?.();
+        }}
       />
 
       <div className="relative z-10 w-full max-w-xl mx-auto h-full flex flex-col">
         {/* Header */}
-        <div className="w-full flex items-center justify-between px-6 pt-7 pb-4 border-b border-current/10 shrink-0">
+        <div
+          className="w-full flex items-center justify-between px-6 pb-4 border-b border-current/10 shrink-0"
+          style={{ paddingTop: 'calc(18px + var(--sat))' }}
+        >
           <div>
             <h2 className={`font-serif-eng text-lg font-medium uppercase tracking-[0.2em] ${tTextMain}`}>
               Qada Ledger
@@ -65,7 +81,10 @@ export const QadaModal = ({
           <button
             type="button"
             aria-label="Close Qada Ledger"
-            onClick={onClose}
+            onClick={() => {
+              hapticDismiss();
+              onClose?.();
+            }}
             className={`w-11 h-11 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
               isLightMode ? 'bg-white/75 border-black/10 text-[#3a3329]' : 'bg-white/5 border-white/12 text-white'
             }`}
@@ -75,7 +94,10 @@ export const QadaModal = ({
         </div>
 
         {/* Scrollable Content */}
-        <div className="flex-1 w-full overflow-y-auto hide-scrollbar px-6 py-5 space-y-4">
+        <div
+          className="flex-1 w-full overflow-y-auto hide-scrollbar px-6 pt-5 space-y-4"
+          style={{ paddingBottom: 'calc(24px + var(--sab))' }}
+        >
           {/* Summary Card */}
           <div
             className={`w-full rounded-[24px] border p-5 ${
@@ -129,7 +151,10 @@ export const QadaModal = ({
             <div className="flex flex-wrap items-center justify-between gap-2 mt-4 pt-3 border-t border-current/10">
               <button
                 type="button"
-                onClick={() => setEditing((e) => !e)}
+                onClick={() => {
+                  hapticToggle(!editing);
+                  setEditing((e) => !e);
+                }}
                 className={`min-h-[38px] px-3 rounded-xl border font-serif-eng text-[10px] uppercase tracking-[0.15em] flex items-center gap-1.5 cursor-pointer transition-colors ${
                   editing
                     ? isLightMode
@@ -147,7 +172,10 @@ export const QadaModal = ({
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => onBulkAddYears?.(1)}
+                  onClick={() => {
+                    hapticHeavy();
+                    onBulkAddYears?.(1);
+                  }}
                   className={`min-h-[38px] px-3 rounded-xl border font-serif-eng text-[10px] uppercase tracking-[0.14em] cursor-pointer transition-colors ${
                     isLightMode
                       ? 'border-black/15 text-[#3a3329] hover:bg-black/5'
@@ -193,7 +221,10 @@ export const QadaModal = ({
                       <button
                         type="button"
                         aria-label={`Decrease ${row.label} remaining`}
-                        onClick={() => onSetCount?.(row.id, Math.max(0, count - 1))}
+                        onClick={() => {
+                          hapticDetent();
+                          onSetCount?.(row.id, Math.max(0, count - 1));
+                        }}
                         className={`w-9 h-9 rounded-xl border flex items-center justify-center text-sm cursor-pointer ${
                           isLightMode ? 'border-black/15 text-[#1a1814]' : 'border-white/15 text-white'
                         }`}
@@ -214,7 +245,10 @@ export const QadaModal = ({
                       <button
                         type="button"
                         aria-label={`Increase ${row.label} remaining`}
-                        onClick={() => onSetCount?.(row.id, count + 1)}
+                        onClick={() => {
+                          hapticDetent();
+                          onSetCount?.(row.id, count + 1);
+                        }}
                         className={`w-9 h-9 rounded-xl border flex items-center justify-center text-sm cursor-pointer ${
                           isLightMode ? 'border-black/15 text-[#1a1814]' : 'border-white/15 text-white'
                         }`}
@@ -226,10 +260,15 @@ export const QadaModal = ({
                     <button
                       type="button"
                       disabled={count <= 0}
-                      onClick={() => onCompleteOne?.(row.id)}
+                      onClick={() => {
+                        hapticSuccess();
+                        onCompleteOne?.(row.id);
+                      }}
                       className={`min-h-[40px] px-3.5 rounded-xl font-serif-eng text-[10px] uppercase tracking-[0.16em] flex items-center gap-1.5 transition-all shrink-0 ${
                         count <= 0
-                          ? 'opacity-30 cursor-default border border-current/15'
+                          ? isLightMode
+                            ? 'text-[#4a453d]/45 border border-black/12 bg-black/[0.02] cursor-default'
+                            : 'text-[#e4dac8]/40 border border-white/12 bg-white/[0.03] cursor-default'
                           : 'cursor-pointer active:scale-95'
                       }`}
                       style={

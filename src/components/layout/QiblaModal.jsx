@@ -1,15 +1,25 @@
 import { useEffect, useState, useRef } from 'react';
 import { getAngularDelta } from '../../utils/devotionLogic';
 import { ChevronDownIcon, CompassIcon, MapPinIcon } from '../icons/Icons';
-import { hapticTapMedium } from '../../utils/haptics';
+import {
+  hapticDismiss,
+  hapticNavigate,
+  hapticTapMedium,
+  hapticToggle,
+} from '../../utils/haptics';
+import { useOptionalPreferences, useOptionalSanctuary } from '../../context/sanctuaryStore';
 
 export const QiblaModal = ({
   isOpen,
   onClose,
-  isLightMode,
-  prayerTimes,
+  isLightMode: isLightModeProp,
+  prayerTimes: prayerTimesProp,
   onOpenCityPicker,
 }) => {
+  const sanctuaryCtx = useOptionalSanctuary();
+  const preferencesCtx = useOptionalPreferences();
+  const isLightMode = isLightModeProp ?? preferencesCtx?.isLightMode ?? false;
+  const prayerTimes = prayerTimesProp ?? sanctuaryCtx?.prayerTimes;
   const [heading, setHeading] = useState(null);
   const [sensorStatus, setSensorStatus] = useState('idle'); // 'idle' | 'active' | 'denied' | 'unsupported'
   const [iosGranted, setIosGranted] = useState(false);
@@ -135,7 +145,10 @@ export const QiblaModal = ({
           background: isLightMode ? 'rgba(244,240,232,0.95)' : 'rgba(7,9,15,0.96)',
           backdropFilter: 'blur(26px)',
         }}
-        onClick={onClose}
+        onClick={() => {
+          hapticDismiss();
+          onClose?.();
+        }}
       />
 
       <div className="relative z-10 w-full max-w-lg mx-auto h-full flex flex-col">
@@ -158,7 +171,10 @@ export const QiblaModal = ({
           <button
             type="button"
             aria-label="Close Qibla Compass"
-            onClick={onClose}
+            onClick={() => {
+              hapticDismiss();
+              onClose?.();
+            }}
             className={`w-11 h-11 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
               isLightMode
                 ? 'bg-white/70 border-black/10 text-[#4a453d]'
@@ -174,7 +190,10 @@ export const QiblaModal = ({
           {/* Location Trigger */}
           <button
             type="button"
-            onClick={onOpenCityPicker}
+            onClick={() => {
+              hapticNavigate();
+              onOpenCityPicker?.();
+            }}
             className={`min-h-[42px] px-4 py-2 rounded-full border flex items-center gap-2 cursor-pointer transition-colors ${
               isLightMode
                 ? 'bg-white/75 border-black/10 text-[#1a1814] hover:bg-white'
@@ -194,7 +213,10 @@ export const QiblaModal = ({
               </p>
               <button
                 type="button"
-                onClick={onOpenCityPicker}
+                onClick={() => {
+                  hapticNavigate();
+                  onOpenCityPicker?.();
+                }}
                 className={`min-h-[44px] px-6 py-2.5 rounded-2xl font-serif-eng text-xs uppercase tracking-[0.18em] border cursor-pointer transition-all ${
                   isLightMode
                     ? 'bg-[#9c7533] text-white border-[#9c7533]'
@@ -395,7 +417,10 @@ export const QiblaModal = ({
               {requiresIosPermission && (
                 <button
                   type="button"
-                  onClick={requestCompassPermission}
+                  onClick={() => {
+                    hapticToggle(true);
+                    requestCompassPermission();
+                  }}
                   className={`min-h-[44px] px-5 py-2.5 rounded-2xl border font-serif-eng text-xs uppercase tracking-[0.16em] cursor-pointer transition-all ${
                     isLightMode
                       ? 'bg-[#9c7533] text-white border-[#9c7533]'

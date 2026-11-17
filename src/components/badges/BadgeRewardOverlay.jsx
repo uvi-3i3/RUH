@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { BadgeArtwork } from './BadgeArtwork';
 import { CelebrationCanvas } from './CelebrationCanvas';
 import { getBadgeTierStyle } from '../../utils/badgeLogic';
+import { hapticCelebrate, hapticDismiss, hapticNavigate } from '../../utils/haptics';
 
 const LOTTIE_BURST_RAYS = Array.from({ length: 24 }).map((_, idx) => {
   const angleDeg = idx * 15;
@@ -66,12 +67,14 @@ export const BadgeRewardOverlay = ({
   };
 
   const triggerReplay = () => {
+    hapticCelebrate();
     setReplayCount((c) => c + 1);
     setBurstCount((c) => c + 1);
     setTilt({ rx: 0, ry: 0 });
   };
 
   const triggerTapCelebrate = () => {
+    hapticCelebrate();
     setBurstCount((c) => c + 1);
     setTapPulseKey((c) => c + 1);
   };
@@ -87,7 +90,10 @@ export const BadgeRewardOverlay = ({
     >
       {/* Frosted Celestial Backdrop */}
       <div
-        onClick={onClose}
+        onClick={() => {
+          hapticDismiss();
+          onClose?.();
+        }}
         className={`absolute inset-0 transition-opacity duration-500 ${
           isLightMode
             ? 'bg-[#e7eef6]/82 backdrop-blur-md'
@@ -363,7 +369,14 @@ export const BadgeRewardOverlay = ({
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              if (queueRemaining > 0) {
+                hapticNavigate();
+              } else {
+                hapticDismiss();
+              }
+              onClose?.();
+            }}
             className="flex-1 min-h-[44px] px-5 rounded-2xl font-serif-eng text-[11px] uppercase tracking-[0.2em] font-medium transition-transform active:scale-[0.98] cursor-pointer"
             style={{
               backgroundColor: palette.primary,
