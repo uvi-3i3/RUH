@@ -4,7 +4,9 @@ import {
   DEFAULT_TRANSITION_MS,
   buildOriginMorphStyles,
 } from '../../utils/learningPathLogic';
+import { LESSON_ONE_LANDMARKS } from '../../data/learningPathData';
 import { hapticDismiss } from '../../utils/haptics';
+import { AncientMapCanvas } from './AncientMapCanvas';
 
 function prefersReducedMotion() {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -31,6 +33,11 @@ export const LearningPathPage = ({
     height: typeof window !== 'undefined' ? window.innerHeight : 844,
   }));
   const [phase, setPhase] = useState('idle-closed'); // 'idle-closed' | 'expanding' | 'open' | 'closing'
+  const [lessonProgress, setLessonProgress] = useState({
+    discoveredCount: 0,
+    totalCount: LESSON_ONE_LANDMARKS.length,
+    isComplete: false,
+  });
 
   // Sync viewport resize cleanly while open
   useEffect(() => {
@@ -83,9 +90,7 @@ export const LearningPathPage = ({
 
   const morphStyles = buildOriginMorphStyles(origin, viewport, phase, reducedMotion);
 
-  const accentHex = isLightMode ? '#7c5a1e' : '#d2a24b';
-  const textMain = isLightMode ? 'text-[#1a1814]' : 'text-[rgba(245,238,224,0.95)]';
-  const textSub = isLightMode ? 'text-[#3c362d]' : 'text-[rgba(228,218,200,0.74)]';
+  const accentHex = isLightMode ? '#7a5420' : '#d4af6a';
 
   const handleBack = () => {
     if (isClosing) return;
@@ -109,152 +114,61 @@ export const LearningPathPage = ({
         opacity: morphStyles.opacity,
         transition: morphStyles.transition,
         willChange: 'clip-path, transform, opacity',
-        background: isLightMode
-          ? 'radial-gradient(ellipse 90% 65% at 50% 18%, #fbf8f1 0%, #f3ecdd 55%, #e8dec9 100%)'
-          : 'radial-gradient(ellipse 90% 65% at 50% 18%, #10192d 0%, #090e1a 55%, #050811 100%)',
+        backgroundColor: isLightMode ? '#ece0ca' : '#13100d',
       }}
     >
-      {/* Subtle Decorative Celestial Depth Halo (Non-interactive, static) */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background: isLightMode
-            ? 'radial-gradient(circle at 50% 34%, rgba(156,117,51,0.08) 0%, transparent 56%)'
-            : 'radial-gradient(circle at 50% 34%, rgba(210,162,75,0.09) 0%, transparent 56%)',
-        }}
-      />
-
-      {/* Minimal Top Safe-Area Return Control (Zero navigation bars or app tabs) */}
-      <div
-        className="relative z-10 flex items-center justify-between px-4 sm:px-8 shrink-0"
-        style={{ paddingTop: 'calc(14px + var(--sat))' }}
+      {/* Floating Minimal Top Bar (Zero navigation bars or app tabs) */}
+      <header
+        className="absolute inset-x-0 top-0 z-30 flex items-center justify-between gap-3 px-4 sm:px-7 pointer-events-none"
+        style={{ paddingTop: 'calc(12px + var(--sat))' }}
       >
         <button
           type="button"
           data-testid="learning-path-back"
           aria-label="Exit Learning Path"
           onClick={handleBack}
-          className={`min-h-[44px] pl-3 pr-4 rounded-full border flex items-center gap-1.5 font-serif-eng text-[11px] uppercase tracking-[0.16em] transition-all duration-300 cursor-pointer active:scale-[0.97] ${
+          className={`pointer-events-auto min-h-[44px] pl-3 pr-4 rounded-full border flex items-center gap-1.5 font-serif-eng text-[11px] uppercase tracking-[0.16em] whitespace-nowrap shrink-0 transition-all duration-200 cursor-pointer active:scale-[0.97] shadow-md backdrop-blur-md ${
             isLightMode
-              ? 'bg-white/75 hover:bg-white/95 border-black/[0.08] text-[#1a1814] island-light'
-              : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.12] text-[rgba(245,238,224,0.92)] island-dark'
+              ? 'bg-[#f7efe0]/92 hover:bg-[#fbf6ea] border-[#7a5420]/22 text-[#261c11]'
+              : 'bg-[#1a1612]/90 hover:bg-[#241e18] border-[#d4af6a]/24 text-[#efe5d4]'
           }`}
         >
           <ChevronLeftIcon size={15} style={{ color: accentHex }} />
           <span>Back</span>
         </button>
 
-        <span
-          className="font-serif-eng text-[9.5px] uppercase tracking-[0.22em] opacity-75"
-          style={{ color: accentHex }}
-        >
-          Al-Masar · Step I
-        </span>
-      </div>
-
-      {/* Centered Contemplative Learning Canvas */}
-      <main
-        className="relative z-10 flex-1 w-full overflow-y-auto hide-scrollbar flex flex-col items-center justify-center px-5 sm:px-8"
-        style={{ paddingBottom: 'calc(32px + var(--sab))' }}
-      >
         <div
-          className="w-full max-w-[460px] mx-auto flex flex-col items-center text-center transition-opacity duration-500"
-          style={{
-            opacity: phase === 'idle-closed' ? 0 : 1,
-            transitionDelay: phase === 'expanding' ? '110ms' : '0ms',
-          }}
+          className={`pointer-events-auto px-3.5 py-2 rounded-full border flex items-center gap-2.5 shadow-md backdrop-blur-md ${
+            isLightMode
+              ? 'bg-[#f7efe0]/92 border-[#7a5420]/22 text-[#261c11]'
+              : 'bg-[#1a1612]/90 border-[#d4af6a]/24 text-[#efe5d4]'
+          }`}
         >
-          {/* Arabic Calligraphic Crest */}
-          <span
-            className="font-calligraphy text-[34px] sm:text-[40px] leading-none mb-3"
-            style={{ color: accentHex }}
-            dir="rtl"
-          >
-            مَسَارُ التَّعَلُّم
-          </span>
-
           <h1
             id="learning-path-heading"
-            className={`font-serif-eng text-[28px] sm:text-[34px] font-medium tracking-[0.02em] leading-[1.15] ${textMain}`}
+            className="font-serif-eng text-[11px] sm:text-[12px] uppercase tracking-[0.16em] whitespace-nowrap"
           >
-            The Learning Path
+            Lesson I · Pillars
           </h1>
-
-          {/* Quiet Ornamental Divider */}
-          <div className="flex items-center justify-center gap-2.5 my-4" aria-hidden="true">
-            <span className="w-8 h-[1px] opacity-40" style={{ backgroundColor: accentHex }} />
-            <span className="w-1.5 h-1.5 rotate-45 opacity-80" style={{ backgroundColor: accentHex }} />
-            <span className="w-8 h-[1px] opacity-40" style={{ backgroundColor: accentHex }} />
-          </div>
-
-          <p
-            className={`font-serif-eng italic text-[14.5px] sm:text-[15.5px] leading-relaxed max-w-[380px] mb-8 ${textSub}`}
+          <span aria-hidden="true" className="opacity-35">
+            |
+          </span>
+          <span
+            data-testid="lesson-one-counter"
+            className="font-serif-eng text-[11px] sm:text-[12px] font-medium tabular-nums whitespace-nowrap"
+            style={{ color: accentHex }}
           >
-            A dedicated room apart — quiet, uninterrupted, and prepared for our step-by-step path of knowledge.
-          </p>
-
-          {/* Step 1 Foundation Vessel */}
-          <div
-            className={`w-full rounded-[24px] border p-6 sm:p-7 flex flex-col items-center gap-4 ${
-              isLightMode
-                ? 'bg-white/70 border-white/90 island-light'
-                : 'bg-[#0b0e16]/75 border-white/[0.1] island-dark'
-            }`}
-          >
-            {/* Clean Geometric Horizon Path Motif */}
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 220 56"
-              className="w-[188px] h-[48px] opacity-90"
-              fill="none"
-            >
-              <path
-                d="M18 42 C 56 42, 76 16, 110 16 C 144 16, 164 42, 202 22"
-                stroke={accentHex}
-                strokeWidth="1.25"
-                strokeDasharray="3 4"
-                strokeLinecap="round"
-                opacity="0.55"
-              />
-              <circle cx="18" cy="42" r="5" fill={accentHex} />
-              <circle cx="18" cy="42" r="9.5" stroke={accentHex} strokeWidth="1" opacity="0.35" />
-              <circle
-                cx="110"
-                cy="16"
-                r="4"
-                stroke={accentHex}
-                strokeWidth="1.25"
-                opacity="0.6"
-              />
-              <circle
-                cx="202"
-                cy="22"
-                r="4"
-                stroke={accentHex}
-                strokeWidth="1.25"
-                strokeDasharray="2 2"
-                opacity="0.45"
-              />
-            </svg>
-
-            <div className="flex flex-col items-center gap-1.5">
-              <span
-                className="font-serif-eng text-[9px] uppercase tracking-[0.22em]"
-                style={{ color: accentHex }}
-              >
-                Foundation · Ready
-              </span>
-              <h2 className={`font-serif-eng text-[18px] font-medium tracking-wide ${textMain}`}>
-                First Threshold Established
-              </h2>
-              <p className={`font-serif-eng text-[13px] leading-relaxed max-w-[320px] ${textSub} opacity-85`}>
-                Navigation and distractions recede here. In the next step, we will begin shaping the curriculum and milestones inside this space.
-              </p>
-            </div>
-          </div>
+            {lessonProgress.discoveredCount} / {lessonProgress.totalCount}
+          </span>
         </div>
-      </main>
+      </header>
+
+      {/* Full-Bleed Ancient Cartography Canvas */}
+      <AncientMapCanvas
+        isLightMode={isLightMode}
+        reducedMotion={reducedMotion}
+        onProgressChange={setLessonProgress}
+      />
     </section>
   );
 };
