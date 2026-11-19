@@ -1,6 +1,7 @@
 /**
- * Pure geometry and state helpers for the Learning Path click-origin expansion.
- * Decoupled from React/DOM so bounds and radius math are unit-testable.
+ * Pure geometry and state helpers for the Learning Path click-origin expansion
+ * and Lesson I Sanctuary Reader state.
+ * Decoupled from React/DOM so bounds, radius math, and lesson progress are unit-testable.
  */
 
 export const DEFAULT_TRANSITION_MS = 460;
@@ -157,121 +158,6 @@ export function captureClickOriginFromEvent(event, fallbackElement = null) {
   };
 }
 
-export const MAP_DEFAULT_WORLD = { width: 1500, height: 1120 };
-export const MAP_MIN_ZOOM = 0.48;
-export const MAP_MAX_ZOOM = 1.85;
-export const MAP_DRAG_THRESHOLD_PX = 6;
-
-/**
- * Resolves theme-specific coordinates `(x, y)` for a landmark or gate.
- */
-export function resolveLandmarkPoint(item, isLightMode = false) {
-  if (!item) return { x: 750, y: 560 };
-  const x = isLightMode && Number.isFinite(item.dayX) ? item.dayX : item.x;
-  const y = isLightMode && Number.isFinite(item.dayY) ? item.dayY : item.y;
-  return { x: Number(x) || 750, y: Number(y) || 560 };
-}
-
-/**
- * Computes a comfortable initial zoom factor for the 1500x1120 Ancient Map Canvas.
- */
-export function getInitialMapZoom(viewport) {
-  const vw = Math.max(1, Number(viewport?.width) || 390);
-  const vh = Math.max(1, Number(viewport?.height) || 844);
-  if (vw < 640) {
-    return clamp(Math.max(vw / 565, vh / 1220), 0.69, 0.84);
-  }
-  return clamp(Math.min(vw / 1640, vh / 1020), 0.86, 1.08);
-}
-
-/**
- * Clamps map translation `(x, y)` and `zoom` so the parchment map fills the
- * viewport without leaving void gaps past its outer margins.
- */
-export function clampMapCamera(camera, viewport, worldSize = MAP_DEFAULT_WORLD) {
-  const vw = Math.max(1, Number(viewport?.width) || 390);
-  const vh = Math.max(1, Number(viewport?.height) || 844);
-  const ww = Math.max(1, Number(worldSize?.width) || MAP_DEFAULT_WORLD.width);
-  const wh = Math.max(1, Number(worldSize?.height) || MAP_DEFAULT_WORLD.height);
-
-  const zoom = clamp(Number(camera?.zoom) || 1, MAP_MIN_ZOOM, MAP_MAX_ZOOM);
-  const scaledW = ww * zoom;
-  const scaledH = wh * zoom;
-
-  let x;
-  if (scaledW <= vw) {
-    x = (vw - scaledW) / 2;
-  } else {
-    const minX = vw - scaledW;
-    x = clamp(Number(camera?.x) || 0, minX, 0);
-  }
-
-  let y;
-  if (scaledH <= vh) {
-    y = (vh - scaledH) / 2;
-  } else {
-    const minY = vh - scaledH;
-    y = clamp(Number(camera?.y) || 0, minY, 0);
-  }
-
-  return {
-    x: Math.round(x * 100) / 100,
-    y: Math.round(y * 100) / 100,
-    zoom: Math.round(zoom * 1000) / 1000,
-  };
-}
-
-/**
- * Centers the viewport on a world coordinate `(wx, wy)` at `zoom`, placing the
- * focal point at `focusYRatio` (e.g. 0.44 keeps landmarks visible above a bottom nameplate).
- */
-export function centerCameraOnPoint(
-  worldPoint,
-  viewport,
-  zoom = 1,
-  worldSize = MAP_DEFAULT_WORLD,
-  focusYRatio = 0.44
-) {
-  const vw = Math.max(1, Number(viewport?.width) || 390);
-  const vh = Math.max(1, Number(viewport?.height) || 844);
-  const safeZoom = clamp(Number(zoom) || 1, MAP_MIN_ZOOM, MAP_MAX_ZOOM);
-  const wx = Number(worldPoint?.x) || worldSize.width / 2;
-  const wy = Number(worldPoint?.y) || worldSize.height / 2;
-
-  const targetX = vw * 0.5 - wx * safeZoom;
-  const targetY = vh * clamp(focusYRatio, 0.2, 0.8) - wy * safeZoom;
-
-  return clampMapCamera({ x: targetX, y: targetY, zoom: safeZoom }, viewport, worldSize);
-}
-
-/**
- * Zooms the camera toward `nextZoom` while anchoring the point at the center of the viewport.
- */
-export function zoomCameraAtCenter(camera, nextZoom, viewport, worldSize = MAP_DEFAULT_WORLD) {
-  const vw = Math.max(1, Number(viewport?.width) || 390);
-  const vh = Math.max(1, Number(viewport?.height) || 844);
-  const prevZoom = clamp(Number(camera?.zoom) || 1, MAP_MIN_ZOOM, MAP_MAX_ZOOM);
-  const targetZoom = clamp(Number(nextZoom) || prevZoom, MAP_MIN_ZOOM, MAP_MAX_ZOOM);
-
-  const worldCenterX = (vw * 0.5 - (Number(camera?.x) || 0)) / prevZoom;
-  const worldCenterY = (vh * 0.5 - (Number(camera?.y) || 0)) / prevZoom;
-
-  const x = vw * 0.5 - worldCenterX * targetZoom;
-  const y = vh * 0.5 - worldCenterY * targetZoom;
-
-  return clampMapCamera({ x, y, zoom: targetZoom }, viewport, worldSize);
-}
-
-/**
- * Distinguishes clean landmark taps from map drag pans.
- */
-export function isPointerDragExceeded(startPoint, currentPoint, threshold = MAP_DRAG_THRESHOLD_PX) {
-  if (!startPoint || !currentPoint) return false;
-  const dx = (Number(currentPoint.x) || 0) - (Number(startPoint.x) || 0);
-  const dy = (Number(currentPoint.y) || 0) - (Number(startPoint.y) || 0);
-  return Math.hypot(dx, dy) > threshold;
-}
-
 /**
  * Sanitizes persisted landmark IDs against valid Lesson 1 landmark IDs.
  */
@@ -331,33 +217,7 @@ export function computeLessonOneProgress(discoveredIds, totalCount = 11) {
 }
 
 /**
- * Returns the first undiscovered landmark in sequential order, or the first landmark if all discovered.
- */
-export function getNextUndiscoveredLandmark(landmarks, discoveredIds = []) {
-  if (!Array.isArray(landmarks) || landmarks.length === 0) return null;
-  const discoveredSet = new Set(Array.isArray(discoveredIds) ? discoveredIds : []);
-  const next = landmarks.find((item) => !discoveredSet.has(item.id));
-  return next || landmarks[0];
-}
-
-/**
- * Returns world focal point for a named chapter zone ('islam' | 'iman' | 'horizon').
- */
-export function getRegionFocusPoint(zoneKey) {
-  if (zoneKey === 'all') {
-    return { x: 750, y: 535, focusYRatio: 0.5 };
-  }
-  if (zoneKey === 'iman') {
-    return { x: 1124, y: 538, focusYRatio: 0.5 };
-  }
-  if (zoneKey === 'horizon') {
-    return { x: 750, y: 215, focusYRatio: 0.36 };
-  }
-  return { x: 376, y: 538, focusYRatio: 0.5 };
-}
-
-/**
- * Returns adjacent landmark ID along the trail (`direction`: 1 for Next, -1 for Prev).
+ * Returns adjacent landmark ID along the Lesson I sequence (`direction`: 1 for Next, -1 for Prev).
  */
 export function getAdjacentLandmarkId(landmarks, currentId, direction = 1) {
   if (!Array.isArray(landmarks) || landmarks.length === 0) return null;
@@ -402,4 +262,87 @@ export function groupLessonOnePillars(landmarks = [], discoveredIds = []) {
   };
 }
 
+/**
+ * Evaluates a learner's answer to a Pillar's quick comprehension check.
+ */
+export function evaluatePillarCheckAnswer(landmark, selectedOptionIndex) {
+  const check = landmark?.checkQuestion;
+  if (!check || !Array.isArray(check.options)) {
+    return {
+      answered: false,
+      isCorrect: false,
+      correctIndex: 0,
+      explanation: '',
+    };
+  }
+  const hasAnswer =
+    typeof selectedOptionIndex === 'number' &&
+    selectedOptionIndex >= 0 &&
+    selectedOptionIndex < check.options.length;
+  const correctIdx = Number(check.correctIndex) || 0;
+  return {
+    answered: hasAnswer,
+    isCorrect: hasAnswer && selectedOptionIndex === correctIdx,
+    correctIndex: correctIdx,
+    explanation: check.explanation || '',
+  };
+}
+
+export const LESSON_ONE_STEPS = [
+  { id: 'islam-study', kind: 'study', group: 'islam', label: 'Pillars of Islam' },
+  { id: 'islam-quiz', kind: 'quiz', group: 'islam', label: 'Islam Check' },
+  { id: 'iman-study', kind: 'study', group: 'iman', label: 'Pillars of Faith' },
+  { id: 'iman-quiz', kind: 'quiz', group: 'iman', label: 'Faith Check' },
+  { id: 'complete', kind: 'complete', group: 'all', label: 'Complete' },
+];
+
+/**
+ * Computes progress metrics for the Duolingo-style top bar across the 4 learning steps + completion.
+ */
+export function getStepProgress(stepIndex, steps = LESSON_ONE_STEPS) {
+  const safeSteps = Array.isArray(steps) && steps.length > 0 ? steps : LESSON_ONE_STEPS;
+  const maxIndex = safeSteps.length - 1;
+  const clampedIndex = clamp(Math.floor(Number(stepIndex) || 0), 0, maxIndex);
+  const learningStepCount = Math.max(1, maxIndex);
+  const isCompleteStep = safeSteps[clampedIndex]?.kind === 'complete';
+  const ratio = isCompleteStep ? 1 : (clampedIndex + 1) / learningStepCount;
+
+  return {
+    index: clampedIndex,
+    step: safeSteps[clampedIndex],
+    displayNumber: Math.min(clampedIndex + 1, learningStepCount),
+    totalLearningSteps: learningStepCount,
+    isCompleteStep,
+    ratio: clamp(ratio, 0, 1),
+  };
+}
+
+/**
+ * Steps forward or backward cleanly within the lesson sequence.
+ */
+export function getAdjacentStepIndex(currentIndex, direction = 1, totalSteps = LESSON_ONE_STEPS.length) {
+  const maxIdx = Math.max(0, (Number(totalSteps) || 1) - 1);
+  const step = direction < 0 ? -1 : 1;
+  return clamp((Number(currentIndex) || 0) + step, 0, maxIdx);
+}
+
+/**
+ * Evaluates a single quiz question selection cleanly.
+ */
+export function evaluateQuizQuestion(question, selectedIndex) {
+  if (!question || !Array.isArray(question.options)) {
+    return { answered: false, isCorrect: false, correctIndex: 0, explanation: '' };
+  }
+  const hasAnswer =
+    typeof selectedIndex === 'number' &&
+    selectedIndex >= 0 &&
+    selectedIndex < question.options.length;
+  const correctIdx = Number(question.correctIndex) || 0;
+  return {
+    answered: hasAnswer,
+    isCorrect: hasAnswer && selectedIndex === correctIdx,
+    correctIndex: correctIdx,
+    explanation: question.explanation || '',
+  };
+}
 

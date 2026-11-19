@@ -1,132 +1,30 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  LESSON_ONE_GROUP_QUIZZES,
   LESSON_ONE_LANDMARKS,
   LESSON_ONE_STORAGE_KEY,
   LESSON_ONE_VALID_IDS,
   LOCKED_FUTURE_LESSONS,
-  MAP_BRIDGE_LANDMARK,
-  MAP_WORLD_SIZE,
   PILLAR_GROUPS,
 } from '../../data/learningPathData';
 import {
-  MAP_MAX_ZOOM,
-  MAP_MIN_ZOOM,
-  centerCameraOnPoint,
-  clamp,
-  clampMapCamera,
+  LESSON_ONE_STEPS,
   computeLessonOneProgress,
-  getAdjacentLandmarkId,
-  getInitialMapZoom,
-  getNextUndiscoveredLandmark,
-  getRegionFocusPoint,
+  evaluatePillarCheckAnswer,
+  getAdjacentStepIndex,
+  getStepProgress,
   groupLessonOnePillars,
-  isPointerDragExceeded,
   markLandmarkDiscovered,
   parseDiscoveredLandmarks,
-  resolveLandmarkPoint,
-  zoomCameraAtCenter,
 } from '../../utils/learningPathLogic';
 import {
   hapticCelebrate,
   hapticDetent,
-  hapticDismiss,
   hapticTapLight,
 } from '../../utils/haptics';
-import {
-  AncientCartographyBackdrop,
-  ArtifactVignetteThumbnail,
-  SanctuaryBuildingMedallion,
-} from './AncientMapGlyphs';
-
-const CompassIcon = ({ size = 16, style }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.75"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    style={style}
-    aria-hidden="true"
-  >
-    <circle cx="12" cy="12" r="9" />
-    <polygon points="15.5 8.5 13.5 13.5 8.5 15.5 10.5 10.5 15.5 8.5" />
-  </svg>
-);
-
-const LockIcon = ({ size = 13, style }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.85"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    style={style}
-    aria-hidden="true"
-  >
-    <rect x="4" y="11" width="16" height="10" rx="2.5" />
-    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-  </svg>
-);
-
-const UnlockIcon = ({ size = 13, style }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.85"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    style={style}
-    aria-hidden="true"
-  >
-    <rect x="4" y="11" width="16" height="10" rx="2.5" />
-    <path d="M8 11V7a4 4 0 0 1 7.6-1.7" />
-  </svg>
-);
-
-const CheckCircleIcon = ({ size = 14, style, className = '' }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2.2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    style={style}
-    className={className}
-    aria-hidden="true"
-  >
-    <circle cx="12" cy="12" r="9" />
-    <path d="m8.5 12.2 2.4 2.4 4.8-4.8" />
-  </svg>
-);
-
-const XIcon = ({ size = 16 }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.85"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M18 6 6 18" />
-    <path d="m6 6 12 12" />
-  </svg>
-);
+import { LessonCompleteStage, LessonQuizStage } from './LessonQuizStage';
+import sanctuaryDayBackdropImg from '../../assets/images/sacred_tree_sanctuary_daylight_1794915112786.jpg';
+import sanctuaryNightBackdropImg from '../../assets/images/sacred_tree_sanctuary_night_1794915113559.jpg';
 
 const ChevronLeftIcon = ({ size = 15, style }) => (
   <svg
@@ -162,44 +60,57 @@ const ChevronRightIcon = ({ size = 15, style }) => (
   </svg>
 );
 
-const SparklesIcon = ({ size = 14, style }) => (
+const CheckCircleIcon = ({ size = 16, style, className = '' }) => (
   <svg
     width={size}
     height={size}
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    strokeWidth="1.8"
+    strokeWidth="2.1"
     strokeLinecap="round"
     strokeLinejoin="round"
     style={style}
+    className={className}
     aria-hidden="true"
   >
-    <path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
+    <circle cx="12" cy="12" r="9" />
+    <path d="m8.5 12.2 2.4 2.4 4.8-4.8" />
   </svg>
 );
 
+const CircleOutlineIcon = ({ size = 16, className = '' }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    className={className}
+    aria-hidden="true"
+  >
+    <circle cx="12" cy="12" r="9" />
+  </svg>
+);
+
+/**
+ * Zero-Scroll Duolingo-Style Sanctuary Study Window for Lesson I:
+ * Foundations of Islam & Faith (Arkan al-Islam & Arkan al-Iman).
+ *
+ * - Fits cleanly inside the viewport (zero scrolling on desktop & mobile).
+ * - Minimal top chrome: Back button + thin segmented progress bar.
+ * - Top of main content: Prominent display heading + concise context.
+ * - Center: Grouped Pillars formatted in a tactile Prayer-Checklist frosted stack
+ *   with staggered 3D entrance, active lift & golden sheen transitions.
+ * - Below main topic: Smoothly transitioning Context & inline Quick Check tray,
+ *   paired with dedicated Duolingo-style group check steps.
+ */
 export const AncientMapCanvas = ({
   isLightMode = false,
-  reducedMotion = false,
   onProgressChange,
+  onBack,
 }) => {
-  const viewportRef = useRef(null);
-  const dragStateRef = useRef({
-    active: false,
-    pointerId: null,
-    startX: 0,
-    startY: 0,
-    originCamX: 0,
-    originCamY: 0,
-    moved: false,
-  });
-
-  const [viewportSize, setViewportSize] = useState(() => ({
-    width: typeof window !== 'undefined' ? window.innerWidth : 1440,
-    height: typeof window !== 'undefined' ? window.innerHeight : 900,
-  }));
-
   const [discoveredIds, setDiscoveredIds] = useState(() => {
     try {
       const raw = localStorage.getItem(LESSON_ONE_STORAGE_KEY);
@@ -209,56 +120,26 @@ export const AncientMapCanvas = ({
     }
   });
 
-  const [selectedId, setSelectedId] = useState(null);
-  const [selectedLockedId, setSelectedLockedId] = useState(null);
-  const [selectedGroupOverviewId, setSelectedGroupOverviewId] = useState(null);
-  const [activeZone, setActiveZone] = useState(() =>
-    typeof window !== 'undefined' && window.innerWidth < 768 ? 'islam' : 'all'
+  // 0: 5 Pillars of Islam | 1: Islam Check | 2: 6 Pillars of Faith | 3: Faith Check | 4: Complete
+  const [stepIndex, setStepIndex] = useState(0);
+  const [stepDirection, setStepDirection] = useState(1);
+
+  // Active focused Pillar within each grouped deck
+  const [activeIslamId, setActiveIslamId] = useState(() => LESSON_ONE_LANDMARKS[0].id);
+  const [activeImanId, setActiveImanId] = useState(
+    () => LESSON_ONE_LANDMARKS.find((item) => item.region === 'iman')?.id || LESSON_ONE_LANDMARKS[5].id
   );
-  const [isDragging, setIsDragging] = useState(false);
 
-  const [camera, setCamera] = useState(() => {
-    const initialVp = {
-      width: typeof window !== 'undefined' ? window.innerWidth : 1440,
-      height: typeof window !== 'undefined' ? window.innerHeight : 900,
-    };
-    const isMobile = initialVp.width < 640;
-    const initialZoom = isMobile
-      ? clamp((initialVp.width - 24) / 640, 0.48, 0.62)
-      : getInitialMapZoom(initialVp);
-    const initialFocus =
-      initialVp.width < 768 ? { x: 376, y: 538, ratio: 0.48 } : { x: 750, y: 515, ratio: 0.5 };
-    return centerCameraOnPoint(
-      { x: initialFocus.x, y: initialFocus.y },
-      initialVp,
-      initialZoom,
-      MAP_WORLD_SIZE,
-      initialFocus.ratio
-    );
-  });
+  // Context panel below the main topic can reveal a 1-tap inline quick check per pillar
+  const [contextMode, setContextMode] = useState('context'); // 'context' | 'check'
+  const [pillarChecks, setPillarChecks] = useState({});
+  const [groupQuizAnswers, setGroupQuizAnswers] = useState({});
 
-  // Keep viewport measurements in sync on resize
-  useEffect(() => {
-    const updateSize = () => {
-      const el = viewportRef.current;
-      const nextVp = {
-        width: el?.clientWidth || window.innerWidth || 1440,
-        height: el?.clientHeight || window.innerHeight || 900,
-      };
-      setViewportSize(nextVp);
-      setCamera((prev) => clampMapCamera(prev, nextVp, MAP_WORLD_SIZE));
-    };
-    updateSize();
-    window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
-  }, []);
-
-  // Persist discovered landmarks
   useEffect(() => {
     try {
       localStorage.setItem(LESSON_ONE_STORAGE_KEY, JSON.stringify(discoveredIds));
     } catch {
-      // Ignore storage quota errors
+      // Ignore storage errors
     }
   }, [discoveredIds]);
 
@@ -276,1135 +157,668 @@ export const AncientMapCanvas = ({
     onProgressChange?.(progress);
   }, [progress, onProgressChange]);
 
-  const selectedLandmark = useMemo(
-    () => LESSON_ONE_LANDMARKS.find((item) => item.id === selectedId) || null,
-    [selectedId]
+  const stepMeta = useMemo(() => getStepProgress(stepIndex, LESSON_ONE_STEPS), [stepIndex]);
+  const currentStep = stepMeta.step;
+
+  const markPillarDiscovered = useCallback((pillarId) => {
+    setDiscoveredIds((prev) => {
+      const { nextIds, added } = markLandmarkDiscovered(prev, pillarId, LESSON_ONE_VALID_IDS);
+      return added ? nextIds : prev;
+    });
+  }, []);
+
+  const markGroupDiscovered = useCallback((groupKey) => {
+    const groupItems = LESSON_ONE_LANDMARKS.filter((item) => item.region === groupKey);
+    setDiscoveredIds((prev) => {
+      let next = prev;
+      for (const item of groupItems) {
+        const res = markLandmarkDiscovered(next, item.id, LESSON_ONE_VALID_IDS);
+        next = res.nextIds;
+      }
+      return next;
+    });
+  }, []);
+
+  // Automatically record the initially focused pillar in each study group
+  useEffect(() => {
+    if (currentStep.id === 'islam-study') {
+      markPillarDiscovered(activeIslamId);
+    } else if (currentStep.id === 'iman-study') {
+      markPillarDiscovered(activeImanId);
+    }
+  }, [currentStep.id, activeIslamId, activeImanId, markPillarDiscovered]);
+
+  const goToStep = useCallback(
+    (targetIdx) => {
+      const clamped = Math.max(0, Math.min(LESSON_ONE_STEPS.length - 1, targetIdx));
+      if (clamped === stepIndex) return;
+      hapticTapLight();
+      setStepDirection(clamped > stepIndex ? 1 : -1);
+      setContextMode('context');
+      setStepIndex(clamped);
+    },
+    [stepIndex]
   );
 
-  const selectedLockedLesson = useMemo(
-    () => LOCKED_FUTURE_LESSONS.find((item) => item.id === selectedLockedId) || null,
-    [selectedLockedId]
+  const handleStepForward = useCallback(() => {
+    if (currentStep.id === 'islam-study') {
+      markGroupDiscovered('islam');
+    } else if (currentStep.id === 'iman-study') {
+      markGroupDiscovered('iman');
+    }
+    const nextIdx = getAdjacentStepIndex(stepIndex, 1, LESSON_ONE_STEPS.length);
+    if (nextIdx === LESSON_ONE_STEPS.length - 1) {
+      hapticCelebrate();
+    } else {
+      hapticDetent();
+    }
+    setStepDirection(1);
+    setContextMode('context');
+    setStepIndex(nextIdx);
+  }, [currentStep.id, markGroupDiscovered, stepIndex]);
+
+  const handleStepBackward = useCallback(() => {
+    const prevIdx = getAdjacentStepIndex(stepIndex, -1, LESSON_ONE_STEPS.length);
+    if (prevIdx === stepIndex) return;
+    hapticTapLight();
+    setStepDirection(-1);
+    setContextMode('context');
+    setStepIndex(prevIdx);
+  }, [stepIndex]);
+
+  const handleSelectPillar = useCallback(
+    (item) => {
+      if (!item) return;
+      hapticDetent();
+      if (item.region === 'islam') {
+        setActiveIslamId(item.id);
+      } else {
+        setActiveImanId(item.id);
+      }
+      setContextMode('context');
+      markPillarDiscovered(item.id);
+    },
+    [markPillarDiscovered]
   );
 
-  const selectedGroupMeta = useMemo(
-    () => PILLAR_GROUPS.find((g) => g.id === selectedGroupOverviewId) || null,
-    [selectedGroupOverviewId]
-  );
-
-  const nextRecommended = useMemo(
-    () => getNextUndiscoveredLandmark(LESSON_ONE_LANDMARKS, discoveredIds),
-    [discoveredIds]
-  );
-
-  const selectLandmark = useCallback(
-    (landmark) => {
+  const handleAnswerInlineCheck = useCallback(
+    (landmark, optIdx) => {
       if (!landmark) return;
-      const { nextIds, added } = markLandmarkDiscovered(
-        discoveredIds,
-        landmark.id,
-        LESSON_ONE_VALID_IDS
-      );
-      if (added) {
-        setDiscoveredIds(nextIds);
-        if (nextIds.length >= LESSON_ONE_LANDMARKS.length) {
-          hapticCelebrate();
-        } else {
-          hapticDetent();
-        }
+      setPillarChecks((prev) => ({ ...prev, [landmark.id]: optIdx }));
+      const res = evaluatePillarCheckAnswer(landmark, optIdx);
+      if (res.isCorrect) {
+        hapticDetent();
+        markPillarDiscovered(landmark.id);
       } else {
         hapticTapLight();
       }
-      setSelectedLockedId(null);
-      setSelectedGroupOverviewId(null);
-      setSelectedId(landmark.id);
-      setActiveZone(landmark.region);
-      const pt = resolveLandmarkPoint(landmark, isLightMode);
-      // On Desktop, keep the full map overview framed so the Top HUD bar and Bottom Drawer
-      // never collide with any Territory or expose empty canvas margins.
-      if (viewportSize.width >= 768) {
-        setCamera((prev) =>
-          centerCameraOnPoint(
-            { x: 750, y: 555 },
-            viewportSize,
-            clamp(prev.zoom, 0.84, 0.96),
-            MAP_WORLD_SIZE,
-            0.5
-          )
-        );
-      } else {
-        setCamera((prev) =>
-          centerCameraOnPoint(
-            pt,
-            viewportSize,
-            clamp(prev.zoom, 0.54, 0.82),
-            MAP_WORLD_SIZE,
-            0.40
-          )
-        );
-      }
     },
-    [discoveredIds, isLightMode, viewportSize]
+    [markPillarDiscovered]
   );
 
-  const selectLockedGate = useCallback(
-    (lockedItem) => {
-      if (!lockedItem) return;
-      hapticTapLight();
-      setSelectedId(null);
-      setSelectedGroupOverviewId(null);
-      setSelectedLockedId(lockedItem.id);
-      setActiveZone('horizon');
-      const pt = resolveLandmarkPoint(lockedItem, isLightMode);
-      setCamera((prev) =>
-        centerCameraOnPoint(
-          { x: pt.x, y: viewportSize.width >= 768 ? 515 : pt.y },
-          viewportSize,
-          clamp(prev.zoom, 0.78, 0.96),
-          MAP_WORLD_SIZE,
-          viewportSize.width >= 768 ? 0.5 : 0.34
-        )
-      );
-    },
-    [isLightMode, viewportSize]
+  // Active group metadata & selected pillar for Study Steps
+  const isIslamStudy = currentStep.id === 'islam-study';
+  const isImanStudy = currentStep.id === 'iman-study';
+  const isStudyStep = isIslamStudy || isImanStudy;
+
+  const activeGroupInfo = useMemo(() => {
+    const key = currentStep.group === 'iman' ? 'iman' : 'islam';
+    return PILLAR_GROUPS.find((g) => g.id === key) || PILLAR_GROUPS[0];
+  }, [currentStep.group]);
+
+  const activeGroupItems = isImanStudy ? grouped.iman.items : grouped.islam.items;
+  const focusedPillarId = isImanStudy ? activeImanId : activeIslamId;
+  const focusedPillar = useMemo(
+    () =>
+      activeGroupItems.find((item) => item.id === focusedPillarId) || activeGroupItems[0],
+    [activeGroupItems, focusedPillarId]
   );
 
-  const handleSelectSanctuaryBuilding = useCallback(
-    (groupId) => {
-      hapticTapLight();
-      setSelectedId(null);
-      setSelectedLockedId(null);
-      setSelectedGroupOverviewId(groupId);
-      setActiveZone(groupId);
-      const target = getRegionFocusPoint(groupId);
-      const baseZoom = getInitialMapZoom(viewportSize);
-      const zoom =
-        viewportSize.width < 640
-          ? clamp((viewportSize.width - 24) / 640, 0.48, 0.62)
-          : clamp(baseZoom, 0.84, 0.96);
-      setCamera(
-        centerCameraOnPoint(
-          {
-            x: viewportSize.width >= 768 ? 750 : target.x,
-            y: viewportSize.width >= 768 ? 555 : target.y,
-          },
-          viewportSize,
-          zoom,
-          MAP_WORLD_SIZE,
-          viewportSize.width >= 768 ? 0.5 : 0.44
-        )
-      );
-    },
-    [viewportSize]
+  const inlineCheckEval = useMemo(
+    () => evaluatePillarCheckAnswer(focusedPillar, pillarChecks[focusedPillar?.id]),
+    [focusedPillar, pillarChecks]
   );
 
-  const handleJumpZone = useCallback(
-    (zoneKey) => {
-      hapticTapLight();
-      setActiveZone(zoneKey);
-      const target = getRegionFocusPoint(zoneKey);
-      const baseZoom = getInitialMapZoom(viewportSize);
-      const zoom =
-        zoneKey === 'all'
-          ? viewportSize.width < 640
-            ? 0.48
-            : baseZoom
-          : viewportSize.width < 640
-          ? clamp((viewportSize.width - 24) / 640, 0.48, 0.62)
-          : clamp(baseZoom, 0.84, 0.96);
-
-      if (zoneKey === 'horizon') {
-        setSelectedId(null);
-        setSelectedGroupOverviewId(null);
-        setSelectedLockedId(LOCKED_FUTURE_LESSONS[0].id);
-      } else {
-        setSelectedId(null);
-        setSelectedLockedId(null);
-        setSelectedGroupOverviewId(null);
-      }
-
-      setCamera(
-        centerCameraOnPoint(
-          {
-            x: viewportSize.width >= 768 && zoneKey !== 'horizon' ? target.x : target.x,
-            y: viewportSize.width >= 768 ? 515 : target.y,
-          },
-          viewportSize,
-          zoom,
-          MAP_WORLD_SIZE,
-          viewportSize.width < 768 ? 0.48 : 0.5
-        )
-      );
-    },
-    [viewportSize]
-  );
-
-  const handleStepLandmark = useCallback(
-    (direction) => {
-      const nextId = getAdjacentLandmarkId(LESSON_ONE_LANDMARKS, selectedId, direction);
-      const target = LESSON_ONE_LANDMARKS.find((item) => item.id === nextId);
-      if (target) {
-        selectLandmark(target);
-      }
-    },
-    [selectedId, selectLandmark]
-  );
-
-  const handleRecenter = useCallback(() => {
-    hapticTapLight();
-    setSelectedId(null);
-    setSelectedLockedId(null);
-    setSelectedGroupOverviewId(null);
-    const defaultZone = viewportSize.width < 768 ? (nextRecommended?.region || 'islam') : 'all';
-    handleJumpZone(defaultZone);
-  }, [viewportSize.width, nextRecommended, handleJumpZone]);
-
-  const handleZoomStep = useCallback(
-    (delta) => {
-      hapticTapLight();
-      setCamera((prev) =>
-        zoomCameraAtCenter(prev, prev.zoom + delta, viewportSize, MAP_WORLD_SIZE)
-      );
-    },
-    [viewportSize]
-  );
-
-  const handleWheel = useCallback(
-    (event) => {
-      event.preventDefault();
-      const delta = event.deltaY < 0 ? 0.1 : -0.1;
-      setCamera((prev) =>
-        zoomCameraAtCenter(prev, prev.zoom + delta, viewportSize, MAP_WORLD_SIZE)
-      );
-    },
-    [viewportSize]
-  );
-
-  const handlePointerDown = (event) => {
-    if (event.button !== undefined && event.button !== 0) return;
-    if (event.target.closest('button')) return;
-
-    dragStateRef.current = {
-      active: true,
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      originCamX: camera.x,
-      originCamY: camera.y,
-      moved: false,
+  // Keyboard navigation (Up/Down moves cleanly through the grouped pillars)
+  useEffect(() => {
+    if (!isStudyStep) return undefined;
+    const onKeyDown = (e) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      e.preventDefault();
+      const idx = activeGroupItems.findIndex((i) => i.id === focusedPillar?.id);
+      if (idx === -1) return;
+      const nextIdx =
+        e.key === 'ArrowDown'
+          ? (idx + 1) % activeGroupItems.length
+          : (idx - 1 + activeGroupItems.length) % activeGroupItems.length;
+      handleSelectPillar(activeGroupItems[nextIdx]);
     };
-    setIsDragging(false);
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isStudyStep, activeGroupItems, focusedPillar, handleSelectPillar]);
 
-  const handlePointerMove = (event) => {
-    const state = dragStateRef.current;
-    if (!state.active || state.pointerId !== event.pointerId) return;
+  // Cozy Ruh theme tokens
+  const accentHex = isLightMode ? '#8a6220' : '#d4af6a';
+  const textMain = isLightMode ? 'text-[#1c160f]' : 'text-[rgba(246,239,226,0.95)]';
+  const textSub = isLightMode ? 'text-[#4e3f2b]' : 'text-[rgba(232,222,204,0.78)]';
+  const textMuted = isLightMode ? 'text-[#665136]' : 'text-[rgba(218,205,184,0.68)]';
 
-    const currentPoint = { x: event.clientX, y: event.clientY };
-    const startPoint = { x: state.startX, y: state.startY };
+  const bgIllustration = isLightMode
+    ? sanctuaryDayBackdropImg
+    : sanctuaryNightBackdropImg;
 
-    if (!state.moved && isPointerDragExceeded(startPoint, currentPoint)) {
-      state.moved = true;
-      setIsDragging(true);
-    }
+  const stageAnimClass =
+    stepDirection >= 0 ? 'animate-lesson-stage-next' : 'animate-lesson-stage-prev';
 
-    if (state.moved) {
-      const dx = event.clientX - state.startX;
-      const dy = event.clientY - state.startY;
-      setCamera((prev) =>
-        clampMapCamera(
-          {
-            x: state.originCamX + dx,
-            y: state.originCamY + dy,
-            zoom: prev.zoom,
-          },
-          viewportSize,
-          MAP_WORLD_SIZE
-        )
-      );
-    }
-  };
-
-  const handlePointerEnd = (event) => {
-    const state = dragStateRef.current;
-    if (!state.active || state.pointerId !== event.pointerId) return;
-
-    const wasDragged = state.moved;
-    dragStateRef.current.active = false;
-    setIsDragging(false);
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
-
-    if (!wasDragged && !event.target.closest('button')) {
-      if (selectedId) setSelectedId(null);
-      if (selectedLockedId) setSelectedLockedId(null);
-      if (selectedGroupOverviewId) setSelectedGroupOverviewId(null);
-    }
-  };
-
-  const handleViewportKeyDown = (event) => {
-    const panStep = 80;
-    if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      setCamera((prev) =>
-        clampMapCamera({ ...prev, y: prev.y + panStep }, viewportSize, MAP_WORLD_SIZE)
-      );
-    } else if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      setCamera((prev) =>
-        clampMapCamera({ ...prev, y: prev.y - panStep }, viewportSize, MAP_WORLD_SIZE)
-      );
-    } else if (event.key === 'ArrowLeft') {
-      event.preventDefault();
-      setCamera((prev) =>
-        clampMapCamera({ ...prev, x: prev.x + panStep }, viewportSize, MAP_WORLD_SIZE)
-      );
-    } else if (event.key === 'ArrowRight') {
-      event.preventDefault();
-      setCamera((prev) =>
-        clampMapCamera({ ...prev, x: prev.x - panStep }, viewportSize, MAP_WORLD_SIZE)
-      );
-    } else if (event.key === '+' || event.key === '=') {
-      event.preventDefault();
-      handleZoomStep(0.16);
-    } else if (event.key === '-' || event.key === '_') {
-      event.preventDefault();
-      handleZoomStep(-0.16);
-    }
-  };
-
-  const controlSurface = isLightMode
-    ? 'bg-[#f8f0df]/94 border-[#7a5420]/28 text-[#2c1f11] shadow-[0_8px_24px_rgba(62,43,20,0.14)] backdrop-blur-md'
-    : 'bg-[#1a1612]/92 border-[#d4af6a]/28 text-[#efe5d4] shadow-[0_12px_30px_rgba(0,0,0,0.55)] backdrop-blur-md';
-
-  const cardSurface = isLightMode
-    ? 'bg-[#faf3e4]/96 border-[#7a5420]/34 text-[#261a0e] shadow-[0_18px_45px_rgba(52,35,14,0.22)] backdrop-blur-xl'
-    : 'bg-[#181410]/96 border-[#d4af6a]/36 text-[#f2e8d5] shadow-[0_22px_55px_rgba(0,0,0,0.78)] backdrop-blur-xl';
-
-  const subText = isLightMode ? 'text-[#5c472c]' : 'text-[#c4b499]';
-  const accentHex = isLightMode ? '#7a5420' : '#d4af6a';
-  const primaryGate = LOCKED_FUTURE_LESSONS[0];
-  const isMobileViewport = viewportSize.width < 768;
-
-  // On narrow mobile screens when zoomed into a single Territory ('islam' or 'iman'),
-  // hide off-axis elements so nothing ever pokes half-cut into the mobile screen edges.
-  const hideIslamOnMobile = isMobileViewport && activeZone === 'iman';
-  const hideImanOnMobile = isMobileViewport && activeZone === 'islam';
-  const hideCenterAndGateOnMobile =
-    isMobileViewport && (activeZone === 'islam' || activeZone === 'iman');
+  const primaryNextLesson = LOCKED_FUTURE_LESSONS[0];
 
   return (
     <div
-      ref={viewportRef}
-      data-testid="ancient-map-viewport"
-      role="application"
-      aria-label="Interactive Ancient Map Canvas of Lesson I: The Five Pillars of Islam and Six Pillars of Faith"
-      tabIndex={0}
-      onKeyDown={handleViewportKeyDown}
-      onWheel={handleWheel}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerEnd}
-      onPointerCancel={handlePointerEnd}
-      style={{
-        touchAction: 'none',
-        backgroundColor: isLightMode ? '#e5d6b8' : '#110e0b',
-      }}
-      className={`relative w-full h-full overflow-hidden select-none outline-none ${
-        isLightMode ? 'text-[#24190d]' : 'text-[#f2e8d5]'
-      } ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+      data-testid="practical-lesson-studio"
+      className={`relative w-full h-full flex flex-col overflow-hidden select-none ${
+        isLightMode ? 'bg-[#f3ebdb]' : 'bg-[#0b0e16]'
+      } ${textMain}`}
     >
-      {/* Top Floating Map Compass Bar (Single unified top row on Desktop, second row on Mobile) */}
+      {/* ====================================================================
+          AMBIENT SANCTUARY BACKDROP (Matches Ruh's Calm Candlelit Atmosphere)
+      ==================================================================== */}
       <div
-        className="absolute left-1/2 -translate-x-1/2 z-30 flex items-center justify-center max-w-[calc(100vw-20px)]"
-        style={{
-          top: viewportSize.width >= 768 ? '12px' : '64px',
-          marginTop: 'var(--sat)',
-        }}
+        aria-hidden="true"
+        className="absolute inset-0 pointer-events-none overflow-hidden"
       >
-        <div className={`flex items-center gap-0.5 p-1 rounded-full border ${controlSurface}`}>
-          {[
-            { id: 'all', label: 'Map Overview' },
-            { id: 'islam', label: '5 Pillars Islam' },
-            { id: 'iman', label: '6 Pillars Faith' },
-            { id: 'horizon', label: 'Lesson II Gate' },
-          ].map((tab) => {
-            const isActive = activeZone === tab.id;
+        <img
+          src={bgIllustration}
+          alt=""
+          referrerPolicy="no-referrer"
+          className={`w-full h-full object-cover scale-105 transition-opacity duration-700 ${
+            isLightMode ? 'opacity-[0.20] blur-[4px]' : 'opacity-[0.17] blur-[5px]'
+          }`}
+        />
+        <div
+          className="absolute inset-0"
+          style={{
+            background: isLightMode
+              ? 'radial-gradient(ellipse 75% 65% at 50% 35%, rgba(252,248,239,0.58) 0%, rgba(243,235,219,0.94) 80%)'
+              : 'radial-gradient(ellipse 76% 64% at 50% 32%, rgba(212,175,106,0.11) 0%, rgba(11,14,22,0.92) 78%)',
+          }}
+        />
+      </div>
+
+      {/* ====================================================================
+          1. MINIMAL DUOLINGO-STYLE TOP BAR (Back Button + Segmented Progress)
+      ==================================================================== */}
+      <header
+        className="relative z-20 shrink-0 px-4 sm:px-8 pb-1 flex items-center justify-between gap-4"
+        style={{ paddingTop: 'calc(12px + var(--sat))' }}
+      >
+        {/* Back Button */}
+        <div className="shrink-0">
+          {onBack && (
+            <button
+              type="button"
+              data-testid="learning-path-back"
+              aria-label="Back to Sanctuary"
+              onClick={onBack}
+              className={`min-h-[40px] pl-2.5 pr-3.5 rounded-full border flex items-center gap-1 font-serif-eng text-[12px] tracking-[0.06em] whitespace-nowrap transition cursor-pointer active:scale-95 ${
+                isLightMode
+                  ? 'bg-white/75 hover:bg-white/95 border-[#9c7533]/24 text-[#2b1f11] island-light'
+                  : 'bg-[#12100d]/72 hover:bg-[#1a1612]/90 border-white/[0.12] text-[#efe5d4] island-dark'
+              }`}
+            >
+              <ChevronLeftIcon size={15} style={{ color: accentHex }} />
+              <span>Back</span>
+            </button>
+          )}
+        </div>
+
+        {/* Sleek 4-Segment Lesson Progress Bar */}
+        <div
+          role="navigation"
+          aria-label="Lesson progress steps"
+          className="flex-1 max-w-[340px] flex items-center gap-1.5"
+        >
+          {LESSON_ONE_STEPS.slice(0, 4).map((step, idx) => {
+            const isPast = stepIndex > idx;
+            const isCurrent = stepIndex === idx;
             return (
               <button
-                key={tab.id}
+                key={step.id}
                 type="button"
-                data-testid={`zone-tab-${tab.id}`}
-                onClick={() => handleJumpZone(tab.id)}
-                className={`min-h-[36px] px-2.5 sm:px-3.5 rounded-full font-serif-eng text-[9.5px] sm:text-[11px] uppercase tracking-[0.08em] sm:tracking-[0.12em] whitespace-nowrap transition-all cursor-pointer ${
-                  isActive
-                    ? isLightMode
-                      ? 'bg-[#463219] text-[#f9f2e3] shadow-sm font-semibold'
-                      : 'bg-[#d4af6a] text-[#18130d] shadow-sm font-semibold'
-                    : isLightMode
-                    ? 'text-[#4a361d] hover:text-[#24190d]'
-                    : 'text-[#d8c8af] hover:text-[#f7efe0]'
-                }`}
+                aria-label={`Go to ${step.label}`}
+                aria-current={isCurrent ? 'step' : undefined}
+                data-testid={`lesson-step-bar-${step.id}`}
+                onClick={() => goToStep(idx)}
+                className="group flex-1 py-2.5 cursor-pointer focus:outline-none"
               >
-                {tab.label}
+                <span
+                  className={`block h-[4px] w-full rounded-full overflow-hidden transition-colors duration-300 ${
+                    isLightMode ? 'bg-[#7c5a1e]/18' : 'bg-white/[0.12]'
+                  }`}
+                >
+                  <span
+                    className="block h-full rounded-full transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] origin-left"
+                    style={{
+                      backgroundColor: accentHex,
+                      transform: isPast || isCurrent ? 'scaleX(1)' : 'scaleX(0)',
+                      opacity: isCurrent ? 1 : isPast ? 0.72 : 0,
+                    }}
+                  />
+                </span>
               </button>
             );
           })}
         </div>
-      </div>
 
-      {/* SPATIAL PAN & ZOOM ANCIENT MAP CANVAS (1500 x 1120) */}
-      <div
-        data-testid="ancient-map-world"
-        style={{
-          width: `${MAP_WORLD_SIZE.width}px`,
-          height: `${MAP_WORLD_SIZE.height}px`,
-          transformOrigin: '0 0',
-          transform: `translate3d(${camera.x}px, ${camera.y}px, 0) scale(${camera.zoom})`,
-          transition:
-            isDragging || reducedMotion
-              ? 'none'
-              : 'transform 420ms cubic-bezier(0.22, 1, 0.36, 1)',
-          willChange: 'transform',
-        }}
-        className="relative overflow-hidden rounded-[26px] shadow-2xl"
+        {/* Quiet Unboxed Step Counter */}
+        <span
+          data-testid="lesson-step-counter"
+          className={`shrink-0 font-serif-eng text-[12px] tabular-nums whitespace-nowrap ${textSub}`}
+        >
+          {stepMeta.isCompleteStep
+            ? 'Done'
+            : `${stepMeta.displayNumber} / ${stepMeta.totalLearningSteps}`}
+        </span>
+      </header>
+
+      {/* ====================================================================
+          2. ZERO-SCROLL CENTERED STUDY STAGE
+      ==================================================================== */}
+      <main
+        data-testid="active-pillar-stage"
+        className="relative z-10 flex-1 min-h-0 flex flex-col items-center justify-center px-4 sm:px-8 py-1 overflow-hidden"
       >
-        {/* 1. Clean Hand-Painted Antique Parchment Map Backdrop & Radial Sanctuary Trails */}
-        <AncientCartographyBackdrop
-          isLightMode={isLightMode}
-          islamComplete={grouped.islam.isComplete}
-          imanComplete={grouped.iman.isComplete}
-          hideIslam={hideIslamOnMobile}
-          hideIman={hideImanOnMobile}
-          hideCenterAndGate={hideCenterAndGateOnMobile}
-        />
-
-        {/* 2. WESTERN TERRITORY SCROLL BANNER: THE FIVE PILLARS OF ISLAM */}
-        <button
-          type="button"
-          data-testid="group-section-islam"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleSelectSanctuaryBuilding('islam');
-          }}
-          style={{
-            left: '376px',
-            top: '296px',
-            transform: 'translate(-50%, -50%)',
-          }}
-          className={`absolute z-10 w-[560px] overflow-hidden rounded-2xl border px-5 py-2 flex items-center justify-between gap-4 text-left transition cursor-pointer ${
-            hideIslamOnMobile ? 'opacity-0 pointer-events-none' : ''
-          } ${
-            selectedGroupOverviewId === 'islam'
-              ? isLightMode
-                ? 'bg-[#efe1c4] border-[#5c3d16] shadow-lg'
-                : 'bg-[#2a2118] border-[#ebd09a] shadow-lg'
-              : isLightMode
-              ? 'bg-[#fbf4e4]/96 border-[#7a5420]/38 hover:border-[#7a5420]/70 text-[#261a0e] shadow-md'
-              : 'bg-[#1c1712]/96 border-[#d4af6a]/38 hover:border-[#d4af6a]/70 text-[#f2e8d5] shadow-lg'
-          }`}
-        >
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 font-serif-eng text-[9.5px] uppercase tracking-[0.14em] font-semibold whitespace-nowrap">
-              <span style={{ color: accentHex }}>{PILLAR_GROUPS[0].numberLabel}</span>
-              <span aria-hidden="true" className="opacity-40">
-                ·
-              </span>
-              <span className={subText}>{PILLAR_GROUPS[0].subtitle}</span>
-            </div>
-            <h2 className="font-serif-eng text-[20px] font-semibold leading-tight mt-0.5">
-              {PILLAR_GROUPS[0].title}
-            </h2>
-          </div>
-
-          <div className="text-right shrink-0">
-            <span
-              dir="rtl"
-              className="font-calligraphy text-[19px] leading-none block"
-              style={{ color: accentHex }}
-            >
-              {PILLAR_GROUPS[0].arabic}
-            </span>
-            <span className={`font-serif-eng text-[10.5px] tabular-nums block mt-0.5 ${subText}`}>
-              {grouped.islam.discoveredCount} / {grouped.islam.totalCount} Explored
-            </span>
-          </div>
-        </button>
-
-        {/* 3. EASTERN TERRITORY SCROLL BANNER: THE SIX PILLARS OF FAITH (IMAN) */}
-        <button
-          type="button"
-          data-testid="group-section-iman"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleSelectSanctuaryBuilding('iman');
-          }}
-          style={{
-            left: '1124px',
-            top: '296px',
-            transform: 'translate(-50%, -50%)',
-          }}
-          className={`absolute z-10 w-[560px] overflow-hidden rounded-2xl border px-5 py-2 flex items-center justify-between gap-4 text-left transition cursor-pointer ${
-            hideImanOnMobile ? 'opacity-0 pointer-events-none' : ''
-          } ${
-            selectedGroupOverviewId === 'iman'
-              ? isLightMode
-                ? 'bg-[#efe1c4] border-[#5c3d16] shadow-lg'
-                : 'bg-[#2a2118] border-[#ebd09a] shadow-lg'
-              : isLightMode
-              ? 'bg-[#fbf4e4]/96 border-[#7a5420]/38 hover:border-[#7a5420]/70 text-[#261a0e] shadow-md'
-              : 'bg-[#1c1712]/96 border-[#d4af6a]/38 hover:border-[#d4af6a]/70 text-[#f2e8d5] shadow-lg'
-          }`}
-        >
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 font-serif-eng text-[9.5px] uppercase tracking-[0.14em] font-semibold whitespace-nowrap">
-              <span style={{ color: accentHex }}>{PILLAR_GROUPS[1].numberLabel}</span>
-              <span aria-hidden="true" className="opacity-40">
-                ·
-              </span>
-              <span className={subText}>{PILLAR_GROUPS[1].subtitle}</span>
-            </div>
-            <h2 className="font-serif-eng text-[20px] font-semibold leading-tight mt-0.5">
-              {PILLAR_GROUPS[1].title}
-            </h2>
-          </div>
-
-          <div className="text-right shrink-0">
-            <span
-              dir="rtl"
-              className="font-calligraphy text-[19px] leading-none block"
-              style={{ color: accentHex }}
-            >
-              {PILLAR_GROUPS[1].arabic}
-            </span>
-            <span className={`font-serif-eng text-[10.5px] tabular-nums block mt-0.5 ${subText}`}>
-              {grouped.iman.discoveredCount} / {grouped.iman.totalCount} Explored
-            </span>
-          </div>
-        </button>
-
-        {/* 4. HAND-PAINTED ANCIENT ARCHITECTURAL LANDMARKS ON THE PARCHMENT */}
-        {/* 4a. Central Courtyard Mosque (Heart of the 5 Pillars of Islam at 376, 576) */}
-        <div
-          style={{
-            left: `${PILLAR_GROUPS[0].buildingX}px`,
-            top: `${PILLAR_GROUPS[0].buildingY}px`,
-            transform: 'translate(-50%, -50%)',
-          }}
-          className={`absolute z-10 transition-opacity ${
-            hideIslamOnMobile ? 'opacity-0 pointer-events-none' : ''
-          }`}
-        >
-          <SanctuaryBuildingMedallion
-            testId="building-mosque-islam"
-            title={PILLAR_GROUPS[0].buildingName}
-            subtitle={PILLAR_GROUPS[0].buildingSubtitle}
-            focus={PILLAR_GROUPS[0].buildingFocus}
-            scale={PILLAR_GROUPS[0].buildingScale}
-            isComplete={grouped.islam.isComplete}
-            isLightMode={isLightMode}
-            onClick={() => handleSelectSanctuaryBuilding('islam')}
-          />
-        </div>
-
-        {/* 4b. Central Domed House of Wisdom Observatory (Heart of the 6 Pillars of Faith at 1124, 576) */}
-        <div
-          style={{
-            left: `${PILLAR_GROUPS[1].buildingX}px`,
-            top: `${PILLAR_GROUPS[1].buildingY}px`,
-            transform: 'translate(-50%, -50%)',
-          }}
-          className={`absolute z-10 transition-opacity ${
-            hideImanOnMobile ? 'opacity-0 pointer-events-none' : ''
-          }`}
-        >
-          <SanctuaryBuildingMedallion
-            testId="building-observatory-iman"
-            title={PILLAR_GROUPS[1].buildingName}
-            subtitle={PILLAR_GROUPS[1].buildingSubtitle}
-            focus={PILLAR_GROUPS[1].buildingFocus}
-            scale={PILLAR_GROUPS[1].buildingScale}
-            isComplete={grouped.iman.isComplete}
-            isLightMode={isLightMode}
-            onClick={() => handleSelectSanctuaryBuilding('iman')}
-          />
-        </div>
-
-        {/* 4c. Central Three-Arch Stone River Bridge (Inside the 108px River Valley at 750, 576) */}
-        <div
-          style={{
-            left: `${MAP_BRIDGE_LANDMARK.x}px`,
-            top: `${MAP_BRIDGE_LANDMARK.y}px`,
-            transform: 'translate(-50%, -50%)',
-          }}
-          className={`absolute z-10 transition-opacity ${
-            hideCenterAndGateOnMobile ? 'opacity-0 pointer-events-none' : ''
-          }`}
-        >
-          <SanctuaryBuildingMedallion
-            testId="building-bridge-harmony"
-            title={MAP_BRIDGE_LANDMARK.title}
-            subtitle={MAP_BRIDGE_LANDMARK.subtitle}
-            focus={MAP_BRIDGE_LANDMARK.focus}
-            scale={MAP_BRIDGE_LANDMARK.scale}
-            isComplete={progress.isComplete}
-            isLightMode={isLightMode}
-            size="bridge"
-            onClick={() => handleJumpZone('all')}
-          />
-        </div>
-
-        {/* 5. NORTHERN PASS CITADEL GATE ON THE MAP: LESSON II (THE GATES OF TAHARAH) */}
-        <button
-          type="button"
-          data-testid={`locked-${primaryGate.id}`}
-          aria-label={`${primaryGate.lessonNumber}: ${primaryGate.title} (${
-            progress.isComplete ? 'Unsealed' : 'Locked'
-          })`}
-          onClick={(e) => {
-            e.stopPropagation();
-            selectLockedGate(primaryGate);
-          }}
-          style={{
-            left: `${primaryGate.x}px`,
-            top: `${primaryGate.y}px`,
-            transform: 'translate(-50%, -50%)',
-            zIndex: selectedLockedId === primaryGate.id ? 18 : 11,
-          }}
-          className={`group absolute w-[420px] rounded-2xl border p-2.5 text-left transition-all cursor-pointer flex items-center gap-3 ${
-            hideCenterAndGateOnMobile ? 'opacity-0 pointer-events-none' : ''
-          } ${
-            selectedLockedId === primaryGate.id
-              ? isLightMode
-                ? 'bg-[#efe1c4] border-[#5c3d16] shadow-xl scale-[1.03]'
-                : 'bg-[#2a2219] border-[#ebd09a] shadow-xl scale-[1.03]'
-              : isLightMode
-              ? 'bg-[#fbf4e4]/96 border-[#7a5420]/40 hover:border-[#7a5420]/70 shadow-md'
-              : 'bg-[#1c1712]/96 border-[#d4af6a]/42 hover:border-[#d4af6a]/70 shadow-lg'
-          }`}
-        >
-          <ArtifactVignetteThumbnail
-            id={primaryGate.id}
-            sheet={primaryGate.artifactSheet}
-            focus={primaryGate.artifactFocus}
-            scale={primaryGate.artifactScale}
-            alt={primaryGate.artifactName}
-            isDiscovered={progress.isComplete}
-            isSelected={selectedLockedId === primaryGate.id}
-            isLightMode={isLightMode}
-            sizeClass="w-13 h-13"
-          />
-
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center justify-between gap-2">
-              <span
-                className="flex items-center gap-1.5 font-serif-eng text-[9px] uppercase tracking-[0.14em] font-semibold"
-                style={{ color: accentHex }}
-              >
-                {progress.isComplete ? <UnlockIcon size={11} /> : <LockIcon size={11} />}
-                <span>
-                  {primaryGate.lessonNumber} ·{' '}
-                  {progress.isComplete ? 'Archway Unsealed' : 'Northern Pass Citadel'}
-                </span>
-              </span>
-
+        {/* === STUDY STEPS: GROUPED 5 PILLARS OF ISLAM OR 6 PILLARS OF FAITH === */}
+        {isStudyStep && focusedPillar && (
+          <div
+            key={currentStep.id}
+            className={`w-full ${
+              isImanStudy ? 'max-w-[748px]' : 'max-w-[680px]'
+            } mx-auto flex flex-col gap-2.5 sm:gap-4 ${stageAnimClass}`}
+          >
+            {/* A. TOP OF MAIN CONTENT: ONLY A PROMINENT HEADING + SMALL CONTEXT */}
+            <div className="text-center px-1">
               <span
                 dir="rtl"
-                className="font-calligraphy text-[15.5px] leading-none shrink-0"
+                className="font-calligraphy text-[20px] sm:text-[26px] leading-snug block"
                 style={{ color: accentHex }}
               >
-                {primaryGate.arabic}
+                {activeGroupInfo.arabic}
               </span>
-            </div>
-
-            <div className="font-serif-eng text-[15px] font-semibold leading-tight mt-0.5 whitespace-nowrap">
-              {primaryGate.title} — {primaryGate.subtitle}
-            </div>
-
-            {/* 11 Keystone Progress Dots on the Gate */}
-            <div className="mt-1 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1" aria-hidden="true">
-                {LESSON_ONE_LANDMARKS.map((item) => {
-                  const lit = discoveredIds.includes(item.id);
-                  return (
-                    <span
-                      key={item.id}
-                      className={`w-2.5 h-2.5 rounded-sm border transition-colors ${
-                        lit
-                          ? isLightMode
-                            ? 'bg-[#5c3d16] border-[#5c3d16]'
-                            : 'bg-[#d4af6a] border-[#f0d8a8]'
-                          : isLightMode
-                          ? 'bg-black/5 border-[#7a5420]/30'
-                          : 'bg-white/5 border-[#d4af6a]/30'
-                      }`}
-                    />
-                  );
-                })}
-              </div>
-              <span className={`font-serif-eng text-[9.5px] tabular-nums ${subText}`}>
-                {progress.discoveredCount} / 11 Keystones
-              </span>
-            </div>
-          </div>
-        </button>
-
-        {/* 6. ELEVEN SCULPTED ARTIFACT & PILLAR MAP CARTOUCHES (Grouped cleanly inside Precinct I & II) */}
-        {LESSON_ONE_LANDMARKS.map((landmark) => {
-          const isDiscovered = discoveredIds.includes(landmark.id);
-          const isSelected = selectedId === landmark.id;
-          const isNext = !progress.isComplete && nextRecommended?.id === landmark.id;
-          const pt = resolveLandmarkPoint(landmark, isLightMode);
-          const hiddenByMobileZone =
-            (landmark.region === 'islam' && hideIslamOnMobile) ||
-            (landmark.region === 'iman' && hideImanOnMobile);
-
-          return (
-            <button
-              key={landmark.id}
-              type="button"
-              data-testid={`landmark-${landmark.id}`}
-              data-discovered={isDiscovered ? 'true' : 'false'}
-              aria-label={`${landmark.pillarLabel}: ${landmark.title} (${landmark.englishMeaning})`}
-              aria-pressed={isSelected}
-              onClick={(e) => {
-                e.stopPropagation();
-                selectLandmark(landmark);
-              }}
-              style={{
-                left: `${pt.x}px`,
-                top: `${pt.y}px`,
-                transform: 'translate(-50%, -50%)',
-                zIndex: isSelected ? 20 : isNext ? 14 : 10,
-              }}
-              className={`group absolute w-[210px] rounded-2xl border p-2 text-left transition-all cursor-pointer flex items-center gap-2.5 ${
-                hiddenByMobileZone ? 'opacity-0 pointer-events-none' : ''
-              } ${
-                isSelected
-                  ? isLightMode
-                    ? 'bg-[#efe1c4] border-[#5c3d16] shadow-xl scale-[1.04]'
-                    : 'bg-[#2c231a] border-[#f0d8a8] shadow-xl scale-[1.04]'
-                  : isDiscovered
-                  ? isLightMode
-                    ? 'bg-[#f8f0df]/98 border-[#7a5420]/50 hover:border-[#7a5420]/80 shadow-md'
-                    : 'bg-[#211b15]/98 border-[#d4af6a]/50 hover:border-[#d4af6a]/80 shadow-md'
-                  : isLightMode
-                  ? 'bg-[#fdf8ee]/96 border-[#7a5420]/32 hover:border-[#7a5420]/60 shadow-sm'
-                  : 'bg-[#181410]/96 border-[#d4af6a]/32 hover:border-[#d4af6a]/60 shadow-md'
-              }`}
-            >
-              {/* Unobstructed Hand-Painted Ancient Artifact Miniature */}
-              <ArtifactVignetteThumbnail
-                id={landmark.id}
-                sheet={landmark.artifactSheet}
-                focus={landmark.artifactFocus}
-                scale={landmark.artifactScale}
-                alt={landmark.artifactName}
-                isDiscovered={isDiscovered}
-                isSelected={isSelected}
-                isLightMode={isLightMode}
-                sizeClass="w-11 h-11"
-              />
-
-              {/* Clear Pillar Number, Meaning, Title & Arabic (No Overlapping Badges or Truncation) */}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-1">
-                  <span
-                    className="font-serif-eng text-[8px] font-bold uppercase tracking-[0.03em] whitespace-nowrap"
-                    style={{ color: accentHex }}
-                  >
-                    0{landmark.regionOrder} · {landmark.englishMeaning}
-                  </span>
-
-                  {isDiscovered ? (
-                    <CheckCircleIcon
-                      size={11}
-                      style={{ color: accentHex }}
-                      className="shrink-0"
-                    />
-                  ) : isNext ? (
-                    <span
-                      className="w-1.5 h-1.5 rounded-full shrink-0"
-                      style={{ backgroundColor: accentHex }}
-                    />
-                  ) : null}
-                </div>
-
-                <div className="font-serif-eng text-[12.5px] font-semibold leading-tight whitespace-nowrap mt-0.5">
-                  {landmark.title}
-                </div>
-
-                <div className="flex items-center justify-between gap-1 mt-0.5">
-                  <span className={`font-serif-eng text-[8.5px] italic whitespace-nowrap ${subText}`}>
-                    {landmark.artifactShort || landmark.artifactName}
-                  </span>
-                  <span
-                    dir="rtl"
-                    className="font-calligraphy text-[12px] leading-none shrink-0"
-                    style={{ color: accentHex }}
-                  >
-                    {landmark.arabic}
-                  </span>
-                </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Camera Controls (+, -, Re-center): Right-center on Desktop, compact bottom-right above pill on Mobile */}
-      <div
-        className="absolute right-3 sm:right-4 z-20 flex flex-row sm:flex-col gap-1.5 sm:gap-2"
-        style={{
-          top: viewportSize.width >= 768 ? '50%' : 'auto',
-          bottom: viewportSize.width >= 768 ? 'auto' : 'calc(70px + var(--sab))',
-          transform: viewportSize.width >= 768 ? 'translateY(-50%)' : 'none',
-          paddingRight: 'var(--sar)',
-        }}
-      >
-        <button
-          type="button"
-          data-testid="map-zoom-in"
-          aria-label="Zoom in map"
-          disabled={camera.zoom >= MAP_MAX_ZOOM - 0.01}
-          onClick={() => handleZoomStep(0.18)}
-          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full border flex items-center justify-center font-serif-eng text-[19px] leading-none cursor-pointer transition active:scale-95 disabled:opacity-40 ${controlSurface}`}
-        >
-          +
-        </button>
-        <button
-          type="button"
-          data-testid="map-zoom-out"
-          aria-label="Zoom out map"
-          disabled={camera.zoom <= MAP_MIN_ZOOM + 0.01}
-          onClick={() => handleZoomStep(-0.18)}
-          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full border flex items-center justify-center font-serif-eng text-[19px] leading-none cursor-pointer transition active:scale-95 disabled:opacity-40 ${controlSurface}`}
-        >
-          −
-        </button>
-        <button
-          type="button"
-          data-testid="map-recenter"
-          aria-label="Re-center map overview"
-          onClick={handleRecenter}
-          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full border flex items-center justify-center cursor-pointer transition active:scale-95 ${controlSurface}`}
-        >
-          <CompassIcon size={16} style={{ color: accentHex }} />
-        </button>
-      </div>
-
-      {/* Bottom Floating Manuscript Folio Sheet (Selected Pillar, Sanctuary Overview, or Guided Walk) */}
-      <div
-        className="absolute inset-x-0 bottom-0 z-20 px-3 sm:px-6 pb-2.5 sm:pb-3 pointer-events-none flex justify-center"
-        style={{
-          paddingBottom: 'calc(10px + var(--sab))',
-          transition: reducedMotion ? 'none' : 'transform 220ms ease-out',
-        }}
-      >
-        {selectedLandmark ? (
-          <div
-            data-testid="landmark-nameplate"
-            className={`pointer-events-auto w-full max-w-[680px] rounded-[20px] border px-4 py-2.5 sm:px-5 sm:py-3 ${cardSurface}`}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <ArtifactVignetteThumbnail
-                  id={selectedLandmark.id}
-                  sheet={selectedLandmark.artifactSheet}
-                  focus={selectedLandmark.artifactFocus}
-                  scale={selectedLandmark.artifactScale}
-                  alt={selectedLandmark.artifactName}
-                  isDiscovered={true}
-                  isSelected={true}
-                  isLightMode={isLightMode}
-                  sizeClass="w-12 h-12"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span
-                      className="font-serif-eng text-[9.5px] uppercase tracking-[0.14em] font-semibold"
-                      style={{ color: accentHex }}
-                    >
-                      {selectedLandmark.pillarLabel} · {selectedLandmark.englishMeaning}
-                    </span>
-                    <span className={`font-serif-eng text-[10px] tabular-nums ${subText}`}>
-                      · {progress.discoveredCount} / {progress.totalCount} Explored
-                    </span>
-                  </div>
-
-                  <div className="flex items-baseline gap-2.5 mt-0.5 min-w-0">
-                    <h2 className="font-serif-eng text-[18px] sm:text-[19px] font-semibold leading-tight shrink-0">
-                      {selectedLandmark.title}
-                    </h2>
-                    <span
-                      dir="rtl"
-                      className="font-calligraphy text-[18px] leading-none shrink-0"
-                      style={{ color: accentHex }}
-                    >
-                      {selectedLandmark.arabic}
-                    </span>
-                    <span className={`hidden md:inline font-serif-eng italic text-[11.5px] truncate min-w-0 ${subText}`}>
-                      — {selectedLandmark.recognitionCue}
-                    </span>
-                  </div>
-
-                  <p className={`md:hidden font-serif-eng italic text-[11.5px] leading-snug mt-0.5 truncate ${subText}`}>
-                    {selectedLandmark.recognitionCue}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  data-testid="nameplate-prev"
-                  onClick={() => handleStepLandmark(-1)}
-                  className={`min-h-[34px] px-2.5 rounded-xl border flex items-center gap-1 font-serif-eng text-[10px] uppercase tracking-[0.12em] whitespace-nowrap cursor-pointer transition active:scale-95 ${
-                    isLightMode
-                      ? 'border-black/12 hover:bg-black/[0.04]'
-                      : 'border-white/14 hover:bg-white/[0.06]'
-                  }`}
-                >
-                  <ChevronLeftIcon size={13} style={{ color: accentHex }} />
-                  <span className="hidden sm:inline">Prev</span>
-                </button>
-
-                <button
-                  type="button"
-                  data-testid="nameplate-next"
-                  onClick={() => handleStepLandmark(1)}
-                  className={`min-h-[34px] px-2.5 rounded-xl border flex items-center gap-1 font-serif-eng text-[10px] uppercase tracking-[0.12em] whitespace-nowrap cursor-pointer transition active:scale-95 ${
-                    isLightMode
-                      ? 'border-black/12 hover:bg-black/[0.04]'
-                      : 'border-white/14 hover:bg-white/[0.06]'
-                  }`}
-                >
-                  <span className="hidden sm:inline">Next</span>
-                  <ChevronRightIcon size={13} style={{ color: accentHex }} />
-                </button>
-
-                <button
-                  type="button"
-                  data-testid="nameplate-close"
-                  aria-label="Close pillar detail"
-                  onClick={() => {
-                    hapticDismiss();
-                    setSelectedId(null);
-                  }}
-                  className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer ${
-                    isLightMode ? 'hover:bg-black/5 text-[#5e4b34]' : 'hover:bg-white/10 text-[#c7baa5]'
-                  }`}
-                >
-                  <XIcon size={15} />
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : selectedGroupMeta ? (
-          <div
-            data-testid="sanctuary-group-card"
-            className={`pointer-events-auto w-full max-w-[680px] rounded-[20px] border px-4 py-2.5 sm:px-5 sm:py-3 ${cardSurface}`}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
-                <ArtifactVignetteThumbnail
-                  id={selectedGroupMeta.id}
-                  sheet="buildings"
-                  focus={selectedGroupMeta.buildingFocus}
-                  scale={selectedGroupMeta.buildingScale}
-                  alt={selectedGroupMeta.buildingName}
-                  isDiscovered={grouped[selectedGroupMeta.id]?.isComplete}
-                  isSelected={true}
-                  isLightMode={isLightMode}
-                  sizeClass="w-11 h-11"
-                  roundedClass="rounded-full"
-                />
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="font-serif-eng text-[9.5px] uppercase tracking-[0.14em] font-semibold"
-                      style={{ color: accentHex }}
-                    >
-                      {selectedGroupMeta.buildingName} · {selectedGroupMeta.subtitle}
-                    </span>
-                  </div>
-                  <div className="flex items-baseline gap-2.5">
-                    <h2 className="font-serif-eng text-[17px] sm:text-[18px] font-semibold leading-tight">
-                      {selectedGroupMeta.title}
-                    </h2>
-                    <span
-                      dir="rtl"
-                      className="font-calligraphy text-[17px] leading-none"
-                      style={{ color: accentHex }}
-                    >
-                      {selectedGroupMeta.arabic}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                data-testid="group-overview-close"
-                aria-label="Close sanctuary overview"
-                onClick={() => {
-                  hapticDismiss();
-                  setSelectedGroupOverviewId(null);
-                }}
-                className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer ${
-                  isLightMode ? 'hover:bg-black/5 text-[#5e4b34]' : 'hover:bg-white/10 text-[#c7baa5]'
-                }`}
+              <h1
+                id="learning-path-heading"
+                className="font-serif-eng text-[24px] sm:text-[34px] font-semibold leading-tight mt-0.5 text-balance"
               >
-                <XIcon size={15} />
-              </button>
+                {activeGroupInfo.title}
+              </h1>
+              <p
+                className={`font-serif-eng italic text-[12.5px] sm:text-[14.5px] leading-snug mt-0.5 sm:mt-1 max-w-[540px] mx-auto ${textSub}`}
+              >
+                {activeGroupInfo.summary}
+              </p>
             </div>
 
-            <div className="mt-2 pt-1.5 border-t border-current/10 flex flex-wrap gap-1.5">
-              {(grouped[selectedGroupMeta.id]?.items || []).map((item) => {
-                const done = discoveredIds.includes(item.id);
+            {/* B. CENTER: GROUPED PILLARS IN PRAYER-CHECKLIST FROSTED STACK */}
+            <div
+              role="listbox"
+              aria-label={activeGroupInfo.title}
+              data-testid={`grouped-list-${activeGroupInfo.id}`}
+              className={
+                isImanStudy
+                  ? 'grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2.5 w-full'
+                  : 'flex flex-col gap-1.5 sm:gap-2 w-full'
+              }
+            >
+              {activeGroupItems.map((item, idx) => {
+                const isSelected = item.id === focusedPillar.id;
+                const isDiscovered = discoveredIds.includes(item.id);
+
+                const rowSurface = isLightMode
+                  ? isSelected
+                    ? 'bg-white/92 border-[#9c7533]/52 island-light'
+                    : 'bg-white/68 hover:bg-white/84 border-[#9c7533]/18'
+                  : isSelected
+                  ? 'bg-[#d4af6a]/15 border-[#d4af6a]/48 island-dark'
+                  : 'bg-[#0e121c]/74 hover:bg-[#141926]/86 border-white/[0.11]';
+
                 return (
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => selectLandmark(item)}
-                    className={`px-2.5 py-1 rounded-lg border font-serif-eng text-[11px] flex items-center gap-1.5 cursor-pointer transition ${
-                      done
-                        ? isLightMode
-                          ? 'bg-[#efe1c4] border-[#7a5420]/50 text-[#261a0e] font-semibold'
-                          : 'bg-[#2a2118] border-[#d4af6a]/55 text-[#f2e8d5] font-semibold'
-                        : isLightMode
-                        ? 'bg-black/[0.03] border-[#7a5420]/25 hover:border-[#7a5420]/50'
-                        : 'bg-white/[0.04] border-[#d4af6a]/25 hover:border-[#d4af6a]/50'
-                    }`}
+                    role="option"
+                    aria-selected={isSelected}
+                    data-testid={`landmark-${item.id}`}
+                    data-discovered={isDiscovered ? 'true' : 'false'}
+                    onClick={() => handleSelectPillar(item)}
+                    style={{
+                      '--row-delay': `${idx * 42}ms`,
+                      transform: isSelected ? 'scale(1.012)' : 'scale(0.992)',
+                    }}
+                    className={`group relative w-full ${
+                      isImanStudy
+                        ? 'h-[42px] sm:h-[60px] px-3 sm:px-4'
+                        : 'h-[45px] sm:h-[52px] px-3.5 sm:px-4'
+                    } rounded-2xl border flex items-center justify-between gap-2.5 overflow-hidden cursor-pointer transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] animate-lesson-row ${rowSurface}`}
                   >
-                    <span style={{ color: accentHex }}>0{item.regionOrder}.</span>
-                    <span>{item.title}</span>
-                    {done && <CheckCircleIcon size={11} style={{ color: accentHex }} />}
+                    {/* Tactile Gold Shimmer Sweep When Active */}
+                    {isSelected && (
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-y-0 left-0 w-1/2 animate-lesson-shimmer"
+                        style={{
+                          background: isLightMode
+                            ? 'linear-gradient(90deg, transparent, rgba(156,117,51,0.16), transparent)'
+                            : 'linear-gradient(90deg, transparent, rgba(212,175,106,0.20), transparent)',
+                        }}
+                      />
+                    )}
+
+                    {/* Left: Check Icon + Title & Concise Meaning */}
+                    <div className="flex items-center gap-2.5 min-w-0 relative z-10">
+                      <div className="shrink-0 w-5 h-5 flex items-center justify-center">
+                        {isSelected ? (
+                          <CheckCircleIcon
+                            size={16}
+                            className="animate-[checkmarkPop_0.36s_cubic-bezier(0.34,1.56,0.64,1)_forwards]"
+                            style={{ color: accentHex }}
+                          />
+                        ) : isDiscovered ? (
+                          <CheckCircleIcon
+                            size={15}
+                            className="opacity-75"
+                            style={{ color: accentHex }}
+                          />
+                        ) : (
+                          <CircleOutlineIcon
+                            size={15}
+                            className={
+                              isLightMode
+                                ? 'text-[#4a453d]/32 group-hover:text-[#9c7533]/80'
+                                : 'text-[#e4dac8]/30 group-hover:text-[#d4af6a]/85'
+                            }
+                          />
+                        )}
+                      </div>
+
+                      {isImanStudy ? (
+                        <div className="flex flex-col items-start min-w-0 leading-tight">
+                          <span
+                            className="font-serif-eng text-[13.5px] sm:text-[14.5px] font-semibold truncate max-w-full"
+                            style={{ color: isSelected ? accentHex : undefined }}
+                          >
+                            {item.regionOrder}. {item.title}
+                          </span>
+                          <span
+                            className={`hidden sm:block font-serif-eng italic text-[11.5px] leading-snug truncate max-w-full ${textMuted}`}
+                          >
+                            {item.englishMeaning}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-baseline gap-1.5 min-w-0 truncate">
+                          <span
+                            className="font-serif-eng text-[14px] sm:text-[15.5px] font-semibold truncate"
+                            style={{ color: isSelected ? accentHex : undefined }}
+                          >
+                            {item.regionOrder}. {item.title}
+                          </span>
+                          <span
+                            className={`font-serif-eng italic text-[11.5px] sm:text-[12.5px] truncate ${textMuted}`}
+                          >
+                            · {item.englishMeaning}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Right: Arabic Calligraphy */}
+                    <span
+                      dir="rtl"
+                      className={`font-calligraphy ${
+                        isImanStudy
+                          ? 'text-[15px] sm:text-[17px]'
+                          : 'text-[16px] sm:text-[19px]'
+                      } leading-none shrink-0 relative z-10 transition-opacity ${
+                        isSelected ? 'opacity-100' : 'opacity-72 group-hover:opacity-95'
+                      }`}
+                      style={{ color: accentHex }}
+                    >
+                      {item.arabic}
+                    </span>
                   </button>
                 );
               })}
             </div>
-          </div>
-        ) : selectedLockedLesson ? (
-          <div
-            data-testid="locked-lesson-card"
-            className={`pointer-events-auto w-full max-w-[640px] rounded-[20px] border px-4 py-2.5 sm:px-5 sm:py-3 ${cardSurface}`}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <ArtifactVignetteThumbnail
-                  id={selectedLockedLesson.id}
-                  sheet={selectedLockedLesson.artifactSheet}
-                  focus={selectedLockedLesson.artifactFocus}
-                  scale={selectedLockedLesson.artifactScale}
-                  alt={selectedLockedLesson.artifactName}
-                  isDiscovered={progress.isComplete}
-                  isSelected={true}
-                  isLightMode={isLightMode}
-                  sizeClass="w-12 h-12"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 text-[9.5px] font-serif-eng uppercase tracking-[0.14em]">
-                    <SparklesIcon size={11} style={{ color: accentHex }} />
-                    <span style={{ color: accentHex }}>{selectedLockedLesson.lessonNumber}</span>
-                    <span aria-hidden="true" className="opacity-40">
-                      ·
-                    </span>
-                    <span className={subText}>
-                      {progress.isComplete
-                        ? 'Sanctuary Gate Unsealed'
-                        : `${progress.remainingCount} more ${
-                            progress.remainingCount === 1 ? 'Pillar' : 'Pillars'
-                          } to unseal`}
-                    </span>
-                  </div>
 
-                  <div className="flex items-baseline gap-2.5 mt-0.5">
-                    <h2 className="font-serif-eng text-[18px] sm:text-[19px] font-semibold leading-tight truncate">
-                      {selectedLockedLesson.title}
-                    </h2>
-                    <span
-                      dir="rtl"
-                      className="font-calligraphy text-[18px] leading-none shrink-0"
-                      style={{ color: accentHex }}
-                    >
-                      {selectedLockedLesson.arabic}
-                    </span>
-                  </div>
-
-                  <p className={`font-serif-eng italic text-[11.5px] leading-snug mt-0.5 truncate ${subText}`}>
-                    {selectedLockedLesson.mysteryWhisper}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                {!progress.isComplete && nextRecommended && (
-                  <button
-                    type="button"
-                    data-testid="locked-card-continue"
-                    onClick={() => selectLandmark(nextRecommended)}
-                    className={`min-h-[34px] px-3.5 rounded-xl border font-serif-eng text-[10px] uppercase tracking-[0.13em] whitespace-nowrap shrink-0 cursor-pointer transition active:scale-95 ${
-                      isLightMode
-                        ? 'bg-[#463219] border-[#7a5420] text-[#f9f2e3]'
-                        : 'bg-[#d4af6a] border-[#edd29b] text-[#18130d] font-semibold'
-                    }`}
-                  >
-                    Next Pillar
-                  </button>
-                )}
+            {/* C. BELOW MAIN TOPIC: SMOOTH CONTEXT & INLINE QUICK-CHECK TRAY */}
+            <section
+              key={`${focusedPillar.id}-${contextMode}`}
+              data-testid="pillar-context-tray"
+              className={`w-full rounded-2xl border px-4 sm:px-5 py-3 sm:py-4 animate-lesson-context ${
+                isLightMode
+                  ? 'bg-[#faf4e8]/88 border-[#7c5a1e]/20 shadow-[0_12px_34px_rgba(62,42,16,0.08)]'
+                  : 'bg-[#11141e]/84 border-[#d4af6a]/20 shadow-[0_14px_38px_rgba(0,0,0,0.48)]'
+              }`}
+              style={{ backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
+            >
+              {/* Quiet Metadata & Inline Context / Quick Check Toggle */}
+              <div className="flex items-center justify-between gap-2 pb-2 border-b border-current/10">
+                <span className={`font-serif-eng text-[11.5px] sm:text-[12px] truncate ${textSub}`}>
+                  <strong className="font-semibold" style={{ color: accentHex }}>
+                    {focusedPillar.title}
+                  </strong>
+                  <span aria-hidden="true"> · </span>
+                  <span className="italic sm:hidden">{focusedPillar.englishMeaning}</span>
+                  <span className="italic hidden sm:inline">
+                    {focusedPillar.classicalProof?.source}
+                  </span>
+                </span>
 
                 <button
                   type="button"
-                  data-testid="locked-card-close"
-                  aria-label="Close sealed realm preview"
+                  data-testid="toggle-inline-check-btn"
                   onClick={() => {
-                    hapticDismiss();
-                    setSelectedLockedId(null);
+                    hapticTapLight();
+                    setContextMode((m) => (m === 'context' ? 'check' : 'context'));
                   }}
-                  className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition cursor-pointer ${
-                    isLightMode ? 'hover:bg-black/5 text-[#5e4b34]' : 'hover:bg-white/10 text-[#c7baa5]'
-                  }`}
+                  className="shrink-0 font-serif-eng text-[11.5px] font-semibold whitespace-nowrap underline-offset-4 hover:underline cursor-pointer"
+                  style={{ color: accentHex }}
                 >
-                  <XIcon size={15} />
+                  {contextMode === 'context' ? 'Quick check' : 'Back to context'}
                 </button>
               </div>
-            </div>
-          </div>
-        ) : (
-          <div
-            data-testid="map-discovery-hint"
-            className={`pointer-events-auto rounded-full border pl-4 pr-2 py-1.5 flex items-center gap-3 ${cardSurface}`}
-          >
-            <span className="font-serif-eng italic text-[13px] sm:text-[14px] truncate">
-              {progress.isComplete
-                ? 'All 11 Pillars Explored · Inspect Lesson II Gate'
-                : nextRecommended
-                ? `Step ${nextRecommended.order} of 11 · ${nextRecommended.title} (${nextRecommended.englishMeaning})`
-                : 'Drag map or tap any Pillar station'}
-            </span>
-            <button
-              type="button"
-              data-testid="begin-trail-btn"
-              onClick={() =>
-                progress.isComplete
-                  ? selectLockedGate(LOCKED_FUTURE_LESSONS[0])
-                  : selectLandmark(nextRecommended || LESSON_ONE_LANDMARKS[0])
-              }
-              className={`min-h-[36px] px-4 rounded-full border font-serif-eng text-[10.5px] uppercase tracking-[0.15em] whitespace-nowrap shrink-0 cursor-pointer transition active:scale-95 ${
-                isLightMode
-                  ? 'bg-[#463219] border-[#7a5420] text-[#f9f2e3]'
-                  : 'bg-[#d4af6a] border-[#edd29b] text-[#18130d] font-semibold'
-              }`}
-            >
-              {progress.isComplete
-                ? 'Lesson II Gate'
-                : progress.discoveredCount > 0
-                ? 'Continue'
-                : 'Begin Path'}
-            </button>
+
+              {contextMode === 'context' ? (
+                <div className="pt-2.5 flex flex-col gap-1.5">
+                  <p
+                    dir="rtl"
+                    className="font-calligraphy text-[17px] sm:text-[21px] leading-snug text-center line-clamp-2"
+                    style={{ color: accentHex }}
+                  >
+                    {focusedPillar.arabicFormula}
+                  </p>
+                  <p className={`font-serif-eng italic text-[12px] sm:text-[13.5px] text-center leading-snug line-clamp-2 ${textSub}`}>
+                    {focusedPillar.formulaTranslation}
+                  </p>
+                  <p className="font-serif-eng text-[12.5px] sm:text-[13.5px] text-center leading-snug line-clamp-2 pt-0.5">
+                    {focusedPillar.recognitionCue}
+                  </p>
+                </div>
+              ) : (
+                <div data-testid="inline-pillar-check" className="pt-2 space-y-1.5">
+                  <p className="font-serif-eng text-[13px] sm:text-[14px] font-semibold leading-snug">
+                    {focusedPillar.checkQuestion?.prompt}
+                  </p>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {(focusedPillar.checkQuestion?.options || []).map((opt, optIdx) => {
+                      const chosenIdx = pillarChecks[focusedPillar.id];
+                      const isChosen = chosenIdx === optIdx;
+                      const isRight = optIdx === focusedPillar.checkQuestion?.correctIndex;
+
+                      const optClass = isChosen
+                        ? isRight
+                          ? isLightMode
+                            ? 'bg-[#eadbc0] border-[#7c5a1e] font-semibold'
+                            : 'bg-[#2a2217] border-[#d4af6a] font-semibold'
+                          : isLightMode
+                          ? 'bg-[#fae8e4] border-[#a83a32]/50'
+                          : 'bg-[#2d1a1a] border-[#e07a72]/50'
+                        : isLightMode
+                        ? 'bg-white/75 border-[#7c5a1e]/18 hover:border-[#7c5a1e]/45'
+                        : 'bg-[#171b27]/80 border-white/[0.10] hover:border-[#d4af6a]/45';
+
+                      return (
+                        <button
+                          key={optIdx}
+                          type="button"
+                          data-testid={`inline-check-option-${optIdx}`}
+                          onClick={() => handleAnswerInlineCheck(focusedPillar, optIdx)}
+                          className={`w-full rounded-xl border px-3 py-1.5 text-left font-serif-eng text-[12px] sm:text-[12.5px] leading-snug transition cursor-pointer flex items-start gap-2 ${optClass}`}
+                        >
+                          <span className="font-bold shrink-0" style={{ color: accentHex }}>
+                            {String.fromCharCode(65 + optIdx)}.
+                          </span>
+                          <span className="line-clamp-2">{opt}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {inlineCheckEval.answered && (
+                    <p
+                      className={`font-serif-eng text-[11.5px] sm:text-[12px] leading-snug pt-0.5 ${textSub}`}
+                    >
+                      <strong style={{ color: accentHex }}>
+                        {inlineCheckEval.isCorrect ? 'Correct · ' : 'Hint · '}
+                      </strong>
+                      {inlineCheckEval.explanation}
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
           </div>
         )}
-      </div>
+
+        {/* === QUIZ STEP I: PILLARS OF ISLAM === */}
+        {currentStep.id === 'islam-quiz' && (
+          <LessonQuizStage
+            groupTitle="Part I · The Five Pillars of Islam"
+            groupArabic="أَرْكَانُ الإِسْلَام"
+            questions={LESSON_ONE_GROUP_QUIZZES.islam}
+            answersById={groupQuizAnswers}
+            onSelectAnswer={(qId, optIdx) =>
+              setGroupQuizAnswers((prev) => ({ ...prev, [qId]: optIdx }))
+            }
+            onAllCorrectComplete={handleStepForward}
+            isLightMode={isLightMode}
+            accentHex={accentHex}
+            textSub={textSub}
+            textMuted={textMuted}
+            stageAnimClass={stageAnimClass}
+          />
+        )}
+
+        {/* === QUIZ STEP II: PILLARS OF FAITH === */}
+        {currentStep.id === 'iman-quiz' && (
+          <LessonQuizStage
+            groupTitle="Part II · The Six Pillars of Faith"
+            groupArabic="أَرْكَانُ الإِيمَان"
+            questions={LESSON_ONE_GROUP_QUIZZES.iman}
+            answersById={groupQuizAnswers}
+            onSelectAnswer={(qId, optIdx) =>
+              setGroupQuizAnswers((prev) => ({ ...prev, [qId]: optIdx }))
+            }
+            onAllCorrectComplete={handleStepForward}
+            isLightMode={isLightMode}
+            accentHex={accentHex}
+            textSub={textSub}
+            textMuted={textMuted}
+            stageAnimClass={stageAnimClass}
+          />
+        )}
+
+        {/* === COMPLETION SEAL === */}
+        {currentStep.id === 'complete' && (
+          <LessonCompleteStage
+            islamItems={grouped.islam.items}
+            imanItems={grouped.iman.items}
+            nextLesson={primaryNextLesson}
+            isLightMode={isLightMode}
+            accentHex={accentHex}
+            textSub={textSub}
+            stageAnimClass={stageAnimClass}
+            onRestart={() => {
+              hapticTapLight();
+              setGroupQuizAnswers({});
+              setStepDirection(-1);
+              setStepIndex(0);
+            }}
+            onExit={onBack}
+          />
+        )}
+      </main>
+
+      {/* ====================================================================
+          3. CLEAN BOTTOM STEP ACTION BAR (Only on Study & Quiz Steps)
+      ==================================================================== */}
+      {currentStep.id !== 'complete' && (
+        <footer
+          className="relative z-20 shrink-0 px-4 sm:px-8 pt-1.5"
+          style={{ paddingBottom: 'calc(14px + var(--sab))' }}
+        >
+          <div
+            className={`w-full ${
+              isImanStudy ? 'max-w-[748px]' : 'max-w-[680px]'
+            } mx-auto flex items-center justify-between gap-3`}
+          >
+            {stepIndex > 0 ? (
+              <button
+                type="button"
+                data-testid="lesson-prev-step-btn"
+                onClick={handleStepBackward}
+                className={`min-h-[44px] px-4 rounded-2xl border font-serif-eng text-[12.5px] font-medium flex items-center gap-1 whitespace-nowrap transition cursor-pointer active:scale-95 ${
+                  isLightMode
+                    ? 'bg-white/75 hover:bg-white/95 border-[#9c7533]/24 text-[#2b1f11]'
+                    : 'bg-[#12100d]/72 hover:bg-[#1a1612] border-white/[0.12] text-[#efe5d4]'
+                }`}
+              >
+                <ChevronLeftIcon size={14} style={{ color: accentHex }} />
+                <span>Previous</span>
+              </button>
+            ) : (
+              <span className={`font-serif-eng italic text-[12px] hidden sm:inline ${textMuted}`}>
+                Tap any pillar to explore its context
+              </span>
+            )}
+
+            {isStudyStep ? (
+              <button
+                type="button"
+                data-testid="lesson-continue-btn"
+                onClick={handleStepForward}
+                className={`min-h-[44px] px-5 sm:px-6 rounded-2xl font-serif-eng text-[13px] font-semibold tracking-[0.04em] flex items-center justify-center gap-1.5 whitespace-nowrap transition cursor-pointer active:scale-[0.98] ml-auto ${
+                  isLightMode
+                    ? 'bg-[#463219] text-[#faf3e4] hover:bg-[#594020] shadow-[0_8px_24px_rgba(70,50,25,0.22)]'
+                    : 'bg-[#d4af6a] text-[#17120c] hover:bg-[#e1be7c] shadow-[0_8px_24px_rgba(212,175,106,0.22)]'
+                }`}
+              >
+                <span>Check Understanding</span>
+                <ChevronRightIcon size={15} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                data-testid="lesson-skip-quiz-btn"
+                onClick={handleStepForward}
+                className={`min-h-[44px] px-4 font-serif-eng text-[12.5px] whitespace-nowrap transition cursor-pointer ml-auto hover:underline underline-offset-4 ${textSub}`}
+              >
+                {currentStep.id === 'islam-quiz'
+                  ? 'Continue to Pillars of Faith →'
+                  : 'Finish Lesson →'}
+              </button>
+            )}
+          </div>
+        </footer>
+      )}
     </div>
   );
 };

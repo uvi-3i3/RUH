@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTemporalPhase, rgbToHex } from './hooks/useTemporalPhase';
 import { SavedVersesModal } from './components/layout/SavedVersesModal';
-import { useLocalAI } from './hooks/useLocalAI';
 import { useHijriDate } from './hooks/useHijriDate';
 import { useCanvasEngine } from './hooks/useCanvasEngine';
 import { useHabits, usePreferences, useSanctuary } from './context/sanctuaryStore';
@@ -67,10 +66,9 @@ import {
 } from './utils/haptics';
 
 export default function App() {
-  const { devotionData, prayerTimes, notifications } = useSanctuary();
+  const { devotionData, prayerTimes, notifications, localAI } = useSanctuary();
   const { isLightMode, toggleLightMode, devTimePhase } = usePreferences();
   const { completedHabitsCount, totalHabitsCount } = useHabits();
-  const localAI = useLocalAI();
   const hijri = useHijriDate();
   const enabledAlertsCount =
     PRAYERS.filter((p) => devotionData.prayers?.[p.id]?.enabled).length +

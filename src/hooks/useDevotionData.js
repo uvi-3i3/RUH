@@ -15,12 +15,6 @@ import {
   updateHabitInList,
 } from '../utils/habitLogic';
 import { DEFAULT_HABITS } from '../data/duasData';
-import {
-  sanitizeFiqhIds,
-  sanitizeSacredNodeIds,
-  toggleFiqhId,
-  toggleSacredNodeId,
-} from '../utils/sacredTreeLogic';
 import { hydrateMissingFromPreferences, mirroredRemove, mirroredSet } from '../utils/nativeStorage';
 
 const STORAGE_KEY = 'ruh_devotion_state';
@@ -84,10 +78,6 @@ const getInitialState = () => {
     streakPausedDates: {},
     dailyIntention: { date: currentDate, text: '' },
     dailyTodos: { date: currentDate, items: cloneDefaultDailyTodos(DEFAULT_DAILY_TODOS) },
-    completedTreeNodeIds: [],
-    rewardedTreeNodeIds: [],
-    studiedFiqhIds: [],
-    rewardedFiqhIds: [],
     burhanNotes: {},
     maqamat: {
       currentStation: 0,
@@ -248,11 +238,6 @@ const getInitialState = () => {
       ) {
         parsed.dailyTodos = { date: currentDate, items: cloneDefaultDailyTodos(DEFAULT_DAILY_TODOS) };
       }
-      parsed.completedTreeNodeIds = sanitizeSacredNodeIds(parsed.completedTreeNodeIds);
-      parsed.rewardedTreeNodeIds = sanitizeSacredNodeIds(parsed.rewardedTreeNodeIds);
-      parsed.studiedFiqhIds = sanitizeFiqhIds(parsed.studiedFiqhIds);
-      parsed.rewardedFiqhIds = sanitizeFiqhIds(parsed.rewardedFiqhIds);
-
       return parsed;
     }
   } catch (e) {
@@ -482,10 +467,6 @@ export function useDevotionData() {
       streakPausedDates: {},
       dailyIntention: { date: currentDate, text: '' },
       dailyTodos: { date: currentDate, items: cloneDefaultDailyTodos(DEFAULT_DAILY_TODOS) },
-      completedTreeNodeIds: [],
-      rewardedTreeNodeIds: [],
-      studiedFiqhIds: [],
-      rewardedFiqhIds: [],
       burhanNotes: {},
       maqamat: {
         currentStation: 0,
@@ -902,78 +883,6 @@ export function useDevotionData() {
     });
   }, []);
 
-  const toggleTreeNode = useCallback((nodeId) => {
-    setData((prev) => {
-      const prevCompleted = sanitizeSacredNodeIds(prev.completedTreeNodeIds);
-      const nextCompleted = toggleSacredNodeId(prevCompleted, nodeId);
-      if (nextCompleted.length === prevCompleted.length) return prev;
-
-      const isNowCompleted = nextCompleted.includes(nodeId);
-      const prevRewarded = sanitizeSacredNodeIds(prev.rewardedTreeNodeIds);
-      const isFirstReward = isNowCompleted && !prevRewarded.includes(nodeId);
-      const nextRewarded = isFirstReward ? [...prevRewarded, nodeId] : prevRewarded;
-
-      const dateStr = getLocalDateStr();
-      const currentDayEntry = prev.history[dateStr] || { prayers: 0, verses: 0, practices: 0 };
-      const nextDayPractices = Math.max(
-        0,
-        (currentDayEntry.practices || 0) + (isNowCompleted ? 1 : -1)
-      );
-      const nextHistory = { ...prev.history };
-      if (
-        (currentDayEntry.prayers || 0) === 0 &&
-        (currentDayEntry.verses || 0) === 0 &&
-        nextDayPractices === 0
-      ) {
-        delete nextHistory[dateStr];
-      } else {
-        nextHistory[dateStr] = {
-          prayers: currentDayEntry.prayers || 0,
-          verses: currentDayEntry.verses || 0,
-          practices: nextDayPractices,
-        };
-      }
-
-      return {
-        ...prev,
-        history: nextHistory,
-        completedTreeNodeIds: nextCompleted,
-        rewardedTreeNodeIds: nextRewarded,
-        maqamat: isFirstReward
-          ? {
-              ...prev.maqamat,
-              yaqeenProgress: Math.min(100, (prev.maqamat?.yaqeenProgress || 0) + 10),
-            }
-          : prev.maqamat,
-      };
-    });
-  }, []);
-
-  const toggleFiqhBranch = useCallback((fiqhId) => {
-    setData((prev) => {
-      const prevStudied = sanitizeFiqhIds(prev.studiedFiqhIds);
-      const nextStudied = toggleFiqhId(prevStudied, fiqhId);
-      if (nextStudied.length === prevStudied.length) return prev;
-
-      const isNowStudied = nextStudied.includes(fiqhId);
-      const prevRewarded = sanitizeFiqhIds(prev.rewardedFiqhIds);
-      const isFirstReward = isNowStudied && !prevRewarded.includes(fiqhId);
-      const nextRewarded = isFirstReward ? [...prevRewarded, fiqhId] : prevRewarded;
-
-      return {
-        ...prev,
-        studiedFiqhIds: nextStudied,
-        rewardedFiqhIds: nextRewarded,
-        maqamat: isFirstReward
-          ? {
-              ...prev.maqamat,
-              yaqeenProgress: Math.min(100, (prev.maqamat?.yaqeenProgress || 0) + 3),
-            }
-          : prev.maqamat,
-      };
-    });
-  }, []);
-
   const exportBackupJson = useCallback(() => {
     return JSON.stringify(data, null, 2);
   }, [data]);
@@ -1300,8 +1209,6 @@ export function useDevotionData() {
       dailyTodos: Array.isArray(data.dailyTodos?.items)
         ? data.dailyTodos.items
         : DEFAULT_DAILY_TODOS,
-      completedTreeNodeIds: sanitizeSacredNodeIds(data.completedTreeNodeIds),
-      studiedFiqhIds: sanitizeFiqhIds(data.studiedFiqhIds),
       badgeStatuses: badgeEval.statuses,
       unlockedBadgeCount: badgeEval.unlockedCount,
       totalBadgeCount: badgeEval.totalCount,
@@ -1330,8 +1237,6 @@ export function useDevotionData() {
       toggleDailyTodo,
       removeDailyTodo,
       clearCompletedDailyTodos,
-      toggleTreeNode,
-      toggleFiqhBranch,
       exportBackupJson,
       importBackupJson,
       completeBurhan,
@@ -1386,8 +1291,6 @@ export function useDevotionData() {
       toggleDailyTodo,
       removeDailyTodo,
       clearCompletedDailyTodos,
-      toggleTreeNode,
-      toggleFiqhBranch,
       exportBackupJson,
       importBackupJson,
       completeBurhan,

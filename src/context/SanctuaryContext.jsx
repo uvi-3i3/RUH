@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDevotionData } from '../hooks/useDevotionData';
 import { usePrayerTimes } from '../hooks/usePrayerTimes';
 import { useLocalNotifications } from '../hooks/useLocalNotifications';
+import { useLocalAI } from '../hooks/useLocalAI';
 import { syncStatusBarTheme } from '../native';
 import {
   hydrateMissingFromPreferences,
@@ -21,6 +22,7 @@ import {
 import { setHapticsEnabled } from '../utils/haptics';
 import {
   HabitsContext,
+  LocalAIContext,
   PreferencesContext,
   SanctuaryContext,
 } from './sanctuaryStore';
@@ -56,6 +58,7 @@ export function SanctuaryProvider({ children }) {
   const devotionData = useDevotionData();
   const prayerTimes = usePrayerTimes();
   const notifications = useLocalNotifications({ devotionData, prayerTimes });
+  const localAI = useLocalAI();
 
   const [isLightMode, setIsLightMode] = useState(loadInitialThemeMode);
   const [devTimePhase, setDevTimePhaseState] = useState(loadInitialAtmospherePhase);
@@ -263,16 +266,19 @@ export function SanctuaryProvider({ children }) {
       devotionData,
       prayerTimes,
       notifications,
+      localAI,
       preferences: preferencesValue,
       habits: habitsValue,
     }),
-    [devotionData, prayerTimes, notifications, preferencesValue, habitsValue]
+    [devotionData, prayerTimes, notifications, localAI, preferencesValue, habitsValue]
   );
 
   return (
     <SanctuaryContext.Provider value={sanctuaryValue}>
       <PreferencesContext.Provider value={preferencesValue}>
-        <HabitsContext.Provider value={habitsValue}>{children}</HabitsContext.Provider>
+        <HabitsContext.Provider value={habitsValue}>
+          <LocalAIContext.Provider value={localAI}>{children}</LocalAIContext.Provider>
+        </HabitsContext.Provider>
       </PreferencesContext.Provider>
     </SanctuaryContext.Provider>
   );
