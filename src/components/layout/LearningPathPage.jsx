@@ -95,6 +95,8 @@ export const LearningPathPage = ({
     onRequestClose?.();
   };
 
+  const isAnimating = phase === 'expanding' || phase === 'closing';
+
   return (
     <section
       role="dialog"
@@ -110,12 +112,13 @@ export const LearningPathPage = ({
         transformOrigin: morphStyles.transformOrigin,
         opacity: morphStyles.opacity,
         transition: morphStyles.transition,
-        willChange: 'clip-path, transform, opacity',
+        willChange: isAnimating ? 'clip-path, transform, opacity' : 'auto',
         backgroundColor: isLightMode ? '#f4ecdc' : '#110e0b',
       }}
     >
       <AncientMapCanvas
         isLightMode={isLightMode}
+        isAnimating={isAnimating}
         reducedMotion={reducedMotion}
         lessonProgress={lessonProgress}
         onProgressChange={setLessonProgress}

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { memo, useState, useRef, useEffect } from 'react';
 import {
   BookIcon,
   CheckCircleIcon,
@@ -13,6 +13,7 @@ import {
 import { burhanData } from '../../data/burhanData';
 import { PRACTICE_SETS } from '../../data/adhkarData';
 import { getRecommendedAdhkarPeriod, selectActiveBurhan } from '../../utils/devotionLogic';
+import { isPointerDrag } from '../../utils/smoothInteractionLogic';
 import { HabitEditorSheet } from './HabitEditorSheet';
 import {
   hapticDestructive,
@@ -28,7 +29,7 @@ import {
 } from '../../utils/haptics';
 import { useOptionalHabits, useOptionalPreferences } from '../../context/sanctuaryStore';
 
-export const TasksView = ({
+export const TasksView = memo(({
   currentView,
   isLightMode: isLightModeProp,
   dailyTasks,
@@ -78,10 +79,21 @@ export const TasksView = ({
   const [habitEditor, setHabitEditor] = useState(null);
   const [intentionDraft, setIntentionDraft] = useState(dailyIntention || '');
   const longPressTimer = useRef(null);
+  const pressOriginRef = useRef(null);
+  const pressDraggedRef = useRef(false);
 
   useEffect(() => {
     setIntentionDraft(dailyIntention || '');
   }, [dailyIntention]);
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     ['sabah', 'masa'].forEach((setKey) => {
@@ -97,23 +109,45 @@ export const TasksView = ({
   const activeSet = PRACTICE_SETS[activeSetId] || PRACTICE_SETS.wird;
   const activeItems = activeSet.items;
 
-  const startPress = (index, id, current, target) => {
+  const cancelPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    pressOriginRef.current = null;
+  };
+
+  const startPress = (e, index, current, target) => {
     if (current >= target) return;
-    hapticTapLight();
+    cancelPress();
+    pressDraggedRef.current = false;
+    pressOriginRef.current = { x: e.clientX, y: e.clientY };
 
     longPressTimer.current = setTimeout(() => {
+      if (pressDraggedRef.current) return;
       onOpenMisbaha?.({ setId: activeSetId, initialIndex: index });
       longPressTimer.current = null;
+      pressOriginRef.current = null;
       hapticHeavy();
     }, 450);
   };
 
+  const movePress = (e) => {
+    if (!pressOriginRef.current) return;
+    if (isPointerDrag(pressOriginRef.current.x, pressOriginRef.current.y, e.clientX, e.clientY, 10)) {
+      pressDraggedRef.current = true;
+      cancelPress();
+    }
+  };
+
   const endPress = (id, current, target) => {
     if (current >= target) return;
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
+    const hadPending = Boolean(longPressTimer.current);
+    const wasDragged = pressDraggedRef.current;
+    cancelPress();
+    if (hadPending && !wasDragged) {
       if (current + 1 >= target) hapticSuccess();
+      else hapticTapLight();
       incrementTask(id, 1);
     }
   };
@@ -267,10 +301,10 @@ export const TasksView = ({
 
         {/* Middle Zone: Expanded Liquid-Glass Practice Ledger */}
         <div
-          className={`w-full flex-grow shrink-0 flex flex-col justify-between rounded-[22px] overflow-hidden border transition-all duration-300 ${
+          className={`w-full flex-grow shrink-0 flex flex-col justify-between rounded-[22px] overflow-hidden border transition-colors duration-300 ${
             isLightMode
-              ? 'bg-white/62 border-white/80 island-light'
-              : 'bg-[#0b0e16]/68 border-white/[0.09] island-dark'
+              ? `bg-white/62 border-white/80 ${isTasksActive ? 'island-light' : ''}`
+              : `bg-[#0b0e16]/68 border-white/[0.09] ${isTasksActive ? 'island-dark' : ''}`
           }`}
         >
           {isHabitsTab ? (
@@ -470,9 +504,9 @@ export const TasksView = ({
                         }`}
                       >
                         <div
-                          className="absolute left-0 top-0 bottom-0 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] pointer-events-none"
+                          className="absolute inset-0 origin-left transition-transform duration-350 ease-[cubic-bezier(0.22,1,0.36,1)] pointer-events-none"
                           style={{
-                            width: `${progress * 100}%`,
+                            transform: `scaleX(${progress})`,
                             background: isLightMode
                               ? 'linear-gradient(90deg, rgba(156,117,51,0.05) 0%, rgba(156,117,51,0.16) 100%)'
                               : 'linear-gradient(90deg, rgba(210,162,75,0.04) 0%, rgba(210,162,75,0.16) 100%)',
@@ -682,29 +716,20 @@ export const TasksView = ({
                       key={task.id}
                       type="button"
                       aria-label={`${task.title} (${count} of ${task.target})`}
-                      onPointerDown={() => startPress(idx, task.id, count, task.target)}
+                      onPointerDown={(e) => startPress(e, idx, count, task.target)}
+                      onPointerMove={movePress}
                       onPointerUp={() => endPress(task.id, count, task.target)}
-                      onPointerLeave={() => {
-                        if (longPressTimer.current) {
-                          clearTimeout(longPressTimer.current);
-                          longPressTimer.current = null;
-                        }
-                      }}
-                      onPointerCancel={() => {
-                        if (longPressTimer.current) {
-                          clearTimeout(longPressTimer.current);
-                          longPressTimer.current = null;
-                        }
-                      }}
+                      onPointerLeave={cancelPress}
+                      onPointerCancel={cancelPress}
                       className={`group relative w-full flex-1 min-h-[46px] px-3.5 sm:px-4 py-2 flex items-center justify-between gap-2 text-left overflow-hidden cursor-pointer active:scale-[0.985] transition-colors duration-300 ${
                         isLightMode ? 'hover:bg-white/40' : 'hover:bg-white/[0.035]'
                       }`}
                       style={{ touchAction: 'pan-y' }}
                     >
                       <div
-                        className="absolute left-0 top-0 bottom-0 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] pointer-events-none"
+                        className="absolute inset-0 origin-left transition-transform duration-350 ease-[cubic-bezier(0.22,1,0.36,1)] pointer-events-none"
                         style={{
-                          width: `${progress * 100}%`,
+                          transform: `scaleX(${progress})`,
                           background: isLightMode
                             ? 'linear-gradient(90deg, rgba(156,117,51,0.05) 0%, rgba(156,117,51,0.16) 100%)'
                             : 'linear-gradient(90deg, rgba(210,162,75,0.04) 0%, rgba(210,162,75,0.16) 100%)',
@@ -926,6 +951,6 @@ export const TasksView = ({
       />
     </div>
   );
-};
+});
 
 

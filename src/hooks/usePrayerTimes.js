@@ -130,7 +130,8 @@ export function usePrayerTimes() {
     [persistLocation, setMethod]
   );
 
-  // Hydrate location/method from native Preferences if WebView storage was purged; otherwise probe passive GPS
+  // Hydrate location/method from native Preferences if WebView storage was purged;
+  // only auto-probe GPS on mount if geolocation permission was already granted.
   useEffect(() => {
     let cancelled = false;
     hydrateMissingFromPreferences([LOCATION_STORAGE_KEY, METHOD_STORAGE_KEY]).then((recovered) => {
@@ -147,8 +148,15 @@ export function usePrayerTimes() {
           }
         } catch {}
       }
-      if (!location) {
-        requestLocation();
+      if (!location && typeof navigator !== 'undefined' && navigator.permissions?.query) {
+        navigator.permissions
+          .query({ name: 'geolocation' })
+          .then((status) => {
+            if (!cancelled && status.state === 'granted') {
+              requestLocation();
+            }
+          })
+          .catch(() => {});
       }
     });
     return () => {
@@ -156,13 +164,19 @@ export function usePrayerTimes() {
     };
   }, []);
 
-  // Update countdown every 30s so minutes stay accurate
+  const lat = location?.lat ?? null;
+  const lng = location?.lng ?? null;
+  const coords = useMemo(
+    () => (typeof lat === 'number' && typeof lng === 'number' ? { lat, lng } : null),
+    [lat, lng]
+  );
+
+  // Update countdown every 30s ONLY when a location is active
   useEffect(() => {
+    if (!coords) return undefined;
     const interval = setInterval(() => setTick((t) => t + 1), 30000);
     return () => clearInterval(interval);
-  }, []);
-
-  const coords = location ? { lat: location.lat, lng: location.lng } : null;
+  }, [coords]);
 
   const prayerData = useMemo(() => {
     if (!coords) return null;
@@ -237,18 +251,37 @@ export function usePrayerTimes() {
     };
   }, [coords, method, tick]);
 
-  return {
-    prayerData,
-    coords,
-    location,
-    cityLabel: location?.cityName || (coords ? 'GPS Location' : ''),
-    locationError,
-    locationLoading,
-    requestLocation,
-    selectCity,
-    method,
-    setMethod,
-    refresh,
-    hasLocation: !!coords,
-  };
+  const cityLabel = location?.cityName || (coords ? 'GPS Location' : '');
+  const hasLocation = !!coords;
+
+  return useMemo(
+    () => ({
+      prayerData,
+      coords,
+      location,
+      cityLabel,
+      locationError,
+      locationLoading,
+      requestLocation,
+      selectCity,
+      method,
+      setMethod,
+      refresh,
+      hasLocation,
+    }),
+    [
+      prayerData,
+      coords,
+      location,
+      cityLabel,
+      locationError,
+      locationLoading,
+      requestLocation,
+      selectCity,
+      method,
+      setMethod,
+      refresh,
+      hasLocation,
+    ]
+  );
 }

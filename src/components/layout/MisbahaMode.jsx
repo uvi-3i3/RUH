@@ -34,6 +34,7 @@ export const MisbahaMode = ({
   const [ripples, setRipples] = useState([]);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const rippleId = useRef(0);
+  const rippleTimersRef = useRef([]);
   const audioCtxRef = useRef(null);
   const autoAdvanceTimerRef = useRef(null);
 
@@ -48,6 +49,17 @@ export const MisbahaMode = ({
       }
     };
   }, [isOpen, initialIndex, tasks.length]);
+
+  useEffect(() => {
+    return () => {
+      rippleTimersRef.current.forEach(clearTimeout);
+      rippleTimersRef.current = [];
+      if (audioCtxRef.current) {
+        audioCtxRef.current.close?.().catch(() => {});
+        audioCtxRef.current = null;
+      }
+    };
+  }, []);
 
   const playBeadTick = useCallback(
     (isCompletion = false) => {
@@ -119,8 +131,12 @@ export const MisbahaMode = ({
     else hapticTapLight();
 
     const id = rippleId.current++;
-    setRipples((prev) => [...prev, id]);
-    setTimeout(() => setRipples((prev) => prev.filter((r) => r !== id)), 750);
+    setRipples((prev) => [...prev.slice(-3), id]);
+    const tid = setTimeout(() => {
+      setRipples((prev) => prev.filter((r) => r !== id));
+      rippleTimersRef.current = rippleTimersRef.current.filter((t) => t !== tid);
+    }, 750);
+    rippleTimersRef.current.push(tid);
 
     if (reachedTarget) {
       if (activeIndex < tasks.length - 1) {
@@ -167,7 +183,6 @@ export const MisbahaMode = ({
         background: isLightMode
           ? 'radial-gradient(ellipse at 50% 42%, rgba(255,250,240,0.98), rgba(245,238,224,0.99))'
           : 'radial-gradient(ellipse at 50% 42%, rgba(16,18,26,0.98), rgba(6,7,11,0.99))',
-        backdropFilter: 'blur(30px)',
         touchAction: 'none',
         cursor: 'pointer',
       }}

@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
-import { ChevronDownIcon, SettingsIcon, SparklesIcon } from '../icons/Icons';
+import { ChevronDownIcon, SettingsIcon } from '../icons/Icons';
 import {
-  useOptionalLocalAI,
   useOptionalPreferences,
   useOptionalSanctuary,
 } from '../../context/sanctuaryStore';
-import { LOCAL_AI_APPROX_SIZE_MB, formatBytesCompact } from '../../utils/localAiLogic';
 import {
   HAPTIC_TYPES,
   hapticDestructive,
@@ -19,6 +17,7 @@ import {
   hapticWarning,
   triggerHaptic,
 } from '../../utils/haptics';
+import { playCardRippleCue } from '../../utils/tactileAudio';
 
 const TIME_PHASES = [
   { id: null, label: 'Auto (Solar)' },
@@ -41,7 +40,6 @@ export const SettingsModal = ({
 }) => {
   const sanctuaryCtx = useOptionalSanctuary();
   const prefsCtx = useOptionalPreferences();
-  const localAI = useOptionalLocalAI();
 
   const devotionData = devotionDataProp ?? sanctuaryCtx?.devotionData;
   const prayerTimes = prayerTimesProp ?? sanctuaryCtx?.prayerTimes;
@@ -50,20 +48,21 @@ export const SettingsModal = ({
   const setDevTimePhase = setDevTimePhaseProp ?? prefsCtx?.setDevTimePhase;
   const isHapticsEnabled = prefsCtx?.isHapticsEnabled ?? true;
   const toggleHapticsEnabled = prefsCtx?.toggleHapticsEnabled;
+  const isTactileAudioEnabled = prefsCtx?.isTactileAudioEnabled ?? true;
+  const toggleTactileAudioEnabled = prefsCtx?.toggleTactileAudioEnabled;
 
   const [confirmingReset, setConfirmingReset] = useState(false);
-  const [aiCacheNotice, setAiCacheNotice] = useState('');
   const [nameInput, setNameInput] = useState(devotionData?.profile?.name || 'Seeker');
   const [nameSaved, setNameSaved] = useState(false);
   const [backupNotice, setBackupNotice] = useState(null);
   const fileInputRef = useRef(null);
   const resetConfirmTimerRef = useRef(null);
+  const nameSavedTimerRef = useRef(null);
 
   useEffect(() => {
     if (isOpen) {
       setNameInput(devotionData.profile?.name || 'Seeker');
       setConfirmingReset(false);
-      setAiCacheNotice('');
       setNameSaved(false);
       setBackupNotice(null);
     }
@@ -71,6 +70,10 @@ export const SettingsModal = ({
       if (resetConfirmTimerRef.current) {
         clearTimeout(resetConfirmTimerRef.current);
         resetConfirmTimerRef.current = null;
+      }
+      if (nameSavedTimerRef.current) {
+        clearTimeout(nameSavedTimerRef.current);
+        nameSavedTimerRef.current = null;
       }
     };
   }, [isOpen, devotionData.profile?.name]);
@@ -113,7 +116,11 @@ export const SettingsModal = ({
       hapticSuccess();
       devotionData.setProfile(nameInput.trim());
       setNameSaved(true);
-      setTimeout(() => setNameSaved(false), 2000);
+      if (nameSavedTimerRef.current) clearTimeout(nameSavedTimerRef.current);
+      nameSavedTimerRef.current = setTimeout(() => {
+        nameSavedTimerRef.current = null;
+        setNameSaved(false);
+      }, 2000);
     } else {
       hapticWarning();
     }
@@ -172,10 +179,9 @@ export const SettingsModal = ({
       className="fixed inset-0 z-[100] flex flex-col pointer-events-auto"
     >
       <div
-        className="absolute inset-0 transition-opacity duration-500"
+        className="absolute inset-0 transition-opacity duration-300"
         style={{
-          background: isLightMode ? 'rgba(244,240,232,0.94)' : 'rgba(8,7,6,0.95)',
-          backdropFilter: 'blur(24px)',
+          background: isLightMode ? 'rgba(244,240,232,0.97)' : 'rgba(8,7,6,0.97)',
         }}
         onClick={() => {
           hapticDismiss();
@@ -420,158 +426,49 @@ export const SettingsModal = ({
             </p>
           </div>
 
-          {/* Local AI Companion Card */}
-          {localAI && (
-            <div
-              data-testid="settings-local-ai-card"
-              className={`w-full p-5 rounded-3xl border flex flex-col gap-3 ${
-                isLightMode
-                  ? 'bg-[#0d9488]/[0.05] border-[#0d9488]/20 shadow-xs'
-                  : 'bg-[#14b8a6]/[0.05] border-[#14b8a6]/22'
-              }`}
-            >
-              <div className="flex justify-between items-center gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <SparklesIcon
-                    size={15}
-                    className="shrink-0"
-                    style={{ color: isLightMode ? '#0d9488' : '#14b8a6' }}
-                  />
-                  <span
-                    className={`font-serif-eng text-[15px] font-medium whitespace-nowrap truncate ${
-                      isLightMode ? 'text-[#0d9488]' : 'text-[#14b8a6]'
-                    }`}
-                  >
-                    Local AI Companion
-                  </span>
-                </div>
-                <span
-                  className={`font-serif-eng text-[9.5px] uppercase tracking-[0.12em] px-2.5 py-1 rounded-full border shrink-0 whitespace-nowrap ${
-                    isLightMode
-                      ? 'border-[#0d9488]/25 text-[#0d9488] bg-white/60'
-                      : 'border-[#14b8a6]/30 text-[#14b8a6] bg-white/[0.04]'
+          {/* Tactile Audio Cues Card */}
+          <div
+            data-testid="settings-tactile-audio-card"
+            className={`w-full p-5 rounded-3xl border flex flex-col gap-3 ${
+              isLightMode ? 'bg-white/70 border-black/10 shadow-xs' : 'bg-white/[0.03] border-white/10'
+            }`}
+          >
+            <div className="flex justify-between items-center">
+              <span className={`font-serif-eng text-base font-medium ${tTextMain}`}>Tactile Audio Cues</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isTactileAudioEnabled}
+                aria-label="Toggle Tactile Audio Cues"
+                onClick={() => {
+                  const nextEnabled = !isTactileAudioEnabled;
+                  hapticToggle(nextEnabled);
+                  toggleTactileAudioEnabled?.();
+                  if (nextEnabled) {
+                    playCardRippleCue({ xPct: 50, yPct: 45, finish: isLightMode ? 'parchment' : 'obsidian', force: true });
+                  }
+                }}
+                className={`w-12 h-6 rounded-full transition-all duration-300 flex items-center px-1 cursor-pointer ${
+                  isTactileAudioEnabled
+                    ? isLightMode
+                      ? 'bg-[#9c7533]'
+                      : 'bg-[#d2a24b]'
+                    : isLightMode
+                      ? 'bg-black/15'
+                      : 'bg-white/15'
+                }`}
+              >
+                <div
+                  className={`w-4 h-4 rounded-full bg-white shadow-xs transition-transform duration-300 ${
+                    isTactileAudioEnabled ? 'translate-x-6' : 'translate-x-0'
                   }`}
-                >
-                  {localAI.status === 'ready'
-                    ? `Ready · ${localAI.runtimeBackend === 'webgpu' ? 'WebGPU' : 'WASM'}`
-                    : localAI.status === 'warming'
-                      ? 'Warming Engine'
-                      : localAI.status === 'downloading'
-                        ? `Caching · ${localAI.progress}%`
-                        : localAI.status === 'paused'
-                          ? 'Paused · Lite'
-                          : 'Grounded Mode'}
-                </span>
-              </div>
-
-              {localAI.isDownloading && (
-                <div className="space-y-1.5">
-                  <div
-                    className={`w-full h-1.5 rounded-full overflow-hidden ${
-                      isLightMode ? 'bg-black/10' : 'bg-white/10'
-                    }`}
-                  >
-                    <div
-                      className="h-full rounded-full transition-all duration-300"
-                      style={{
-                        width: `${Math.max(4, localAI.progress)}%`,
-                        backgroundColor: isLightMode ? '#0d9488' : '#14b8a6',
-                      }}
-                    />
-                  </div>
-                  <p className={`font-serif-eng text-[11px] opacity-75 ${tTextSub}`}>
-                    {localAI.progressDetails?.totalBytes > 0
-                      ? `${formatBytesCompact(localAI.progressDetails.loadedBytes)} of ${formatBytesCompact(localAI.progressDetails.totalBytes)} cached`
-                      : `Fetching quantized model (~${LOCAL_AI_APPROX_SIZE_MB} MB once)`}
-                  </p>
-                </div>
-              )}
-
-              <p className={`font-serif-eng text-xs leading-relaxed opacity-75 ${tTextSub}`}>
-                {localAI.errorMessage
-                  ? localAI.errorMessage
-                  : `Runs 100% privately on-device (~${LOCAL_AI_APPROX_SIZE_MB} MB cached once) for Tafakkur reflections and Dua moment guidance. Instant grounded retrieval remains active offline.`}
-              </p>
-
-              <div className="grid grid-cols-2 gap-2.5 pt-1">
-                {localAI.isDownloading ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      hapticToggle(false);
-                      setAiCacheNotice('');
-                      localAI.pauseDownload();
-                    }}
-                    className={`min-h-[42px] px-3 py-2 rounded-xl font-serif-eng uppercase text-xs tracking-wider border transition-colors cursor-pointer ${
-                      isLightMode
-                        ? 'border-black/15 text-[#1a1814] hover:bg-black/5'
-                        : 'border-white/15 text-[#e4dac8] hover:bg-white/5'
-                    }`}
-                  >
-                    Pause Download
-                  </button>
-                ) : localAI.isReady ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      hapticToggle(false);
-                      setAiCacheNotice('');
-                      localAI.pauseDownload();
-                    }}
-                    className={`min-h-[42px] px-3 py-2 rounded-xl font-serif-eng uppercase text-xs tracking-wider border transition-colors cursor-pointer ${
-                      isLightMode
-                        ? 'border-black/15 text-[#1a1814] hover:bg-black/5'
-                        : 'border-white/15 text-[#e4dac8] hover:bg-white/5'
-                    }`}
-                  >
-                    Use Lite Mode
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      hapticToggle(true);
-                      setAiCacheNotice('');
-                      localAI.resumeDownload();
-                    }}
-                    className={`min-h-[42px] px-3 py-2 rounded-xl font-serif-eng uppercase text-xs tracking-wider border transition-colors cursor-pointer ${
-                      isLightMode
-                        ? 'bg-[#0d9488] text-white border-[#0d9488]'
-                        : 'bg-[#14b8a6]/20 text-[#14b8a6] border-[#14b8a6]/45 hover:bg-[#14b8a6]/30'
-                    }`}
-                  >
-                    {localAI.status === 'paused' ? 'Resume Model' : 'Download Model'}
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={async () => {
-                    hapticDestructive();
-                    await localAI.clearModelCache();
-                    setAiCacheNotice('Cached local AI weights cleared.');
-                  }}
-                  className={`min-h-[42px] px-3 py-2 rounded-xl font-serif-eng uppercase text-xs tracking-wider border transition-colors cursor-pointer ${
-                    isLightMode
-                      ? 'border-black/15 text-[#4a453d] hover:bg-black/5'
-                      : 'border-white/15 text-[#e4dac8]/80 hover:bg-white/5'
-                  }`}
-                >
-                  Clear Cache
-                </button>
-              </div>
-
-              {aiCacheNotice && (
-                <p
-                  role="status"
-                  className="font-serif-eng text-xs"
-                  style={{ color: isLightMode ? '#0d9488' : '#14b8a6' }}
-                >
-                  {aiCacheNotice}
-                </p>
-              )}
+                />
+              </button>
             </div>
-          )}
+            <p className={`font-serif-eng text-xs leading-relaxed opacity-70 ${tTextSub}`}>
+              Whisper-subtle parchment turn and spatial glass ripple acoustics on the Sanctuary Pass card.
+            </p>
+          </div>
 
           {/* Prayer Location & Calculation Method Card */}
           <div

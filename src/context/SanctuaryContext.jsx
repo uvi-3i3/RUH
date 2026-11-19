@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDevotionData } from '../hooks/useDevotionData';
 import { usePrayerTimes } from '../hooks/usePrayerTimes';
 import { useLocalNotifications } from '../hooks/useLocalNotifications';
-import { useLocalAI } from '../hooks/useLocalAI';
 import { syncStatusBarTheme } from '../native';
 import {
   hydrateMissingFromPreferences,
@@ -14,15 +13,17 @@ import {
   computeHabitCompletionSummary,
   parseAtmospherePhase,
   parseHapticsEnabled,
+  parseTactileAudioEnabled,
   parseThemeMode,
   serializeAtmospherePhase,
   serializeHapticsEnabled,
+  serializeTactileAudioEnabled,
   serializeThemeMode,
 } from '../utils/preferencesLogic';
 import { setHapticsEnabled } from '../utils/haptics';
+import { setTactileAudioEnabled } from '../utils/tactileAudio';
 import {
   HabitsContext,
-  LocalAIContext,
   PreferencesContext,
   SanctuaryContext,
 } from './sanctuaryStore';
@@ -54,15 +55,28 @@ function loadInitialHapticsEnabled() {
   }
 }
 
+function loadInitialTactileAudioEnabled() {
+  if (typeof window === 'undefined') return true;
+  try {
+    return parseTactileAudioEnabled(
+      localStorage.getItem(PREFERENCE_STORAGE_KEYS.TACTILE_AUDIO_ENABLED)
+    );
+  } catch {
+    return true;
+  }
+}
+
 export function SanctuaryProvider({ children }) {
   const devotionData = useDevotionData();
   const prayerTimes = usePrayerTimes();
   const notifications = useLocalNotifications({ devotionData, prayerTimes });
-  const localAI = useLocalAI();
 
   const [isLightMode, setIsLightMode] = useState(loadInitialThemeMode);
   const [devTimePhase, setDevTimePhaseState] = useState(loadInitialAtmospherePhase);
   const [isHapticsEnabled, setIsHapticsEnabledState] = useState(loadInitialHapticsEnabled);
+  const [isTactileAudioEnabled, setIsTactileAudioEnabledState] = useState(
+    loadInitialTactileAudioEnabled
+  );
 
   const toggleLightMode = useCallback(() => {
     setIsLightMode((prev) => !prev);
@@ -76,6 +90,10 @@ export function SanctuaryProvider({ children }) {
     setIsHapticsEnabledState((prev) => !prev);
   }, []);
 
+  const toggleTactileAudioEnabled = useCallback(() => {
+    setIsTactileAudioEnabledState((prev) => !prev);
+  }, []);
+
   // Hydrate preference keys from native Capacitor Preferences if WebView storage was purged
   useEffect(() => {
     let cancelled = false;
@@ -83,6 +101,7 @@ export function SanctuaryProvider({ children }) {
       PREFERENCE_STORAGE_KEYS.THEME_MODE,
       PREFERENCE_STORAGE_KEYS.ATMOSPHERE_PHASE,
       PREFERENCE_STORAGE_KEYS.HAPTICS_ENABLED,
+      PREFERENCE_STORAGE_KEYS.TACTILE_AUDIO_ENABLED,
     ]).then((recovered) => {
       if (cancelled) return;
       if (recovered[PREFERENCE_STORAGE_KEYS.THEME_MODE]) {
@@ -96,6 +115,11 @@ export function SanctuaryProvider({ children }) {
       if (recovered[PREFERENCE_STORAGE_KEYS.HAPTICS_ENABLED] !== undefined) {
         setIsHapticsEnabledState(
           parseHapticsEnabled(recovered[PREFERENCE_STORAGE_KEYS.HAPTICS_ENABLED])
+        );
+      }
+      if (recovered[PREFERENCE_STORAGE_KEYS.TACTILE_AUDIO_ENABLED] !== undefined) {
+        setIsTactileAudioEnabledState(
+          parseTactileAudioEnabled(recovered[PREFERENCE_STORAGE_KEYS.TACTILE_AUDIO_ENABLED])
         );
       }
     });
@@ -126,6 +150,15 @@ export function SanctuaryProvider({ children }) {
     mirroredSet(PREFERENCE_STORAGE_KEYS.HAPTICS_ENABLED, serializeHapticsEnabled(isHapticsEnabled));
   }, [isHapticsEnabled]);
 
+  // Sync tactile audio toggle to storage and audio runtime module
+  useEffect(() => {
+    setTactileAudioEnabled(isTactileAudioEnabled);
+    mirroredSet(
+      PREFERENCE_STORAGE_KEYS.TACTILE_AUDIO_ENABLED,
+      serializeTactileAudioEnabled(isTactileAudioEnabled)
+    );
+  }, [isTactileAudioEnabled]);
+
   // Keep top-level preference keys reactive across tabs/windows
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -136,6 +169,8 @@ export function SanctuaryProvider({ children }) {
         setDevTimePhaseState(parseAtmospherePhase(e.newValue));
       } else if (e.key === PREFERENCE_STORAGE_KEYS.HAPTICS_ENABLED) {
         setIsHapticsEnabledState(parseHapticsEnabled(e.newValue));
+      } else if (e.key === PREFERENCE_STORAGE_KEYS.TACTILE_AUDIO_ENABLED) {
+        setIsTactileAudioEnabledState(parseTactileAudioEnabled(e.newValue));
       }
     };
     window.addEventListener('storage', handleStorage);
@@ -152,6 +187,9 @@ export function SanctuaryProvider({ children }) {
       isHapticsEnabled,
       setIsHapticsEnabled: setIsHapticsEnabledState,
       toggleHapticsEnabled,
+      isTactileAudioEnabled,
+      setIsTactileAudioEnabled: setIsTactileAudioEnabledState,
+      toggleTactileAudioEnabled,
       isSimpleMode: devotionData.isSimpleMode,
       toggleSimpleMode: devotionData.toggleSimpleMode,
       isAmbientEnabled: devotionData.isAmbientEnabled,
@@ -186,6 +224,8 @@ export function SanctuaryProvider({ children }) {
       setDevTimePhase,
       isHapticsEnabled,
       toggleHapticsEnabled,
+      isTactileAudioEnabled,
+      toggleTactileAudioEnabled,
       devotionData.isSimpleMode,
       devotionData.toggleSimpleMode,
       devotionData.isAmbientEnabled,
@@ -266,19 +306,16 @@ export function SanctuaryProvider({ children }) {
       devotionData,
       prayerTimes,
       notifications,
-      localAI,
       preferences: preferencesValue,
       habits: habitsValue,
     }),
-    [devotionData, prayerTimes, notifications, localAI, preferencesValue, habitsValue]
+    [devotionData, prayerTimes, notifications, preferencesValue, habitsValue]
   );
 
   return (
     <SanctuaryContext.Provider value={sanctuaryValue}>
       <PreferencesContext.Provider value={preferencesValue}>
-        <HabitsContext.Provider value={habitsValue}>
-          <LocalAIContext.Provider value={localAI}>{children}</LocalAIContext.Provider>
-        </HabitsContext.Provider>
+        <HabitsContext.Provider value={habitsValue}>{children}</HabitsContext.Provider>
       </PreferencesContext.Provider>
     </SanctuaryContext.Provider>
   );

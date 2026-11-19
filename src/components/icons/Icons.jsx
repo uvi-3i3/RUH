@@ -206,16 +206,3 @@ export const FlameIcon = ({ size = 24, filled = false, className = '', ...props 
     <path d="M9 21h6" />
   </svg>
 );
-
-export const TreeNavIcon = ({ size = 24, className = '', ...props }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
-    <path d="M12 22v-9" />
-    <path d="M12 16l-3-3" />
-    <path d="M12 14l3.5-3.5" />
-    <path d="M8 22h8" />
-    <path d="M12 3a6.5 6.5 0 0 0-6.5 6.5c0 2.6 1.5 4.8 3.7 5.8h5.6c2.2-1 3.7-3.2 3.7-5.8A6.5 6.5 0 0 0 12 3Z" />
-  </svg>
-);
-
-
-

@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { computeDeltaScale } from '../utils/smoothInteractionLogic';
 
 /**
  * On-demand interactive Canvas Effects Engine.
@@ -23,6 +24,7 @@ export function useCanvasEngine({
     let animationFrameId = null;
     let isCancelled = false;
     let isRunning = false;
+    let lastFrameTime = 0;
     let embers = [];
 
     const isHeadless = typeof navigator !== 'undefined' && !!navigator.webdriver;
@@ -77,6 +79,7 @@ export function useCanvasEngine({
     const ensureRunning = () => {
       if (isCancelled || isRunning) return;
       isRunning = true;
+      lastFrameTime = 0;
       animationFrameId = requestAnimationFrame(loop);
     };
 
@@ -86,13 +89,16 @@ export function useCanvasEngine({
         return;
       }
 
+      const dtScale = lastFrameTime > 0 ? computeDeltaScale(time - lastFrameTime) : 1;
+      lastFrameTime = time;
+
       const W = window.innerWidth;
       const H = window.innerHeight;
       const t = isLightModeRef.current ? 1 : 0;
       const hk = hikmahRef.current ? 1 : 0;
 
       if (stateRef.current.isPressing && !inTransitRef.current && viewRef.current === 'main') {
-        stateRef.current.pressProgress += 0.035;
+        stateRef.current.pressProgress += 0.035 * dtScale;
         if (stateRef.current.pressProgress >= 1) {
           stateRef.current.pressProgress = 0;
           stateRef.current.isPressing = false;
@@ -100,7 +106,7 @@ export function useCanvasEngine({
           spawnEmbers(W / 2, H / 2 - 40, 32, true, 2.8);
         }
       } else if (stateRef.current.pressProgress > 0) {
-        stateRef.current.pressProgress = Math.max(0, stateRef.current.pressProgress - 0.08);
+        stateRef.current.pressProgress = Math.max(0, stateRef.current.pressProgress - 0.08 * dtScale);
       }
 
       const pressP = stateRef.current.pressProgress;
@@ -155,11 +161,11 @@ export function useCanvasEngine({
 
       for (let i = embers.length - 1; i >= 0; i--) {
         const e = embers[i];
-        e.x += e.vx + Math.sin(e.twinklePhase) * 0.12;
-        e.y += e.vy;
-        e.vx += e.wobble;
-        e.twinklePhase += e.twinkleSpeed;
-        e.life -= e.decay;
+        e.x += (e.vx + Math.sin(e.twinklePhase) * 0.12) * dtScale;
+        e.y += e.vy * dtScale;
+        e.vx += e.wobble * dtScale;
+        e.twinklePhase += e.twinkleSpeed * dtScale;
+        e.life -= e.decay * dtScale;
 
         if (e.life <= 0) {
           embers.splice(i, 1);

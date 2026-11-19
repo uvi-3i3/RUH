@@ -251,6 +251,23 @@ export function useDevotionData() {
   const [pendingBadgeQueue, setPendingBadgeQueue] = useState([]);
   const dataRef = useRef(data);
   dataRef.current = data;
+  const persistTimerRef = useRef(null);
+  const dirtyRef = useRef(false);
+  const isFirstMountRef = useRef(true);
+
+  const flushPersistenceNow = useCallback(() => {
+    if (persistTimerRef.current) {
+      clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = null;
+    }
+    if (!dirtyRef.current) return;
+    dirtyRef.current = false;
+    try {
+      mirroredSet(STORAGE_KEY, JSON.stringify(dataRef.current));
+    } catch (e) {
+      console.warn('Could not save devotion state', e);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -263,12 +280,33 @@ export function useDevotionData() {
     };
   }, []);
 
+  // Debounce serialization so rapid Misbaha / Habit / Prayer taps never block the main thread
   useEffect(() => {
-    try {
-      mirroredSet(STORAGE_KEY, JSON.stringify(data));
-    } catch (e) {
-      console.warn('Could not save devotion state', e);
+    if (isFirstMountRef.current) {
+      isFirstMountRef.current = false;
+      return undefined;
     }
+    dirtyRef.current = true;
+    if (persistTimerRef.current) {
+      clearTimeout(persistTimerRef.current);
+    }
+    persistTimerRef.current = setTimeout(() => {
+      persistTimerRef.current = null;
+      if (!dirtyRef.current) return;
+      dirtyRef.current = false;
+      try {
+        mirroredSet(STORAGE_KEY, JSON.stringify(dataRef.current));
+      } catch (e) {
+        console.warn('Could not save devotion state', e);
+      }
+    }, 180);
+
+    return () => {
+      if (persistTimerRef.current) {
+        clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
+      }
+    };
   }, [data]);
 
   useEffect(() => {
@@ -280,26 +318,40 @@ export function useDevotionData() {
       }
     };
 
-    const flushPersistence = () => {
+    const handleVisibilityOrHide = () => {
       if (document.visibilityState && document.visibilityState !== 'hidden') return;
-      try {
-        mirroredSet(STORAGE_KEY, JSON.stringify(dataRef.current));
-      } catch {}
+      flushPersistenceNow();
     };
 
     window.addEventListener('storage', handleStorage);
-    window.addEventListener('pagehide', flushPersistence);
-    document.addEventListener('visibilitychange', flushPersistence);
+    window.addEventListener('pagehide', flushPersistenceNow);
+    document.addEventListener('visibilitychange', handleVisibilityOrHide);
     return () => {
+      flushPersistenceNow();
       window.removeEventListener('storage', handleStorage);
-      window.removeEventListener('pagehide', flushPersistence);
-      document.removeEventListener('visibilitychange', flushPersistence);
+      window.removeEventListener('pagehide', flushPersistenceNow);
+      document.removeEventListener('visibilitychange', handleVisibilityOrHide);
     };
-  }, []);
+  }, [flushPersistenceNow]);
 
   const badgeEval = useMemo(
-    () => evaluateBadges(data, data.unlockedBadges),
-    [data]
+    () => evaluateBadges(dataRef.current, data.unlockedBadges),
+    [
+      data.totalVerses,
+      data.totalPrayers,
+      data.totalDhikr,
+      data.maxDailyPrayers,
+      data.history,
+      data.savedVerses,
+      data.dailyPrayers,
+      data.dailyTasks,
+      data.dailyHabitLogs,
+      data.qada,
+      data.favoriteDuaIds,
+      data.maqamat,
+      data.unlockedBadges,
+      data.streakPausedDates,
+    ]
   );
 
   useEffect(() => {

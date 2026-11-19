@@ -150,25 +150,23 @@ export const BurhanOverlay = ({
           hapticDismiss();
           onClose?.();
         }}
-        className="absolute inset-0 transition-opacity duration-500"
+        className="absolute inset-0 transition-opacity duration-300"
         style={{
           opacity: showContent ? 1 : 0,
-          background: isLightMode ? 'rgba(220,231,243,0.34)' : 'rgba(4,7,14,0.52)',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
+          background: isLightMode ? 'rgba(220,231,243,0.44)' : 'rgba(4,7,14,0.58)',
         }}
       />
 
       {/* Frosted Liquid-Glass Sheet */}
       <div
-        className={`relative z-10 w-full max-w-xl h-[92dvh] rounded-t-[28px] border-t border-x flex flex-col overflow-hidden transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        className={`relative z-10 w-full max-w-xl h-[92dvh] rounded-t-[28px] border-t border-x flex flex-col overflow-hidden transition-[transform,opacity] duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           isLightMode
-            ? 'bg-[#f6f3ec]/82 border-white/80 shadow-[0_-16px_48px_rgba(26,24,20,0.14)]'
-            : 'bg-[#090d16]/76 border-white/[0.12] shadow-[0_-20px_60px_rgba(0,0,0,0.75)]'
+            ? 'bg-[#f6f3ec]/90 border-white/80 shadow-[0_-16px_48px_rgba(26,24,20,0.14)]'
+            : 'bg-[#090d16]/88 border-white/[0.12] shadow-[0_-20px_60px_rgba(0,0,0,0.75)]'
         }`}
         style={{
-          backdropFilter: 'blur(26px) saturate(145%)',
-          WebkitBackdropFilter: 'blur(26px) saturate(145%)',
+          backdropFilter: 'blur(12px) saturate(130%)',
+          WebkitBackdropFilter: 'blur(12px) saturate(130%)',
           opacity: showContent ? 1 : 0,
           transform: showContent ? `translateY(${dragOffsetY}px)` : 'translateY(32px)',
           paddingBottom: 'env(safe-area-inset-bottom)',

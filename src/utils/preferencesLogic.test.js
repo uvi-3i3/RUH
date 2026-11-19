@@ -5,9 +5,11 @@ import {
   computeHabitCompletionSummary,
   parseAtmospherePhase,
   parseHapticsEnabled,
+  parseTactileAudioEnabled,
   parseThemeMode,
   serializeAtmospherePhase,
   serializeHapticsEnabled,
+  serializeTactileAudioEnabled,
   serializeThemeMode,
 } from './preferencesLogic';
 import { createHabitEntry, reorderHabitInList, updateHabitInList } from './habitLogic';
@@ -27,6 +29,15 @@ test('haptics preference defaults to true and parses/serializes cleanly', () => 
   assert.equal(parseHapticsEnabled('false'), false);
   assert.equal(serializeHapticsEnabled(true), 'true');
   assert.equal(serializeHapticsEnabled(false), 'false');
+});
+
+test('tactile audio preference defaults to true and parses/serializes cleanly', () => {
+  assert.equal(parseTactileAudioEnabled(null), true);
+  assert.equal(parseTactileAudioEnabled('true'), true);
+  assert.equal(parseTactileAudioEnabled('false'), false);
+  assert.equal(parseTactileAudioEnabled(false), false);
+  assert.equal(serializeTactileAudioEnabled(true), 'true');
+  assert.equal(serializeTactileAudioEnabled(false), 'false');
 });
 
 test('atmosphere phase parsing and serialization validates solar range 0..4', () => {

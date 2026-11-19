@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { memo, useState, useMemo } from 'react';
 import { useHabits, usePreferences } from '../../context/sanctuaryStore';
 import { computeTodaySummary } from '../../utils/habitLogic';
 import { CheckCircleIcon, PlusIcon, SparklesIcon, TrashIcon, XIcon } from '../icons/Icons';
@@ -12,7 +12,7 @@ import {
   hapticUndo,
 } from '../../utils/haptics';
 
-export const TasksSideColumn = ({
+export const TasksSideColumn = memo(({
   isVisible = true,
   isOpen = false,
   onOpen,
@@ -96,7 +96,7 @@ export const TasksSideColumn = ({
           }}
           aria-label={`Open Today's List (${summary.completedTodos} of ${summary.totalTodos} completed)`}
           aria-expanded={isOpen}
-          className={`group flex flex-col items-center justify-center gap-1.5 w-[44px] md:w-[48px] py-2.5 px-1.5 rounded-full border backdrop-blur-2xl cursor-pointer transition-all duration-300 active:scale-95 ${pillSurface}`}
+          className={`group flex flex-col items-center justify-center gap-1.5 w-[44px] md:w-[48px] py-2.5 px-1.5 rounded-full border backdrop-blur-md cursor-pointer transition-[transform,opacity,background-color,border-color] duration-300 active:scale-95 ${pillSurface}`}
         >
           {/* Radial Progress + Quest Icon */}
           <div className="relative w-7 h-7 flex items-center justify-center shrink-0">
@@ -173,7 +173,7 @@ export const TasksSideColumn = ({
         <>
           {/* Transparent tap-outside catcher so the Sanctuary sky stays visible */}
           <div
-            className="fixed inset-0 z-30 bg-black/15 backdrop-blur-[1px]"
+            className="fixed inset-0 z-30 bg-black/15"
             onClick={() => {
               hapticDismiss();
               setIsAdding(false);
@@ -186,7 +186,7 @@ export const TasksSideColumn = ({
             aria-modal="false"
             aria-label="Today's List"
             onClick={(e) => e.stopPropagation()}
-            className={`fixed left-3 md:left-7 top-1/2 -translate-y-1/2 z-40 w-[268px] sm:w-[288px] rounded-[22px] border backdrop-blur-2xl p-3.5 transition-all duration-300 ${cardSurface}`}
+            className={`fixed left-3 md:left-7 top-1/2 -translate-y-1/2 z-40 w-[268px] sm:w-[288px] rounded-[22px] border backdrop-blur-md p-3.5 transition-[transform,opacity] duration-300 ${cardSurface}`}
           >
             {/* Compact Quest Card Header */}
             <div className="flex items-center justify-between gap-2 mb-2">
@@ -259,9 +259,9 @@ export const TasksSideColumn = ({
               }`}
             >
               <div
-                className="h-full rounded-full transition-all duration-500 ease-out"
+                className="h-full w-full rounded-full origin-left transition-transform duration-300 ease-out"
                 style={{
-                  width: `${summary.percentage}%`,
+                  transform: `scaleX(${Math.max(0, Math.min(1, summary.percentage / 100))})`,
                   backgroundColor: accentColor,
                 }}
               />
@@ -409,4 +409,4 @@ export const TasksSideColumn = ({
       )}
     </>
   );
-};
+});

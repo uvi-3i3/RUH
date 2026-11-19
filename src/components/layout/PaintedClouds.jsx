@@ -1,9 +1,9 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { generateCleanStarfield } from '../../utils/devotionLogic';
 import ghibliDayClouds from '../../assets/images/ghibli_day_clouds_1794550142648.jpg';
 import ghibliNightClouds from '../../assets/images/ghibli_night_clouds_1794550143549.jpg';
 
-const NightStarfield = () => {
+const NightStarfield = memo(() => {
   const stars = useMemo(
     () => generateCleanStarfield({ count: 32, minDistance: 8, seed: 1448 }),
     []
@@ -30,9 +30,9 @@ const NightStarfield = () => {
       ))}
     </div>
   );
-};
+});
 
-export const PaintedClouds = ({ isLightMode }) => {
+export const PaintedClouds = memo(({ isLightMode }) => {
   const nightHorizonMask =
     'linear-gradient(to top, black 0%, black 24%, rgba(0,0,0,0.6) 33%, transparent 42%)';
 
@@ -73,4 +73,4 @@ export const PaintedClouds = ({ isLightMode }) => {
       )}
     </div>
   );
-};
+});

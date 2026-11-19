@@ -5,7 +5,7 @@ import {
   rankDuasByMoment,
   shouldShowDuaGuidance,
 } from '../../utils/localAiLogic';
-import { useOptionalLocalAI, useOptionalPreferences } from '../../context/sanctuaryStore';
+import { useOptionalPreferences } from '../../context/sanctuaryStore';
 import {
   BookIcon,
   BookmarkIcon,
@@ -32,31 +32,25 @@ export const DuasModal = ({
   initialQuery = '',
 }) => {
   const preferencesCtx = useOptionalPreferences();
-  const localAI = useOptionalLocalAI();
   const isLightMode = isLightModeProp ?? preferencesCtx?.isLightMode ?? false;
 
   const [category, setCategory] = useState('all');
   const [query, setQuery] = useState('');
   const [copiedId, setCopiedId] = useState(null);
-  const [guidanceState, setGuidanceState] = useState({
-    text: '',
-    sourceMode: 'fallback',
-    loading: false,
-  });
-  const guidanceReqRef = useRef(0);
+  const copiedTimerRef = useRef(null);
 
   useEffect(() => {
-    if (isOpen) {
-      if (initialQuery) {
-        setCategory('all');
-        setQuery(initialQuery);
-      }
-    } else {
-      guidanceReqRef.current += 1;
-      localAI?.abortGeneration?.();
-      setGuidanceState({ text: '', sourceMode: 'fallback', loading: false });
+    if (isOpen && initialQuery) {
+      setCategory('all');
+      setQuery(initialQuery);
     }
   }, [isOpen, initialQuery]);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    };
+  }, []);
 
   const rankedResults = useMemo(
     () =>
@@ -75,44 +69,10 @@ export const DuasModal = ({
 
   const topDua = filteredDuas[0] || null;
   const wantsGuidance = isOpen && shouldShowDuaGuidance(query) && Boolean(topDua);
-
-  useEffect(() => {
-    if (!wantsGuidance || !topDua) {
-      guidanceReqRef.current += 1;
-      setGuidanceState({ text: '', sourceMode: 'fallback', loading: false });
-      return undefined;
-    }
-
-    const epoch = ++guidanceReqRef.current;
-    const instantText = composeGroundedDuaFallback(query, topDua);
-    setGuidanceState({
-      text: instantText,
-      sourceMode: 'fallback',
-      loading: Boolean(localAI?.isReady),
-    });
-
-    if (!localAI?.isReady || !localAI?.guideForDuas) {
-      return undefined;
-    }
-
-    const timer = setTimeout(async () => {
-      const res = await localAI.guideForDuas({ query, topDua });
-      if (guidanceReqRef.current !== epoch) return;
-      if (res?.guidance) {
-        setGuidanceState({
-          text: res.guidance,
-          sourceMode: res.sourceMode || 'llm',
-          loading: false,
-        });
-      } else {
-        setGuidanceState((prev) => ({ ...prev, loading: false }));
-      }
-    }, 420);
-
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [wantsGuidance, query, topDua?.id, localAI?.isReady]);
+  const guidanceText = useMemo(
+    () => (wantsGuidance && topDua ? composeGroundedDuaFallback(query, topDua) : ''),
+    [wantsGuidance, query, topDua]
+  );
 
   if (!isOpen) return null;
 
@@ -130,7 +90,11 @@ export const DuasModal = ({
       }
       hapticSuccess();
       setCopiedId(dua.id);
-      setTimeout(() => setCopiedId((cur) => (cur === dua.id ? null : cur)), 1800);
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = setTimeout(() => {
+        copiedTimerRef.current = null;
+        setCopiedId((cur) => (cur === dua.id ? null : cur));
+      }, 1800);
     } catch {
       // Ignore clipboard failures
     }
@@ -145,10 +109,9 @@ export const DuasModal = ({
       className="fixed inset-0 z-[105] flex flex-col pointer-events-auto"
     >
       <div
-        className="absolute inset-0 transition-opacity duration-500"
+        className="absolute inset-0 transition-opacity duration-300"
         style={{
-          background: isLightMode ? 'rgba(244,240,232,0.96)' : 'rgba(8,9,13,0.96)',
-          backdropFilter: 'blur(24px)',
+          background: isLightMode ? 'rgba(244,240,232,0.97)' : 'rgba(8,9,13,0.97)',
         }}
         onClick={() => {
           hapticDismiss();
@@ -261,7 +224,7 @@ export const DuasModal = ({
           style={{ paddingBottom: 'calc(24px + var(--sab))' }}
         >
           {/* Moment-Aware Companion Guidance Strip */}
-          {wantsGuidance && guidanceState.text && (
+          {guidanceText && (
             <div
               data-testid="dua-guidance-strip"
               className={`w-full rounded-[20px] border p-4 transition-colors ${
@@ -270,26 +233,17 @@ export const DuasModal = ({
                   : 'bg-[#14b8a6]/[0.07] border-[#14b8a6]/25'
               }`}
             >
-              <div className="flex items-center justify-between gap-2 mb-1.5">
-                <div className="flex items-center gap-1.5">
-                  <SparklesIcon
-                    size={13}
-                    className={guidanceState.loading ? 'animate-spin' : ''}
-                    style={{ color: tealHex }}
-                  />
-                  <span
-                    className="font-serif-eng text-[9.5px] uppercase tracking-[0.18em] font-medium"
-                    style={{ color: tealHex }}
-                  >
-                    Moment Companion
-                  </span>
-                </div>
-                <span className={`font-serif-eng text-[9px] uppercase tracking-[0.12em] opacity-65 ${tTextSub}`}>
-                  {guidanceState.sourceMode === 'llm' ? 'On-Device AI' : 'Grounded Match'}
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <SparklesIcon size={13} style={{ color: tealHex }} />
+                <span
+                  className="font-serif-eng text-[9.5px] uppercase tracking-[0.18em] font-medium"
+                  style={{ color: tealHex }}
+                >
+                  For This Moment
                 </span>
               </div>
               <p className={`font-serif-eng text-[13px] leading-relaxed ${tTextMain}`}>
-                {guidanceState.text}
+                {guidanceText}
               </p>
             </div>
           )}

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { getAngularDelta } from '../../utils/devotionLogic';
+import { normalizeCompassHeading } from '../../utils/smoothInteractionLogic';
 import { ChevronDownIcon, CompassIcon, MapPinIcon } from '../icons/Icons';
 import {
   hapticDismiss,
@@ -46,28 +47,38 @@ export const QiblaModal = ({
       return;
     }
 
-    const handleOrientation = (event) => {
+    let hasReceivedAbsolute = false;
+
+    const handleOrientation = (event, isAbsoluteStream) => {
+      if (!isAbsoluteStream && hasReceivedAbsolute) return;
       let compassHeading = null;
       if (typeof event.webkitCompassHeading === 'number' && !Number.isNaN(event.webkitCompassHeading)) {
         compassHeading = event.webkitCompassHeading;
-      } else if (typeof event.alpha === 'number' && event.absolute) {
+      } else if (typeof event.alpha === 'number' && (event.absolute || isAbsoluteStream)) {
         compassHeading = (360 - event.alpha) % 360;
       }
       if (compassHeading !== null) {
-        setHeading(Math.round(compassHeading));
-        setSensorStatus('active');
+        if (isAbsoluteStream) hasReceivedAbsolute = true;
+        setHeading((prev) => {
+          const res = normalizeCompassHeading(compassHeading, prev);
+          return res.changed ? res.heading : prev;
+        });
+        setSensorStatus((prev) => (prev === 'active' ? prev : 'active'));
       }
     };
+
+    const onAbsolute = (e) => handleOrientation(e, true);
+    const onRelative = (e) => handleOrientation(e, false);
 
     const needsExplicitPermission =
       typeof DeviceOrientationEvent.requestPermission === 'function';
 
     if (!needsExplicitPermission || iosGranted) {
-      window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-      window.addEventListener('deviceorientation', handleOrientation, true);
+      window.addEventListener('deviceorientationabsolute', onAbsolute, true);
+      window.addEventListener('deviceorientation', onRelative, true);
       return () => {
-        window.removeEventListener('deviceorientationabsolute', handleOrientation, true);
-        window.removeEventListener('deviceorientation', handleOrientation, true);
+        window.removeEventListener('deviceorientationabsolute', onAbsolute, true);
+        window.removeEventListener('deviceorientation', onRelative, true);
       };
     }
   }, [isOpen, iosGranted]);
@@ -140,10 +151,9 @@ export const QiblaModal = ({
       className="fixed inset-0 z-[105] flex flex-col pointer-events-auto"
     >
       <div
-        className="absolute inset-0 transition-opacity duration-500"
+        className="absolute inset-0 transition-opacity duration-300"
         style={{
-          background: isLightMode ? 'rgba(244,240,232,0.95)' : 'rgba(7,9,15,0.96)',
-          backdropFilter: 'blur(26px)',
+          background: isLightMode ? 'rgba(244,240,232,0.97)' : 'rgba(7,9,15,0.97)',
         }}
         onClick={() => {
           hapticDismiss();

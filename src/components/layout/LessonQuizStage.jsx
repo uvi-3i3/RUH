@@ -5,7 +5,6 @@ import {
   hapticDetent,
   hapticTapLight,
 } from '../../utils/haptics';
-import { ArtifactVignetteThumbnail } from './AncientMapGlyphs';
 
 const CheckCircleIcon = ({ size = 17, style, className = '' }) => (
   <svg
@@ -351,17 +350,20 @@ export const LessonCompleteStage = ({
               : 'bg-[#191510]/85 border-[#d4af6a]/22'
           }`}
         >
-          <ArtifactVignetteThumbnail
-            id={nextLesson.id}
-            sheet={nextLesson.artifactSheet}
-            focus={nextLesson.artifactFocus}
-            scale={nextLesson.artifactScale}
-            alt={nextLesson.artifactName}
-            isDiscovered={true}
-            isSelected={false}
-            isLightMode={isLightMode}
-            sizeClass="w-12 h-12"
-          />
+          <div
+            aria-hidden="true"
+            className={`w-12 h-12 shrink-0 rounded-xl border flex items-center justify-center ${
+              isLightMode
+                ? 'bg-[#efe5d0] border-[#7a5420]/35 text-[#7a5420]'
+                : 'bg-[#221c15] border-[#d4af6a]/35 text-[#d4af6a]'
+            }`}
+          >
+            <svg width="24" height="24" viewBox="0 0 36 36" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 30V15C8 9.5 18 5 18 5C18 5 28 9.5 28 15V30" />
+              <path d="M12 30V16.5C12 12.5 18 9.5 18 9.5C18 9.5 24 12.5 24 16.5V30" />
+              <line x1="6" y1="30" x2="30" y2="30" />
+            </svg>
+          </div>
           <div className="min-w-0 flex-1">
             <p
               className="font-serif-eng text-[11px] font-semibold tracking-[0.08em]"

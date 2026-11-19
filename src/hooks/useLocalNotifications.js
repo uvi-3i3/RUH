@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import {
@@ -110,13 +110,13 @@ export function useLocalNotifications({ devotionData, prayerTimes }) {
   const refreshPermission = useCallback(async () => {
     if (!isNative) {
       const next = getBrowserPermissionState();
-      setPermission(next);
+      setPermission((prev) => (prev === next ? prev : next));
       return next;
     }
     try {
       const res = await LocalNotifications.checkPermissions();
       const next = res.display === 'granted' ? 'granted' : res.display || 'default';
-      setPermission(next);
+      setPermission((prev) => (prev === next ? prev : next));
       return next;
     } catch {
       return 'default';
@@ -554,14 +554,30 @@ export function useLocalNotifications({ devotionData, prayerTimes }) {
     return () => navigator.serviceWorker.removeEventListener('message', onSwMessage);
   }, [devotionData.dailyCompletedPrayers, devotionData.logPrayer]);
 
+  const schedulerConfigRef = useRef({
+    prayers: devotionData.prayers,
+    customReminders: devotionData.customReminders,
+    dailyCompletedPrayers: devotionData.dailyCompletedPrayers,
+    notificationLeadMinutes: devotionData.notificationLeadMinutes || 0,
+    deliverNotification,
+  });
+  schedulerConfigRef.current = {
+    prayers: devotionData.prayers,
+    customReminders: devotionData.customReminders,
+    dailyCompletedPrayers: devotionData.dailyCompletedPrayers,
+    notificationLeadMinutes: devotionData.notificationLeadMinutes || 0,
+    deliverNotification,
+  };
+
   // Foreground / Background-tab scheduler for local push & sanctuary reminders
   useEffect(() => {
     const checkDue = () => {
+      const cfg = schedulerConfigRef.current;
       const { dueItems, newSentKeys } = collectDueNotifications({
-        prayersSettings: devotionData.prayers,
-        customReminders: devotionData.customReminders,
-        completedPrayersToday: devotionData.dailyCompletedPrayers,
-        leadMinutes: devotionData.notificationLeadMinutes || 0,
+        prayersSettings: cfg.prayers,
+        customReminders: cfg.customReminders,
+        completedPrayersToday: cfg.dailyCompletedPrayers,
+        leadMinutes: cfg.notificationLeadMinutes,
         sentKeys: sentKeysRef.current,
         now: new Date(),
       });
@@ -570,7 +586,7 @@ export function useLocalNotifications({ devotionData, prayerTimes }) {
         persistSentKeys({ ...sentKeysRef.current, ...newSentKeys });
         dueItems.forEach((item, index) => {
           setTimeout(() => {
-            deliverNotification(item.payload);
+            schedulerConfigRef.current.deliverNotification(item.payload);
           }, index * 600);
         });
       }
@@ -590,15 +606,7 @@ export function useLocalNotifications({ devotionData, prayerTimes }) {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisChange);
     };
-  }, [
-    deliverNotification,
-    devotionData.customReminders,
-    devotionData.dailyCompletedPrayers,
-    devotionData.notificationLeadMinutes,
-    devotionData.prayers,
-    persistSentKeys,
-    refreshPermission,
-  ]);
+  }, [persistSentKeys, refreshPermission]);
 
   // Cleanup active toast timeout on unmount
   useEffect(() => {
@@ -607,32 +615,51 @@ export function useLocalNotifications({ devotionData, prayerTimes }) {
     };
   }, []);
 
+  const syncPrayerReminderTimes = devotionData.syncPrayerReminderTimes;
+  const solarTimes = prayerTimes?.prayerData?.times;
+  const canSyncSolarTimes = Boolean(solarTimes);
+
   const syncFromLiveSolarTimes = useCallback(() => {
-    const times = prayerTimes?.prayerData?.times;
-    if (!times) return false;
+    if (!solarTimes) return false;
     const formatted = {};
     for (const id of Object.keys(PRAYER_ID_MAP)) {
-      if (times[id]) {
-        formatted[id] = formatDateToHHMM(times[id]);
+      if (solarTimes[id]) {
+        formatted[id] = formatDateToHHMM(solarTimes[id]);
       }
     }
-    devotionData.syncPrayerReminderTimes?.(formatted);
+    syncPrayerReminderTimes?.(formatted);
     return true;
-  }, [devotionData, prayerTimes?.prayerData?.times]);
+  }, [syncPrayerReminderTimes, solarTimes]);
 
-  return {
-    permission,
-    isNative,
-    activeToast,
-    dismissToast,
-    refreshPermission,
-    requestPermission,
-    sendPreviewAlert,
-    scheduleNativeReminder,
-    cancelNativeReminder,
-    syncAllNativePrayerSchedules,
-    syncFromLiveSolarTimes,
-    canSyncSolarTimes: Boolean(prayerTimes?.prayerData?.times),
-    prayerIdMap: PRAYER_ID_MAP,
-  };
+  return useMemo(
+    () => ({
+      permission,
+      isNative,
+      activeToast,
+      dismissToast,
+      refreshPermission,
+      requestPermission,
+      sendPreviewAlert,
+      scheduleNativeReminder,
+      cancelNativeReminder,
+      syncAllNativePrayerSchedules,
+      syncFromLiveSolarTimes,
+      canSyncSolarTimes,
+      prayerIdMap: PRAYER_ID_MAP,
+    }),
+    [
+      permission,
+      isNative,
+      activeToast,
+      dismissToast,
+      refreshPermission,
+      requestPermission,
+      sendPreviewAlert,
+      scheduleNativeReminder,
+      cancelNativeReminder,
+      syncAllNativePrayerSchedules,
+      syncFromLiveSolarTimes,
+      canSyncSolarTimes,
+    ]
+  );
 }

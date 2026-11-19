@@ -249,10 +249,9 @@ export const RemindersModal = ({
       className="fixed inset-0 z-[100] flex flex-col pointer-events-auto"
     >
       <div
-        className="absolute inset-0 transition-opacity duration-500"
+        className="absolute inset-0 transition-opacity duration-300"
         style={{
-          background: isLightMode ? 'rgba(244,240,232,0.94)' : 'rgba(8,7,6,0.95)',
-          backdropFilter: 'blur(24px)',
+          background: isLightMode ? 'rgba(244,240,232,0.97)' : 'rgba(8,7,6,0.97)',
         }}
         onClick={() => {
           hapticDismiss();

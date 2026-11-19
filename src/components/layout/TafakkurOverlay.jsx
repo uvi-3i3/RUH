@@ -12,7 +12,7 @@ import {
   rankDuasByMoment,
   rankVersesByResonance,
 } from '../../utils/localAiLogic';
-import { useOptionalLocalAI, useOptionalPreferences } from '../../context/sanctuaryStore';
+import { useOptionalPreferences } from '../../context/sanctuaryStore';
 import {
   hapticDismiss,
   hapticNavigate,
@@ -29,34 +29,23 @@ export const TafakkurOverlay = ({
   onSave,
   onClose,
   onOpenDua,
-  localAI: localAIProp,
   allVerses,
 }) => {
   const preferencesCtx = useOptionalPreferences();
-  const localAICtx = useOptionalLocalAI();
-  const localAI = localAIProp ?? localAICtx;
   const isLightMode = isLightModeProp ?? preferencesCtx?.isLightMode ?? false;
 
   const [note, setNote] = useState(initialNote);
   const [feedback, setFeedback] = useState(null);
-  const [streamingCommentary, setStreamingCommentary] = useState('');
-  const [isReflecting, setIsReflecting] = useState(false);
   const textareaRef = useRef(null);
-  const requestEpochRef = useRef(0);
 
   useEffect(() => {
     if (isOpen) {
       setNote(initialNote || '');
       setFeedback(null);
-      setStreamingCommentary('');
-      setIsReflecting(false);
-      const t = setTimeout(() => textareaRef.current?.focus(), 250);
+      const t = setTimeout(() => textareaRef.current?.focus(), 200);
       return () => clearTimeout(t);
-    } else {
-      requestEpochRef.current += 1;
-      localAI?.abortGeneration?.();
-      setIsReflecting(false);
     }
+    return undefined;
   }, [isOpen, verse?.id, initialNote]);
 
   if (!isOpen || !verse) return null;
@@ -69,39 +58,20 @@ export const TafakkurOverlay = ({
   const goldColor = isLightMode ? '#8a621c' : '#d2a24b';
 
   const handleClose = () => {
-    requestEpochRef.current += 1;
-    localAI?.abortGeneration?.();
     hapticDismiss();
     onClose?.();
   };
 
   const handleSave = () => {
-    requestEpochRef.current += 1;
-    localAI?.abortGeneration?.();
     hapticSuccess();
     if (onSave) onSave(verse.id, note);
   };
 
-  const handleNoteChange = (nextValue) => {
-    setNote(nextValue);
-    if (isReflecting) {
-      requestEpochRef.current += 1;
-      localAI?.abortGeneration?.();
-      setIsReflecting(false);
-      setStreamingCommentary('');
-    }
-  };
-
-  const handleReflect = async () => {
+  const handleReflect = () => {
     const trimmed = note.trim();
-    if (!trimmed || trimmed.length < 8 || isReflecting) return;
+    if (!trimmed || trimmed.length < 8) return;
 
-    const epoch = ++requestEpochRef.current;
     hapticTapMedium();
-    setIsReflecting(true);
-    setStreamingCommentary('');
-
-    // Seed 0-ms grounded feedback immediately so Resonant Verse & Dua appear without delay
     const rankedVerses = rankVersesByResonance(trimmed, allVerses || [], {
       excludeVerseId: verse.id,
       limit: 2,
@@ -109,42 +79,15 @@ export const TafakkurOverlay = ({
     const candidateVerses = rankedVerses.map((r) => r.item).filter(Boolean);
     const rankedDuas = rankDuasByMoment(ESSENTIAL_DUAS, { query: trimmed });
     const candidateDua = rankedDuas[0]?.item || null;
-    const initialGrounded = composeGroundedTafakkurFallback({
+    const grounded = composeGroundedTafakkurFallback({
       note: trimmed,
       activeVerse: verse,
       candidateVerses,
       candidateDua,
       isSimpleMode,
     });
-    setFeedback(initialGrounded);
-
-    try {
-      if (localAI?.reflectOnTafakkur) {
-        const result = await localAI.reflectOnTafakkur({
-          note: trimmed,
-          activeVerse: verse,
-          allVerses: allVerses || [],
-          isSimpleMode,
-          onStream: (partial) => {
-            if (requestEpochRef.current === epoch) {
-              setStreamingCommentary(partial);
-            }
-          },
-        });
-        if (requestEpochRef.current !== epoch) return;
-        if (result) {
-          hapticSuccess();
-          setFeedback(result);
-        }
-      } else {
-        hapticSuccess();
-      }
-    } finally {
-      if (requestEpochRef.current === epoch) {
-        setIsReflecting(false);
-        setStreamingCommentary('');
-      }
-    }
+    hapticSuccess();
+    setFeedback(grounded);
   };
 
   const activeTranslation = String(
@@ -153,27 +96,13 @@ export const TafakkurOverlay = ({
 
   const canReflect = note.trim().length >= 8;
 
-  const statusHint = (() => {
-    if (!localAI) return null;
-    if (localAI.isReady) {
-      return `On-device AI ready (${localAI.runtimeBackend === 'webgpu' ? 'WebGPU' : 'WASM'})`;
-    }
-    if (localAI.isDownloading) {
-      return `Grounded reflection active · Preparing local AI (${localAI.progress || 0}%)`;
-    }
-    if (localAI.status === 'paused') {
-      return 'Grounded reflection active · Local AI paused in Settings';
-    }
-    return 'Offline grounded companion active';
-  })();
-
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-label="Tafakkur Reflection Journal"
       data-testid="tafakkur-overlay"
-      className={`fixed inset-0 z-[110] flex flex-col w-full h-[100dvh] backdrop-blur-2xl transition-opacity duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${tBg}`}
+      className={`fixed inset-0 z-[110] flex flex-col w-full h-[100dvh] transition-opacity duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${tBg}`}
       style={{ opacity: isOpen ? 1 : 0, pointerEvents: isOpen ? 'auto' : 'none' }}
     >
       <div
@@ -226,7 +155,7 @@ export const TafakkurOverlay = ({
       >
         <div
           className={`w-full flex flex-col items-center ${
-            feedback || isReflecting ? 'pt-2 pb-6' : 'my-auto py-4'
+            feedback ? 'pt-2 pb-6' : 'my-auto py-4'
           }`}
         >
           <p
@@ -251,7 +180,7 @@ export const TafakkurOverlay = ({
             <textarea
               ref={textareaRef}
               value={note}
-              onChange={(e) => handleNoteChange(e.target.value)}
+              onChange={(e) => setNote(e.target.value)}
               placeholder="Write your reflection freely..."
               aria-label="Personal reflection note"
               className={`w-full bg-transparent border-b outline-none resize-none font-serif-eng italic text-lg text-center leading-relaxed pb-4 transition-colors ${
@@ -267,32 +196,20 @@ export const TafakkurOverlay = ({
                 <button
                   type="button"
                   onClick={handleReflect}
-                  disabled={isReflecting}
-                  className={`min-h-[44px] px-5 py-2 rounded-full transition-all duration-300 flex items-center gap-2 border text-[11px] font-serif-eng uppercase tracking-[0.16em] cursor-pointer disabled:opacity-65 ${
+                  className={`min-h-[44px] px-5 py-2 rounded-full transition-all duration-300 flex items-center gap-2 border text-[11px] font-serif-eng uppercase tracking-[0.16em] cursor-pointer ${
                     isLightMode
                       ? 'bg-[#0d9488]/10 text-[#0d9488] border-[#0d9488]/30 hover:bg-[#0d9488]/16'
                       : 'bg-[#14b8a6]/12 text-[#14b8a6] border-[#14b8a6]/30 hover:bg-[#14b8a6]/20'
                   }`}
                 >
-                  <SparklesIcon size={14} className={isReflecting ? 'animate-spin' : ''} />
-                  <span>
-                    {isReflecting
-                      ? 'Contemplating...'
-                      : feedback
-                        ? 'Reflect Again'
-                        : 'Reflect with Ruh'}
-                  </span>
+                  <SparklesIcon size={14} />
+                  <span>{feedback ? 'Refresh Reflection' : 'Reflect with Ruh'}</span>
                 </button>
-                {statusHint && (
-                  <p className={`font-serif-eng text-[10px] tracking-[0.06em] opacity-65 text-center ${tTextSub}`}>
-                    {statusHint}
-                  </p>
-                )}
               </div>
             )}
           </div>
 
-          {/* Grounded Editorial Feedback Card (Instant 0-ms seed + live on-device AI stream) */}
+          {/* Grounded Editorial Feedback Card */}
           {feedback && (
             <div
               data-testid="tafakkur-feedback-card"
@@ -302,37 +219,18 @@ export const TafakkurOverlay = ({
                   : 'bg-white/[0.04] border-[#14b8a6]/25'
               }`}
             >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5">
-                  <SparklesIcon
-                    size={13}
-                    className={isReflecting ? 'animate-spin' : ''}
-                    style={{ color: accentColor }}
-                  />
-                  <span
-                    className="font-serif-eng text-[10px] uppercase tracking-[0.18em] font-medium"
-                    style={{ color: accentColor }}
-                  >
-                    Ruh Reflection
-                  </span>
-                </div>
+              <div className="flex items-center gap-1.5">
+                <SparklesIcon size={13} style={{ color: accentColor }} />
                 <span
-                  className={`font-serif-eng text-[9px] uppercase tracking-[0.14em] px-2 py-0.5 rounded-full border ${
-                    isLightMode
-                      ? 'border-black/10 text-[#4a453d] bg-black/[0.03]'
-                      : 'border-white/12 text-[#e4dac8]/75 bg-white/[0.04]'
-                  }`}
+                  className="font-serif-eng text-[10px] uppercase tracking-[0.18em] font-medium"
+                  style={{ color: accentColor }}
                 >
-                  {isReflecting && localAI?.isReady
-                    ? 'Refining on-device...'
-                    : feedback.sourceMode === 'llm'
-                      ? 'On-Device AI'
-                      : 'Grounded Match'}
+                  Ruh Reflection
                 </span>
               </div>
 
               <p className={`font-serif-eng text-[14.5px] leading-[1.85] ${tTextMain}`}>
-                {streamingCommentary || feedback.commentary}
+                {feedback.commentary}
               </p>
 
               {/* Canonical Companion Verse */}

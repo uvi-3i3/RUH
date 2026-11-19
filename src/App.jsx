@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTemporalPhase, rgbToHex } from './hooks/useTemporalPhase';
 import { SavedVersesModal } from './components/layout/SavedVersesModal';
 import { useHijriDate } from './hooks/useHijriDate';
@@ -11,27 +11,21 @@ import {
   CircleIcon,
   CheckCircleIcon,
   ChevronDownIcon,
-  ChevronRightIcon,
   BookmarkIcon,
-  BellIcon,
-  SettingsIcon,
   MainNavIcon,
   ProfileNavIcon,
   TasksNavIcon,
   LearningPathNavIcon,
   ShareIcon,
   CompassIcon,
-  BookIcon,
-  RotateCcwIcon,
 } from './components/icons/Icons';
-import { DevotionHeatmap } from './components/layout/DevotionHeatmap';
-import { DailyStreakTracker } from './components/layout/DailyStreakTracker';
 import { TasksView } from './components/layout/TasksView';
+import { ProfileIdCard } from './components/layout/ProfileIdCard';
 import { LearningPathPage } from './components/layout/LearningPathPage';
 import { captureClickOriginFromEvent } from './utils/learningPathLogic';
+import { isPointerDrag, resolveNextPrayerFocusIndex } from './utils/smoothInteractionLogic';
 import { PRACTICE_SETS } from './data/adhkarData';
 import { TasksSideColumn } from './components/layout/TasksSideColumn';
-import { StationIndicator } from './components/layout/StationIndicator';
 import { TafakkurOverlay } from './components/layout/TafakkurOverlay';
 import { BurhanOverlay } from './components/layout/BurhanOverlay';
 import { SettingsModal } from './components/layout/SettingsModal';
@@ -49,7 +43,6 @@ import {
   selectActiveBurhan,
 } from './utils/devotionLogic';
 import { PaintedClouds } from './components/layout/PaintedClouds';
-import { BadgesShowcase } from './components/layout/BadgesShowcase';
 import { BadgeRewardOverlay } from './components/badges/BadgeRewardOverlay';
 import { SacredNotificationToast } from './components/layout/SacredNotificationToast';
 import { registerNativeLifecycle } from './native';
@@ -66,7 +59,15 @@ import {
 } from './utils/haptics';
 
 export default function App() {
-  const { devotionData, prayerTimes, notifications, localAI } = useSanctuary();
+  const { devotionData, prayerTimes, notifications } = useSanctuary();
+  const {
+    logVerseSwipe,
+    toggleSaveVerse,
+    togglePrayer,
+    markTaskRewarded,
+    addYaqeen,
+    advanceStation,
+  } = devotionData;
   const { isLightMode, toggleLightMode, devTimePhase } = usePreferences();
   const { completedHabitsCount, totalHabitsCount } = useHabits();
   const hijri = useHijriDate();
@@ -133,7 +134,6 @@ export default function App() {
   const [learningPathClosing, setLearningPathClosing] = useState(false);
   const [reviewPrayers, setReviewPrayers] = useState(false);
   const [inspectedBadge, setInspectedBadge] = useState(null);
-  const [journeyTab, setJourneyTab] = useState('streak'); // 'streak' | 'badges' | 'path'
   const prayerLongPressTimer = useRef(null);
   const prayerLongPressTriggered = useRef(false);
   const wheelDragRef = useRef({
@@ -146,6 +146,18 @@ export default function App() {
   });
   const lastTapTime = useRef(0);
   const doubleTapCooldown = useRef(false);
+  const verseFadeTimerRef = useRef(null);
+  const verseUnlockTimerRef = useRef(null);
+  const verseRaf1Ref = useRef(null);
+  const verseRaf2Ref = useRef(null);
+  const prayerAutoFocusTimerRef = useRef(null);
+  const checkingTimerRef = useRef(null);
+  const pressDelayTimerRef = useRef(null);
+  const wheelCooldownTimerRef = useRef(null);
+  const saveGlowTimerRef = useRef(null);
+  const copiedTimerRef = useRef(null);
+  const doubleTapTimerRef = useRef(null);
+  const wheelDragResetTimerRef = useRef(null);
 
   const isLearningPathOpen = Boolean(learningPathOrigin);
 
@@ -348,48 +360,93 @@ export default function App() {
   }, [inTransit]);
 
   const scrollCooldown = useRef(false);
-  const touchStart = useRef({ x: 0, y: 0 });
+  const touchStart = useRef({ x: 0, y: 0, valid: false });
+
+  const cancelVerseTransition = useCallback(() => {
+    if (verseFadeTimerRef.current) {
+      clearTimeout(verseFadeTimerRef.current);
+      verseFadeTimerRef.current = null;
+    }
+    if (verseUnlockTimerRef.current) {
+      clearTimeout(verseUnlockTimerRef.current);
+      verseUnlockTimerRef.current = null;
+    }
+    if (verseRaf1Ref.current) {
+      cancelAnimationFrame(verseRaf1Ref.current);
+      verseRaf1Ref.current = null;
+    }
+    if (verseRaf2Ref.current) {
+      cancelAnimationFrame(verseRaf2Ref.current);
+      verseRaf2Ref.current = null;
+    }
+  }, []);
+
+  const cancelPrayerAutoFocus = useCallback(() => {
+    if (prayerAutoFocusTimerRef.current) {
+      clearTimeout(prayerAutoFocusTimerRef.current);
+      prayerAutoFocusTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     viewRef.current = currentView;
-  }, [currentView]);
+    if (currentView !== 'main') {
+      if (pressDelayTimerRef.current) {
+        clearTimeout(pressDelayTimerRef.current);
+        pressDelayTimerRef.current = null;
+      }
+      stateRef.current.isPressing = false;
+      cancelVerseTransition();
+      setInTransit(false);
+      setVerseStyle({ opacity: 1, transform: 'translateY(0px)' });
+    }
+  }, [currentView, cancelVerseTransition]);
 
   const advanceVerse = useCallback(
     (dir = 1) => {
-      if (inTransit || viewRef.current !== 'main' || !verses || verses.length === 0) return;
+      if (inTransitRef.current || viewRef.current !== 'main' || !verses || verses.length === 0) return;
       hapticDetent();
+      cancelVerseTransition();
+      inTransitRef.current = true;
       setInTransit(true);
       setShowContext(false);
 
       setVerseStyle({
         opacity: 0,
-        transform: `translateY(${dir > 0 ? '-12px' : '12px'})`,
-        transition: 'opacity 0.6s ease, transform 0.7s ease',
+        transform: `translateY(${dir > 0 ? '-10px' : '10px'})`,
+        transition: 'opacity 0.24s ease, transform 0.24s ease',
       });
 
-      setTimeout(() => {
+      verseFadeTimerRef.current = setTimeout(() => {
+        verseFadeTimerRef.current = null;
         setVerseIndex((prev) => (prev + dir + verses.length) % verses.length);
-        devotionData.logVerseSwipe();
+        logVerseSwipe();
         setVerseStyle({
           opacity: 0,
-          transform: `translateY(${dir > 0 ? '14px' : '-14px'})`,
+          transform: `translateY(${dir > 0 ? '12px' : '-12px'})`,
           transition: 'none',
         });
 
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
+        verseRaf1Ref.current = requestAnimationFrame(() => {
+          verseRaf1Ref.current = null;
+          verseRaf2Ref.current = requestAnimationFrame(() => {
+            verseRaf2Ref.current = null;
             setVerseStyle({
               opacity: 1,
               transform: 'translateY(0px)',
               transition:
-                'opacity 1.1s cubic-bezier(0.16,1,0.3,1), transform 1.2s cubic-bezier(0.16,1,0.3,1)',
+                'opacity 0.45s cubic-bezier(0.16,1,0.3,1), transform 0.48s cubic-bezier(0.16,1,0.3,1)',
             });
-            setTimeout(() => setInTransit(false), 800);
-          })
-        );
-      }, 550);
+            verseUnlockTimerRef.current = setTimeout(() => {
+              verseUnlockTimerRef.current = null;
+              inTransitRef.current = false;
+              setInTransit(false);
+            }, 280);
+          });
+        });
+      }, 240);
     },
-    [inTransit, verses, devotionData]
+    [verses, logVerseSwipe, cancelVerseTransition]
   );
 
   useEffect(() => {
@@ -426,30 +483,47 @@ export default function App() {
       if (!verse) return;
       if (!isSaved) hapticSuccess();
       else hapticToggle(false);
-      devotionData.toggleSaveVerse(verse.id);
+      toggleSaveVerse(verse.id);
       if (!isSaved) {
         setTafakkurPromptId(verse.id);
       }
       if (engineRef.current.triggerButtonBurst) engineRef.current.triggerButtonBurst();
       setShowSaveGlow(true);
-      setTimeout(() => setShowSaveGlow(false), 1000);
+      if (saveGlowTimerRef.current) clearTimeout(saveGlowTimerRef.current);
+      saveGlowTimerRef.current = setTimeout(() => {
+        saveGlowTimerRef.current = null;
+        setShowSaveGlow(false);
+      }, 1000);
     },
-    [devotionData, isSaved]
+    [toggleSaveVerse, isSaved]
   );
 
+  const cancelPendingPress = useCallback(() => {
+    if (pressDelayTimerRef.current) {
+      clearTimeout(pressDelayTimerRef.current);
+      pressDelayTimerRef.current = null;
+    }
+    stateRef.current.isPressing = false;
+  }, []);
+
   const handleTextPointerDown = (e) => {
-    if (inTransit || currentView !== 'main') return;
+    if (inTransitRef.current || currentView !== 'main') return;
     if (e.target.closest('button')) return;
     if (doubleTapCooldown.current) return;
 
     const now = Date.now();
     if (now - lastTapTime.current < 380) {
+      cancelPendingPress();
       if (activeVerse) {
         handleBookmarkAndReflect(activeVerse);
       }
       lastTapTime.current = 0;
       doubleTapCooldown.current = true;
-      setTimeout(() => (doubleTapCooldown.current = false), 400);
+      if (doubleTapTimerRef.current) clearTimeout(doubleTapTimerRef.current);
+      doubleTapTimerRef.current = setTimeout(() => {
+        doubleTapTimerRef.current = null;
+        doubleTapCooldown.current = false;
+      }, 400);
       return;
     }
     lastTapTime.current = now;
@@ -461,8 +535,14 @@ export default function App() {
     }
     stateRef.current.pointerStartX = e.clientX || (e.touches && e.touches[0]?.clientX) || 0;
     stateRef.current.pointerStartY = e.clientY || (e.touches && e.touches[0]?.clientY) || 0;
-    stateRef.current.isPressing = true;
-    engineRef.current.startPressLoop?.();
+
+    if (pressDelayTimerRef.current) clearTimeout(pressDelayTimerRef.current);
+    pressDelayTimerRef.current = setTimeout(() => {
+      pressDelayTimerRef.current = null;
+      if (inTransitRef.current || viewRef.current !== 'main') return;
+      stateRef.current.isPressing = true;
+      engineRef.current.startPressLoop?.();
+    }, 120);
   };
 
   const handleTextPointerUp = (e) => {
@@ -471,31 +551,51 @@ export default function App() {
         e.currentTarget.releasePointerCapture(e.pointerId);
       } catch {}
     }
-    stateRef.current.isPressing = false;
+    cancelPendingPress();
   };
 
   const handlePointerMove = (e) => {
-    if (!stateRef.current.isPressing) return;
-    const clientX = e.clientX || (e.touches && e.touches[0]?.clientX);
-    const clientY = e.clientY || (e.touches && e.touches[0]?.clientY);
-    if (!clientX || !clientY) return;
+    if (!stateRef.current.isPressing && !pressDelayTimerRef.current) return;
+    const clientX = e.clientX ?? (e.touches && e.touches[0]?.clientX);
+    const clientY = e.clientY ?? (e.touches && e.touches[0]?.clientY);
+    if (clientX == null || clientY == null) return;
 
-    const dist = Math.hypot(
-      clientX - stateRef.current.pointerStartX,
-      clientY - stateRef.current.pointerStartY
-    );
-    if (dist > 20) stateRef.current.isPressing = false;
+    if (
+      isPointerDrag(
+        stateRef.current.pointerStartX,
+        stateRef.current.pointerStartY,
+        clientX,
+        clientY,
+        16
+      )
+    ) {
+      cancelPendingPress();
+    }
   };
 
   const handleTouchStart = (e) => {
-    if (isAnyModalOpen || e.target.closest?.('[role="dialog"]')) return;
-    touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    if (isAnyModalOpen || e.target.closest?.('[role="dialog"]') || !e.touches?.[0]) {
+      touchStart.current.valid = false;
+      return;
+    }
+    touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, valid: true };
   };
 
   const handleTouchEnd = (e) => {
-    if (isAnyModalOpen || e.target.closest?.('[role="dialog"]') || e.target.closest('button') || currentView !== 'main') return;
-    const dx = touchStart.current.x - e.changedTouches[0].clientX;
-    const dy = touchStart.current.y - e.changedTouches[0].clientY;
+    const start = touchStart.current;
+    touchStart.current.valid = false;
+    if (
+      !start.valid ||
+      !e.changedTouches?.[0] ||
+      isAnyModalOpen ||
+      e.target.closest?.('[role="dialog"]') ||
+      e.target.closest('button') ||
+      currentView !== 'main'
+    ) {
+      return;
+    }
+    const dx = start.x - e.changedTouches[0].clientX;
+    const dy = start.y - e.changedTouches[0].clientY;
 
     if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
       advanceVerse(dx > 0 ? 1 : -1);
@@ -503,6 +603,7 @@ export default function App() {
     }
 
     if (Math.abs(dy) > 30 && !hideStackForSeal) {
+      cancelPrayerAutoFocus();
       if (dy > 0) setFocusedIndex((p) => Math.min(PRAYERS.length - 1, p + 1));
       else setFocusedIndex((p) => Math.max(0, p - 1));
     }
@@ -519,44 +620,51 @@ export default function App() {
       return;
     }
     if (Math.abs(e.deltaY) > 20) {
+      cancelPrayerAutoFocus();
       scrollCooldown.current = true;
       setFocusedIndex((p) =>
         e.deltaY > 0 ? Math.min(PRAYERS.length - 1, p + 1) : Math.max(0, p - 1)
       );
-      setTimeout(() => (scrollCooldown.current = false), 300);
+      if (wheelCooldownTimerRef.current) clearTimeout(wheelCooldownTimerRef.current);
+      wheelCooldownTimerRef.current = setTimeout(() => {
+        wheelCooldownTimerRef.current = null;
+        scrollCooldown.current = false;
+      }, 150);
     }
   };
 
   const handleTogglePrayer = (prayerId, status = 'ontime') => {
-    if (checkingId) return;
+    cancelPrayerAutoFocus();
 
     if (completedPrayers.includes(prayerId)) {
       hapticUndo();
-      devotionData.togglePrayer(prayerId);
+      togglePrayer(prayerId);
       return;
     }
 
+    // Commit immediately so rapid taps on adjacent prayers are never dropped
+    togglePrayer(prayerId, status);
     setCheckingId(prayerId);
+    if (checkingTimerRef.current) clearTimeout(checkingTimerRef.current);
+    checkingTimerRef.current = setTimeout(() => {
+      checkingTimerRef.current = null;
+      setCheckingId(null);
+    }, 340);
+
     if (engineRef.current.triggerButtonBurst) engineRef.current.triggerButtonBurst();
-    const nextCount = completedPrayers.length + 1;
-    if (nextCount === PRAYERS.length) hapticCelebrate();
+    const nextCompleted = [...completedPrayers, prayerId];
+    if (nextCompleted.length === PRAYERS.length) hapticCelebrate();
     else if (status === 'qada') hapticHeavy();
     else hapticTapLight();
 
-    setTimeout(() => {
-      const currentIdx = PRAYERS.findIndex((p) => p.id === prayerId);
-      const nextCompleted = [...completedPrayers, prayerId];
-      const nextLaterIdx = PRAYERS.findIndex(
-        (p, idx) => idx > currentIdx && !nextCompleted.includes(p.id)
-      );
-      if (nextLaterIdx !== -1) setFocusedIndex(nextLaterIdx);
-
-      devotionData.togglePrayer(prayerId, status);
-      setCheckingId(null);
+    const nextIdx = resolveNextPrayerFocusIndex(PRAYERS, prayerId, nextCompleted);
+    prayerAutoFocusTimerRef.current = setTimeout(() => {
+      prayerAutoFocusTimerRef.current = null;
+      if (nextIdx !== -1) setFocusedIndex(nextIdx);
       if (nextCompleted.length === PRAYERS.length) {
         setReviewPrayers(false);
       }
-    }, 600);
+    }, 340);
   };
 
   // Yaqeen from tasks
@@ -566,11 +674,11 @@ export default function App() {
     const rewarded = devotionData.rewardedIds || [];
     Object.keys(TASK_TARGETS).forEach((id) => {
       if ((tasks[id] || 0) >= TASK_TARGETS[id] && !rewarded.includes(id)) {
-        devotionData.markTaskRewarded(id);
-        devotionData.addYaqeen(5);
+        markTaskRewarded(id);
+        addYaqeen(5);
       }
     });
-  }, [devotionData.dailyTasks, devotionData.rewardedIds, devotionData]);
+  }, [devotionData.dailyTasks, devotionData.rewardedIds, markTaskRewarded, addYaqeen]);
 
   // Kashf ceremony trigger
   useEffect(() => {
@@ -580,12 +688,12 @@ export default function App() {
       if (kashfTimerRef.current) clearTimeout(kashfTimerRef.current);
       kashfTimerRef.current = setTimeout(() => {
         kashfTimerRef.current = null;
-        devotionData.advanceStation();
+        advanceStation();
         setVerseIndex(0);
         setKashfCeremony(false);
       }, 3200);
     }
-  }, [maq.yaqeenProgress, nextStation, kashfCeremony, devotionData]);
+  }, [maq.yaqeenProgress, nextStation, kashfCeremony, advanceStation]);
 
   const celebrationBadgeId = devotionData.activeCelebrationBadge?.id;
   useEffect(() => {
@@ -596,12 +704,19 @@ export default function App() {
 
   useEffect(() => {
     return () => {
-      if (kashfTimerRef.current) {
-        clearTimeout(kashfTimerRef.current);
-        kashfTimerRef.current = null;
-      }
+      cancelVerseTransition();
+      cancelPrayerAutoFocus();
+      if (kashfTimerRef.current) clearTimeout(kashfTimerRef.current);
+      if (checkingTimerRef.current) clearTimeout(checkingTimerRef.current);
+      if (pressDelayTimerRef.current) clearTimeout(pressDelayTimerRef.current);
+      if (wheelCooldownTimerRef.current) clearTimeout(wheelCooldownTimerRef.current);
+      if (saveGlowTimerRef.current) clearTimeout(saveGlowTimerRef.current);
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+      if (doubleTapTimerRef.current) clearTimeout(doubleTapTimerRef.current);
+      if (wheelDragResetTimerRef.current) clearTimeout(wheelDragResetTimerRef.current);
+      if (prayerLongPressTimer.current) clearTimeout(prayerLongPressTimer.current);
     };
-  }, []);
+  }, [cancelVerseTransition, cancelPrayerAutoFocus]);
 
   // Ambient mode dhikr
   useEffect(() => {
@@ -639,7 +754,11 @@ export default function App() {
         .then(() => {
           hapticSuccess();
           setCopiedFeedback(true);
-          setTimeout(() => setCopiedFeedback(false), 1800);
+          if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+          copiedTimerRef.current = setTimeout(() => {
+            copiedTimerRef.current = null;
+            setCopiedFeedback(false);
+          }, 1800);
         })
         .catch(() => {});
     }
@@ -673,20 +792,49 @@ export default function App() {
 
   const getPrayerIcon = (type) => (type === 'moon' ? MoonIcon : SunIcon);
 
-  const circumference = 301.59;
-  const streakPercentage = Math.min(1, devotionData.currentStreak / 30);
-  const dynamicDashOffset = circumference - streakPercentage * circumference;
+  const sunnahContext = useMemo(
+    () => getSunnahCalendarContext(new Date(), hijri),
+    [hijri]
+  );
+  const qadaTotals = useMemo(
+    () => computeQadaTotals(devotionData.qada),
+    [devotionData.qada]
+  );
+  const activeBurhan = useMemo(
+    () => selectActiveBurhan(burhanData, maq.currentStation, devotionData.activeDays),
+    [maq.currentStation, devotionData.activeDays]
+  );
 
-  const sunnahContext = getSunnahCalendarContext(new Date(), hijri);
-  const qadaTotals = computeQadaTotals(devotionData.qada);
-
-  const allVersesFlat = stations.flatMap((s) => s.verses || []);
+  const allVersesFlat = useMemo(
+    () => (contentData?.stations || []).flatMap((s) => s.verses || []),
+    [contentData]
+  );
   const tafakkurVerse = tafakkurPromptId
     ? allVersesFlat.find((v) => v.id === tafakkurPromptId)
     : null;
   const tafakkurExistingNote = tafakkurPromptId
     ? devotionData.savedVerses.find((v) => v?.id === tafakkurPromptId)?.note || ''
     : '';
+
+  const openTodayList = useCallback(() => setShowTodayList(true), []);
+  const closeTodayList = useCallback(() => setShowTodayList(false), []);
+  const openBurhanModal = useCallback(() => setShowBurhanModal(true), []);
+  const openDuasModal = useCallback(() => setShowDuas(true), []);
+  const openQadaModal = useCallback(() => setShowQada(true), []);
+  const openArchiveModal = useCallback(() => setShowArchive(true), []);
+  const openRemindersModal = useCallback(() => setShowReminders(true), []);
+  const openSettingsModal = useCallback(() => setShowSettings(true), []);
+  const handleOpenMisbaha = useCallback((launch) => setMisbahaLaunch(launch), []);
+  const handleInspectBadge = useCallback((badge) => setInspectedBadge(badge), []);
+  const { goToStation } = devotionData;
+  const handleSelectStation = useCallback(
+    (idx) => {
+      if (idx !== maq.currentStation) hapticNavigate();
+      setVerseIndex(0);
+      goToStation(idx);
+    },
+    [maq.currentStation, goToStation]
+  );
 
   return (
     <div
@@ -720,11 +868,8 @@ export default function App() {
       <TasksSideColumn
         isVisible={currentView === 'main' && !isLearningPathOpen}
         isOpen={showTodayList}
-        onOpen={() => setShowTodayList(true)}
-        onClose={() => setShowTodayList(false)}
-        onTogglePrayer={(id) => handleTogglePrayer(id, 'ontime')}
-        onOpenPractices={() => setCurrentView('tasks')}
-        hijriDateLabel={hijri?.formatted || ''}
+        onOpen={openTodayList}
+        onClose={closeTodayList}
         accentColor={accentHex}
       />
 
@@ -1131,362 +1276,50 @@ export default function App() {
             incrementTask={devotionData.incrementTask}
             markAdhkarSetRewarded={devotionData.markAdhkarSetRewarded}
             activeDays={devotionData.activeDays}
-            onOpenBurhan={() => setShowBurhanModal(true)}
-            onOpenMisbaha={(launch) => setMisbahaLaunch(launch)}
+            onOpenBurhan={openBurhanModal}
+            onOpenMisbaha={handleOpenMisbaha}
             sunnahContext={sunnahContext}
             qadaRemainingCount={qadaTotals.totalRemaining}
-            onOpenDuas={() => setShowDuas(true)}
-            onOpenQada={() => setShowQada(true)}
+            onOpenDuas={openDuasModal}
+            onOpenQada={openQadaModal}
           />
 
-          {/* === VIEW 3: PROFILE (THE SOUL MIRROR) === */}
+          {/* === VIEW 3: PROFILE (SANCTUARY SEEKER ID CARD) === */}
           <div
             data-testid="journey-scroller"
-            className="absolute inset-x-0 bottom-0 flex flex-col items-center transition-[opacity,transform,visibility] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] w-full overflow-y-auto hide-scrollbar pt-2"
+            className="absolute inset-x-0 bottom-0 flex flex-col items-center justify-center transition-[opacity,transform,visibility] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] w-full overflow-hidden px-1 sm:px-2"
             style={{
-              top: 'calc(72px + var(--sat))',
-              paddingBottom: 'calc(24px + var(--sab))',
-              touchAction: 'pan-y',
+              top: 'calc(64px + var(--sat))',
+              paddingBottom: 'calc(18px + var(--sab))',
               opacity: currentView === 'profile' ? 1 : 0,
               visibility: currentView === 'profile' ? 'visible' : 'hidden',
-              transform: currentView === 'profile' ? 'scale(1)' : 'scale(1.015)',
+              transform: currentView === 'profile' ? 'scale(1)' : 'scale(0.985)',
               pointerEvents: currentView === 'profile' ? 'auto' : 'none',
-              maskImage: currentView === 'profile'
-                ? 'linear-gradient(to bottom, transparent 0px, black 12px, black calc(100% - 14px), transparent 100%)'
-                : 'none',
-              WebkitMaskImage: currentView === 'profile'
-                ? 'linear-gradient(to bottom, transparent 0px, black 12px, black calc(100% - 14px), transparent 100%)'
-                : 'none',
             }}
           >
-            <div className="w-full max-w-[360px] sm:max-w-[420px] md:max-w-[460px] px-3 sm:px-4 mx-auto flex flex-col items-center gap-3 pb-4">
-              {/* Quiet Editorial Identity Crest */}
-              <div className="w-full flex flex-col items-center text-center pt-1">
-                <span
-                  className={`font-calligraphy text-[18px] leading-none ${tTextMain} opacity-75 mb-2 transition-colors duration-300`}
-                  dir="rtl"
-                >
-                  الرحلة
-                </span>
-
-                <div className="relative w-14 h-14 flex items-center justify-center mb-2">
-                  <svg
-                    className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none"
-                    viewBox="0 0 100 100"
-                    aria-hidden="true"
-                  >
-                    <circle
-                      cx="50"
-                      cy="50"
-                      r="47"
-                      fill="none"
-                      stroke={isLightMode ? 'rgba(26,24,20,0.1)' : 'rgba(255,255,255,0.1)'}
-                      strokeWidth="1.25"
-                      strokeDasharray="2 4"
-                    />
-                    <circle
-                      cx="50"
-                      cy="50"
-                      r="47"
-                      fill="none"
-                      stroke={isLightMode ? '#9c7533' : '#d2a24b'}
-                      strokeWidth="2"
-                      strokeDasharray={circumference}
-                      strokeDashoffset={dynamicDashOffset}
-                      strokeLinecap="round"
-                      className="transition-all duration-1000 ease-out"
-                    />
-                  </svg>
-
-                  <div
-                    className={`flex items-center justify-center w-[42px] h-[42px] rounded-full border transition-colors duration-300 ${
-                      isLightMode
-                        ? 'bg-white/75 border-black/[0.08]'
-                        : 'bg-[#0b0e16]/75 border-white/[0.12]'
-                    }`}
-                  >
-                    <span
-                      className={`font-serif-eng text-[15px] font-light ${tTextMain}`}
-                      style={{ letterSpacing: '0.08em', marginRight: '-0.08em' }}
-                    >
-                      {userProfile.initials || 'SK'}
-                    </span>
-                  </div>
-                </div>
-
-                <h2
-                  className={`font-serif-eng text-[20px] font-medium ${tTextMain} leading-tight tracking-[0.04em]`}
-                  style={{ textShadow: glowSub }}
-                >
-                  {userProfile.name}
-                </h2>
-                <p
-                  className={`font-serif-eng italic text-[11.5px] leading-snug mt-0.5 ${tTextGold}`}
-                >
-                  {currentStationData?.subtitle || 'Station of Patience'} · {maq.yaqeenProgress}% Yaqeen
-                  {totalHabitsCount > 0 ? ` · ${completedHabitsCount}/${totalHabitsCount} Habits` : ''}
-                </p>
-              </div>
-
-              {/* Unboxed Open Hairline Summary Ledger */}
-              <div
-                className={`w-full grid grid-cols-3 divide-x border-y py-2.5 ${
-                  isLightMode
-                    ? 'border-black/[0.08] divide-black/[0.07]'
-                    : 'border-white/[0.08] divide-white/[0.07]'
-                }`}
-              >
-                <div className="flex flex-col items-center justify-center px-2">
-                  <span className={`font-serif-eng text-[19px] leading-none font-light tabular-nums ${tTextMain}`}>
-                    {devotionData.totalPrayers}
-                  </span>
-                  <span className={`font-serif-eng text-[8.5px] uppercase tracking-[0.16em] ${tTextSub} mt-1 opacity-75`}>
-                    Prayers
-                  </span>
-                </div>
-
-                <div className="flex flex-col items-center justify-center px-2">
-                  <span className={`font-serif-eng text-[19px] leading-none font-light tabular-nums ${tTextMain}`}>
-                    {devotionData.totalVerses}
-                  </span>
-                  <span className={`font-serif-eng text-[8.5px] uppercase tracking-[0.16em] ${tTextSub} mt-1 opacity-75`}>
-                    Verses
-                  </span>
-                </div>
-
-                <div className="flex flex-col items-center justify-center px-2">
-                  <span className={`font-serif-eng text-[19px] leading-none font-light tabular-nums ${tTextMain}`}>
-                    {devotionData.activeDays}
-                  </span>
-                  <span className={`font-serif-eng text-[8.5px] uppercase tracking-[0.16em] ${tTextSub} mt-1 opacity-75 whitespace-nowrap`}>
-                    Active Days
-                  </span>
-                </div>
-              </div>
-
-              {/* Sleek Architectural Underline Tab Bar */}
-              <div
-                role="tablist"
-                aria-label="Journey Sections"
-                className={`w-full grid grid-cols-3 border-b ${
-                  isLightMode ? 'border-black/[0.08]' : 'border-white/[0.08]'
-                }`}
-              >
-                {[
-                  { id: 'streak', label: `Streak · ${devotionData.currentStreak}d` },
-                  { id: 'badges', label: `Badges · ${devotionData.unlockedBadgeCount}/${devotionData.totalBadgeCount}` },
-                  { id: 'path', label: 'Path' },
-                ].map((tab) => {
-                  const active = journeyTab === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      onClick={() => {
-                        if (journeyTab !== tab.id) {
-                          hapticDetent();
-                          setJourneyTab(tab.id);
-                        }
-                      }}
-                      className="relative min-h-[40px] font-serif-eng text-[10px] uppercase tracking-[0.14em] cursor-pointer flex items-center justify-center whitespace-nowrap px-1.5 transition-colors"
-                      style={{
-                        color: active
-                          ? isLightMode
-                            ? '#8a6423'
-                            : '#e5c17b'
-                          : isLightMode
-                            ? 'rgba(44,39,32,0.62)'
-                            : 'rgba(228,218,200,0.58)',
-                        fontWeight: active ? 600 : 400,
-                      }}
-                    >
-                      <span>{tab.label}</span>
-                      {active && (
-                        <span
-                          aria-hidden="true"
-                          className="absolute bottom-[-1px] left-3 right-3 h-[1.5px] rounded-full"
-                          style={{ backgroundColor: isLightMode ? '#9c7533' : '#d2a24b' }}
-                        />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Active Journey Panel */}
-              <div className="w-full">
-                {journeyTab === 'streak' && (
-                  <DailyStreakTracker
-                    historyMap={devotionData.history}
-                    pausedDates={devotionData.streakPausedDates}
-                    onTogglePauseToday={devotionData.toggleStreakPauseToday}
-                    isLightMode={isLightMode}
-                    isVisible={currentView === 'profile' && journeyTab === 'streak'}
-                  />
-                )}
-
-                {journeyTab === 'badges' && (
-                  <BadgesShowcase
-                    badgeStatuses={devotionData.badgeStatuses}
-                    unlockedCount={devotionData.unlockedBadgeCount}
-                    totalCount={devotionData.totalBadgeCount}
-                    isLightMode={isLightMode}
-                    onInspectBadge={(badge) => setInspectedBadge(badge)}
-                  />
-                )}
-
-                {journeyTab === 'path' && (
-                  <div className="w-full flex flex-col gap-2">
-                    {stations.length > 0 && (
-                      <StationIndicator
-                        stations={stations}
-                        currentStation={maq.currentStation}
-                        unlockedStations={maq.unlockedStations || [0]}
-                        yaqeenProgress={maq.yaqeenProgress}
-                        accentHex={accentHex}
-                        isLightMode={isLightMode}
-                        onSelectStation={(idx) => {
-                          if (idx !== maq.currentStation) hapticNavigate();
-                          setVerseIndex(0);
-                          devotionData.goToStation(idx);
-                        }}
-                      />
-                    )}
-                    <DevotionHeatmap isLightMode={isLightMode} historyMap={devotionData.history} />
-                  </div>
-                )}
-              </div>
-
-              {/* Unified Sanctuary Ledger Menu */}
-              <div
-                className={`w-full rounded-2xl border overflow-hidden divide-y transition-colors ${
-                  isLightMode
-                    ? 'bg-white/62 border-white/80 divide-black/[0.06] island-light'
-                    : 'bg-[#0b0e16]/68 border-white/[0.09] divide-white/[0.07] island-dark'
-                }`}
-              >
-                <div className={`grid grid-cols-2 divide-x ${isLightMode ? 'divide-black/[0.06]' : 'divide-white/[0.07]'}`}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      hapticNavigate();
-                      setShowDuas(true);
-                    }}
-                    className={`min-h-[46px] px-3.5 py-2.5 flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-                      isLightMode ? 'hover:bg-black/[0.025]' : 'hover:bg-white/[0.035]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <BookIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
-                      <span className={`font-serif-eng text-[10.5px] uppercase tracking-[0.12em] truncate ${tTextMain}`}>
-                        Duas
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span className={`font-serif-eng text-[11px] tabular-nums ${tTextSub} opacity-70`}>
-                        {devotionData.favoriteDuaIds?.length || 0}
-                      </span>
-                      <ChevronRightIcon size={12} className={`${tTextSub} opacity-40`} />
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      hapticNavigate();
-                      setShowQada(true);
-                    }}
-                    className={`min-h-[46px] px-3.5 py-2.5 flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-                      isLightMode ? 'hover:bg-black/[0.025]' : 'hover:bg-white/[0.035]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <RotateCcwIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
-                      <span className={`font-serif-eng text-[10.5px] uppercase tracking-[0.12em] truncate ${tTextMain}`}>
-                        Qada
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span className={`font-serif-eng text-[11px] tabular-nums ${tTextSub} opacity-70`}>
-                        {qadaTotals.totalRemaining}
-                      </span>
-                      <ChevronRightIcon size={12} className={`${tTextSub} opacity-40`} />
-                    </div>
-                  </button>
-                </div>
-
-                <div className={`grid grid-cols-2 divide-x ${isLightMode ? 'divide-black/[0.06]' : 'divide-white/[0.07]'}`}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      hapticNavigate();
-                      setShowArchive(true);
-                    }}
-                    className={`min-h-[46px] px-3.5 py-2.5 flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-                      isLightMode ? 'hover:bg-black/[0.025]' : 'hover:bg-white/[0.035]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <BookmarkIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
-                      <span className={`font-serif-eng text-[10.5px] uppercase tracking-[0.12em] truncate ${tTextMain}`}>
-                        Saved
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span className={`font-serif-eng text-[11px] tabular-nums ${tTextSub} opacity-70`}>
-                        {devotionData.savedVerses.length}
-                      </span>
-                      <ChevronRightIcon size={12} className={`${tTextSub} opacity-40`} />
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      hapticNavigate();
-                      setShowReminders(true);
-                    }}
-                    className={`min-h-[46px] px-3.5 py-2.5 flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-                      isLightMode ? 'hover:bg-black/[0.025]' : 'hover:bg-white/[0.035]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <BellIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
-                      <span className={`font-serif-eng text-[10.5px] uppercase tracking-[0.12em] truncate ${tTextMain}`}>
-                        Alerts
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span className={`font-serif-eng text-[11px] tabular-nums ${tTextSub} opacity-70`}>
-                        {enabledAlertsCount}
-                      </span>
-                      <ChevronRightIcon size={12} className={`${tTextSub} opacity-40`} />
-                    </div>
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    hapticNavigate();
-                    setShowSettings(true);
-                  }}
-                  className={`w-full min-h-[46px] px-3.5 py-2.5 flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-                    isLightMode ? 'hover:bg-black/[0.025]' : 'hover:bg-white/[0.035]'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <SettingsIcon size={14} className={`shrink-0 ${isLightMode ? 'text-[#9c7533]' : 'text-[#d2a24b]'}`} />
-                    <span className={`font-serif-eng text-[10.5px] uppercase tracking-[0.13em] truncate ${tTextMain}`}>
-                      Preferences &amp; Backup
-                    </span>
-                  </div>
-                  <ChevronRightIcon size={13} className={`${tTextSub} opacity-40 shrink-0`} />
-                </button>
-              </div>
-            </div>
+            {currentView === 'profile' && (
+              <ProfileIdCard
+                userProfile={userProfile}
+                hijri={hijri}
+                devotionData={devotionData}
+                stations={stations}
+                currentStationData={currentStationData}
+                maq={maq}
+                completedHabitsCount={completedHabitsCount}
+                totalHabitsCount={totalHabitsCount}
+                qadaRemainingCount={qadaTotals.totalRemaining}
+                enabledAlertsCount={enabledAlertsCount}
+                accentHex={accentHex}
+                isLightMode={isLightMode}
+                onSelectStation={handleSelectStation}
+                onInspectBadge={handleInspectBadge}
+                onOpenDuas={openDuasModal}
+                onOpenQada={openQadaModal}
+                onOpenArchive={openArchiveModal}
+                onOpenReminders={openRemindersModal}
+                onOpenSettings={openSettingsModal}
+              />
+            )}
           </div>
         </div>
 
@@ -1706,6 +1539,7 @@ export default function App() {
                 }
               }
               if (drag.didDrag) {
+                cancelPrayerAutoFocus();
                 const steps = Math.round(-deltaY / 32);
                 const nextIdx = Math.max(0, Math.min(PRAYERS.length - 1, drag.startIndex + steps));
                 if (nextIdx !== drag.lastStepIndex) {
@@ -1723,7 +1557,9 @@ export default function App() {
                 }
               } catch {}
               if (wheelDragRef.current.didDrag) {
-                setTimeout(() => {
+                if (wheelDragResetTimerRef.current) clearTimeout(wheelDragResetTimerRef.current);
+                wheelDragResetTimerRef.current = setTimeout(() => {
+                  wheelDragResetTimerRef.current = null;
                   wheelDragRef.current.didDrag = false;
                 }, 60);
               }
@@ -1807,7 +1643,7 @@ export default function App() {
                   onPointerDown={() => {
                     if (!isActive) return;
                     prayerLongPressTriggered.current = false;
-                    if (!isCompletedItem && !checkingId) {
+                    if (!isCompletedItem) {
                       prayerLongPressTimer.current = setTimeout(() => {
                         if (wheelDragRef.current.didDrag) return;
                         prayerLongPressTriggered.current = true;
@@ -1835,6 +1671,7 @@ export default function App() {
                       return;
                     }
                     if (!isActive) {
+                      cancelPrayerAutoFocus();
                       hapticDetent();
                       setFocusedIndex(i);
                       return;
@@ -1843,12 +1680,9 @@ export default function App() {
                       prayerLongPressTriggered.current = false;
                       return;
                     }
-                    if (checkingId) return;
                     handleTogglePrayer(item.id, 'ontime');
                   }}
-                  className={`group absolute left-0 right-0 top-1/2 flex items-center justify-between px-3 sm:px-4 rounded-2xl transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] overflow-hidden border cursor-pointer ${
-                    isActive ? 'h-[56px]' : 'h-[48px]'
-                  } ${
+                  className={`group absolute left-0 right-0 top-1/2 h-[54px] flex items-center justify-between px-3 sm:px-4 rounded-2xl transition-[transform,opacity,background-color,border-color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] overflow-hidden border cursor-pointer ${
                     isLightMode
                       ? isActive
                         ? isChecking || isCompletedItem
@@ -2010,96 +1844,113 @@ export default function App() {
         </button>
       </div>
 
-      {/* --- OVERLAYS & MODALS --- */}
-      <TafakkurOverlay
-        isOpen={!!tafakkurPromptId}
-        verse={tafakkurVerse}
-        initialNote={tafakkurExistingNote}
-        isLightMode={isLightMode}
-        localAI={localAI}
-        allVerses={allVersesFlat}
-        onSave={(id, note) => {
-          if (note.trim()) devotionData.updateVerseNote(id, note.trim());
-          setTafakkurPromptId(null);
-        }}
-        onClose={() => setTafakkurPromptId(null)}
-      />
+      {/* --- OVERLAYS & MODALS (Conditionally mounted so closed modals incur zero hook/render cost) --- */}
+      {!!tafakkurPromptId && (
+        <TafakkurOverlay
+          isOpen
+          verse={tafakkurVerse}
+          initialNote={tafakkurExistingNote}
+          isLightMode={isLightMode}
+          allVerses={allVersesFlat}
+          onSave={(id, note) => {
+            if (note.trim()) devotionData.updateVerseNote(id, note.trim());
+            setTafakkurPromptId(null);
+          }}
+          onClose={() => setTafakkurPromptId(null)}
+        />
+      )}
 
-      <SavedVersesModal
-        isOpen={showArchive}
-        onClose={() => setShowArchive(false)}
-        isLightMode={isLightMode}
-        savedVerses={devotionData.savedVerses}
-        allVerses={allVersesFlat}
-        isSimpleMode={devotionData.isSimpleMode}
-        onEditNote={(id) => {
-          setShowArchive(false);
-          setTafakkurPromptId(id);
-        }}
-        onRemoveSaved={(id) => devotionData.toggleSaveVerse(id)}
-      />
+      {showArchive && (
+        <SavedVersesModal
+          isOpen
+          onClose={() => setShowArchive(false)}
+          isLightMode={isLightMode}
+          savedVerses={devotionData.savedVerses}
+          allVerses={allVersesFlat}
+          isSimpleMode={devotionData.isSimpleMode}
+          onEditNote={(id) => {
+            setShowArchive(false);
+            setTafakkurPromptId(id);
+          }}
+          onRemoveSaved={(id) => toggleSaveVerse(id)}
+        />
+      )}
 
-      <BurhanOverlay
-        isOpen={showBurhanModal}
-        burhan={selectActiveBurhan(burhanData, maq.currentStation, devotionData.activeDays)}
-        allBurhans={burhanData}
-        burhanNotes={devotionData.burhanNotes}
-        isLightMode={isLightMode}
-        isCompleted={devotionData.burhanCompleted}
-        isSimpleMode={devotionData.isSimpleMode}
-        onSaveNote={devotionData.saveBurhanNote}
-        onComplete={devotionData.completeBurhan}
-        onClose={() => setShowBurhanModal(false)}
-      />
+      {showBurhanModal && (
+        <BurhanOverlay
+          isOpen
+          burhan={activeBurhan}
+          allBurhans={burhanData}
+          burhanNotes={devotionData.burhanNotes}
+          isLightMode={isLightMode}
+          isCompleted={devotionData.burhanCompleted}
+          isSimpleMode={devotionData.isSimpleMode}
+          onSaveNote={devotionData.saveBurhanNote}
+          onComplete={devotionData.completeBurhan}
+          onClose={() => setShowBurhanModal(false)}
+        />
+      )}
 
-      <SettingsModal
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-        onOpenCityPicker={() => setShowCityPicker(true)}
-      />
+      {showSettings && (
+        <SettingsModal
+          isOpen
+          onClose={() => setShowSettings(false)}
+          onOpenCityPicker={() => setShowCityPicker(true)}
+        />
+      )}
 
-      <RemindersModal
-        isOpen={showReminders}
-        onClose={() => setShowReminders(false)}
-        onOpenCityPicker={() => setShowCityPicker(true)}
-      />
+      {showReminders && (
+        <RemindersModal
+          isOpen
+          onClose={() => setShowReminders(false)}
+          onOpenCityPicker={() => setShowCityPicker(true)}
+        />
+      )}
 
-      <QiblaModal
-        isOpen={showQibla}
-        onClose={() => setShowQibla(false)}
-        isLightMode={isLightMode}
-        prayerTimes={prayerTimes}
-        onOpenCityPicker={() => setShowCityPicker(true)}
-      />
+      {showQibla && (
+        <QiblaModal
+          isOpen
+          onClose={() => setShowQibla(false)}
+          isLightMode={isLightMode}
+          prayerTimes={prayerTimes}
+          onOpenCityPicker={() => setShowCityPicker(true)}
+        />
+      )}
 
-      <CityPickerModal
-        isOpen={showCityPicker}
-        onClose={() => setShowCityPicker(false)}
-        isLightMode={isLightMode}
-        prayerTimes={prayerTimes}
-      />
+      {showCityPicker && (
+        <CityPickerModal
+          isOpen
+          onClose={() => setShowCityPicker(false)}
+          isLightMode={isLightMode}
+          prayerTimes={prayerTimes}
+        />
+      )}
 
-      <DuasModal
-        isOpen={showDuas}
-        onClose={() => setShowDuas(false)}
-        isLightMode={isLightMode}
-        favoriteDuaIds={devotionData.favoriteDuaIds}
-        onToggleFavorite={devotionData.toggleFavoriteDua}
-      />
+      {showDuas && (
+        <DuasModal
+          isOpen
+          onClose={() => setShowDuas(false)}
+          isLightMode={isLightMode}
+          favoriteDuaIds={devotionData.favoriteDuaIds}
+          onToggleFavorite={devotionData.toggleFavoriteDua}
+        />
+      )}
 
-      <QadaModal
-        isOpen={showQada}
-        onClose={() => setShowQada(false)}
-        isLightMode={isLightMode}
-        qada={devotionData.qada}
-        onSetCount={devotionData.setQadaCount}
-        onBulkAddYears={devotionData.bulkAddQadaYears}
-        onCompleteOne={devotionData.completeOneQada}
-      />
+      {showQada && (
+        <QadaModal
+          isOpen
+          onClose={() => setShowQada(false)}
+          isLightMode={isLightMode}
+          qada={devotionData.qada}
+          onSetCount={devotionData.setQadaCount}
+          onBulkAddYears={devotionData.bulkAddQadaYears}
+          onCompleteOne={devotionData.completeOneQada}
+        />
+      )}
 
       {misbahaLaunch && (
         <MisbahaMode
-          isOpen={!!misbahaLaunch}
+          isOpen
           tasks={(PRACTICE_SETS[misbahaLaunch.setId] || PRACTICE_SETS.wird).items}
           initialIndex={misbahaLaunch.initialIndex}
           setLabel={(PRACTICE_SETS[misbahaLaunch.setId] || PRACTICE_SETS.wird).label}
@@ -2111,23 +1962,25 @@ export default function App() {
       )}
 
       {/* SACRED BADGE LOTTIE-STYLE REWARD & SHOWCASE OVERLAY */}
-      <BadgeRewardOverlay
-        badge={devotionData.activeCelebrationBadge || inspectedBadge}
-        isLightMode={isLightMode}
-        isNewUnlock={Boolean(devotionData.activeCelebrationBadge)}
-        queueRemaining={
-          devotionData.activeCelebrationBadge
-            ? Math.max(0, (devotionData.pendingBadgeCount || 0) - 1)
-            : 0
-        }
-        onClose={() => {
-          if (devotionData.activeCelebrationBadge) {
-            devotionData.dismissCelebrationBadge();
-          } else {
-            setInspectedBadge(null);
+      {(devotionData.activeCelebrationBadge || inspectedBadge) && (
+        <BadgeRewardOverlay
+          badge={devotionData.activeCelebrationBadge || inspectedBadge}
+          isLightMode={isLightMode}
+          isNewUnlock={Boolean(devotionData.activeCelebrationBadge)}
+          queueRemaining={
+            devotionData.activeCelebrationBadge
+              ? Math.max(0, (devotionData.pendingBadgeCount || 0) - 1)
+              : 0
           }
-        }}
-      />
+          onClose={() => {
+            if (devotionData.activeCelebrationBadge) {
+              devotionData.dismissCelebrationBadge();
+            } else {
+              setInspectedBadge(null);
+            }
+          }}
+        />
+      )}
 
       {/* FULL-SCREEN EXPANDING LEARNING PATH PAGE (Zero navigation chrome) */}
       {learningPathOrigin && (

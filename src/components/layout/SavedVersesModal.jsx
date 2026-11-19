@@ -103,7 +103,7 @@ export const SavedVersesModal = ({
     >
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+        className="absolute inset-0 bg-black/50 transition-opacity"
         onClick={() => {
           hapticDismiss();
           onClose?.();
@@ -111,7 +111,7 @@ export const SavedVersesModal = ({
       />
 
       <div
-        className={`relative z-10 flex flex-col w-full max-w-2xl h-[86dvh] rounded-t-3xl backdrop-blur-2xl border-t transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        className={`relative z-10 flex flex-col w-full max-w-2xl h-[86dvh] rounded-t-3xl border-t transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           isLightMode
             ? 'border-black/10 shadow-[0_-10px_40px_rgba(0,0,0,0.08)]'
             : 'border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.85)]'

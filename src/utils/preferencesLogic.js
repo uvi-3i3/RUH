@@ -6,6 +6,7 @@ export const PREFERENCE_STORAGE_KEYS = {
   THEME_MODE: 'ruh_theme_mode_v1',
   ATMOSPHERE_PHASE: 'ruh_atmosphere_phase_v1',
   HAPTICS_ENABLED: 'ruh_haptics_enabled_v1',
+  TACTILE_AUDIO_ENABLED: 'ruh_tactile_audio_enabled_v1',
   DEVOTION_STATE: 'ruh_devotion_state',
   LOCATION: 'ruh_location_v1',
   PRAYER_METHOD: 'ruh_prayer_method_v1',
@@ -25,6 +26,15 @@ export function parseHapticsEnabled(raw) {
 }
 
 export function serializeHapticsEnabled(enabled) {
+  return enabled === false ? 'false' : 'true';
+}
+
+export function parseTactileAudioEnabled(raw) {
+  if (raw === 'false' || raw === false) return false;
+  return true;
+}
+
+export function serializeTactileAudioEnabled(enabled) {
   return enabled === false ? 'false' : 'true';
 }
 

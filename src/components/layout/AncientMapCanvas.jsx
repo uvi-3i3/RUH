@@ -108,6 +108,7 @@ const CircleOutlineIcon = ({ size = 16, className = '' }) => (
  */
 export const AncientMapCanvas = ({
   isLightMode = false,
+  isAnimating = false,
   onProgressChange,
   onBack,
 }) => {
@@ -330,8 +331,8 @@ export const AncientMapCanvas = ({
           src={bgIllustration}
           alt=""
           referrerPolicy="no-referrer"
-          className={`w-full h-full object-cover scale-105 transition-opacity duration-700 ${
-            isLightMode ? 'opacity-[0.20] blur-[4px]' : 'opacity-[0.17] blur-[5px]'
+          className={`w-full h-full object-cover scale-105 transition-opacity duration-500 ${
+            isLightMode ? 'opacity-[0.16]' : 'opacity-[0.14]'
           }`}
         />
         <div
@@ -497,7 +498,7 @@ export const AncientMapCanvas = ({
                       isImanStudy
                         ? 'h-[42px] sm:h-[60px] px-3 sm:px-4'
                         : 'h-[45px] sm:h-[52px] px-3.5 sm:px-4'
-                    } rounded-2xl border flex items-center justify-between gap-2.5 overflow-hidden cursor-pointer transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] animate-lesson-row ${rowSurface}`}
+                    } rounded-2xl border flex items-center justify-between gap-2.5 overflow-hidden cursor-pointer transition-[transform,background-color,border-color,box-shadow] duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] animate-lesson-row ${rowSurface}`}
                   >
                     {/* Tactile Gold Shimmer Sweep When Active */}
                     {isSelected && (
@@ -591,15 +592,19 @@ export const AncientMapCanvas = ({
 
             {/* C. BELOW MAIN TOPIC: SMOOTH CONTEXT & INLINE QUICK-CHECK TRAY */}
             <section
-              key={`${focusedPillar.id}-${contextMode}`}
               data-testid="pillar-context-tray"
-              className={`w-full rounded-2xl border px-4 sm:px-5 py-3 sm:py-4 animate-lesson-context ${
+              className={`w-full rounded-2xl border px-4 sm:px-5 py-3 sm:py-4 ${
                 isLightMode
-                  ? 'bg-[#faf4e8]/88 border-[#7c5a1e]/20 shadow-[0_12px_34px_rgba(62,42,16,0.08)]'
-                  : 'bg-[#11141e]/84 border-[#d4af6a]/20 shadow-[0_14px_38px_rgba(0,0,0,0.48)]'
+                  ? 'bg-[#faf4e8]/92 border-[#7c5a1e]/20 shadow-[0_12px_34px_rgba(62,42,16,0.08)]'
+                  : 'bg-[#11141e]/88 border-[#d4af6a]/20 shadow-[0_14px_38px_rgba(0,0,0,0.48)]'
               }`}
-              style={{ backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
+              style={
+                isAnimating
+                  ? undefined
+                  : { backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }
+              }
             >
+              <div key={`${focusedPillar.id}-${contextMode}`} className="animate-lesson-context">
               {/* Quiet Metadata & Inline Context / Quick Check Toggle */}
               <div className="flex items-center justify-between gap-2 pb-2 border-b border-current/10">
                 <span className={`font-serif-eng text-[11.5px] sm:text-[12px] truncate ${textSub}`}>
@@ -694,6 +699,7 @@ export const AncientMapCanvas = ({
                   )}
                 </div>
               )}
+              </div>
             </section>
           </div>
         )}
