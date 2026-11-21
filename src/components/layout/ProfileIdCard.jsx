@@ -8,6 +8,7 @@ import {
   MoonIcon,
   RotateCcwIcon,
   SettingsIcon,
+  ShareIcon,
 } from '../icons/Icons';
 import { BadgeArtwork } from '../badges/BadgeArtwork';
 import { BADGE_TIERS, getBadgeTierStyle } from '../../utils/badgeLogic';
@@ -16,8 +17,10 @@ import {
   getLocalDateStr,
   STREAK_MILESTONES,
 } from '../../utils/devotionLogic';
+import { computeWeeklyMuhasabah } from '../../utils/prayerWindowLogic';
 import {
   CARD_FINISH_STORAGE_KEY,
+  computeCardSwipeDragAngle,
   computeCardTilt,
   computeGyroTilt,
   computeSeekerRingProgress,
@@ -26,17 +29,19 @@ import {
   formatJoinedYear,
   formatSeekerPassId,
   formatStationNumeral,
+  isCardBackVisible,
   parseCardFinishPreference,
   resolveCardFinish,
   resolveInitials,
+  resolveNextFlipTurns,
 } from '../../utils/profileCardLogic';
 import {
-  hapticCelebrate,
+  hapticBadgeUnlock,
   hapticDetent,
   hapticNavigate,
   hapticToggle,
 } from '../../utils/haptics';
-import { playCardFlipCue, playCardRippleCue } from '../../utils/tactileAudio';
+import { playCardFlipCue } from '../../utils/tactileAudio';
 
 const TIER_ORDER = ['silver', 'gold', 'platinum'];
 const HEATMAP_WEEKS = 14;
@@ -481,8 +486,10 @@ export const ProfileIdCard = memo(
     onOpenArchive,
     onOpenReminders,
     onOpenSettings,
+    onOpenSharePass,
   }) => {
-    const [isFlipped, setIsFlipped] = useState(false);
+    const [flipTurns, setFlipTurns] = useState(0);
+    const isFlipped = isCardBackVisible(flipTurns);
     const [recordTab, setRecordTab] = useState('streak'); // 'streak' | 'badges' | 'path'
     const [selectedDateStr, setSelectedDateStr] = useState(null);
     const [selectedMilestoneId, setSelectedMilestoneId] = useState(null);
@@ -492,17 +499,26 @@ export const ProfileIdCard = memo(
     const [isEditingName, setIsEditingName] = useState(false);
     const [nameDraft, setNameDraft] = useState(userProfile?.name || 'Seeker');
     const [isInteracting, setIsInteracting] = useState(false);
+    const [isSwiping, setIsSwiping] = useState(false);
     const [sweepTick, setSweepTick] = useState(0);
     const [pressRipple, setPressRipple] = useState(null);
 
     const cardStageRef = useRef(null);
     const nameInputRef = useRef(null);
+    const suppressNextClickRef = useRef(false);
     const pointerSessionRef = useRef({
       active: false,
       pointerId: null,
       startX: 0,
       startY: 0,
+      lastX: 0,
+      lastY: 0,
+      startTime: 0,
+      cardWidth: 360,
       isTouch: false,
+      swipeLocked: false,
+      verticalLocked: false,
+      captured: false,
     });
     const rippleTimerRef = useRef(null);
     const patternBaseId = useId();
@@ -535,6 +551,7 @@ export const ProfileIdCard = memo(
       if (!stage) return;
       stage.style.setProperty('--card-rx', '0deg');
       stage.style.setProperty('--card-ry', '0deg');
+      stage.style.setProperty('--card-drag-ry', '0deg');
       stage.style.setProperty('--foil-o', '0');
       stage.style.setProperty('--holo-angle', '130deg');
       stage.style.setProperty('--px', '0px');
@@ -546,7 +563,7 @@ export const ProfileIdCard = memo(
       setSweepTick((n) => n + 1);
     };
 
-    const emitPressRipple = (clientX, clientY, { playAudio = true } = {}) => {
+    const emitPressRipple = (clientX, clientY) => {
       const stage = cardStageRef.current;
       if (!stage) return;
       const rect = stage.getBoundingClientRect();
@@ -554,9 +571,6 @@ export const ProfileIdCard = memo(
       const xPct = Math.max(0, Math.min(100, Math.round(((clientX - rect.left) / rect.width) * 100)));
       const yPct = Math.max(0, Math.min(100, Math.round(((clientY - rect.top) / rect.height) * 100)));
       setPressRipple({ id: Date.now() + Math.random(), xPct, yPct });
-      if (playAudio) {
-        playCardRippleCue({ xPct, yPct, finish: activeFinish });
-      }
       if (rippleTimerRef.current) clearTimeout(rippleTimerRef.current);
       rippleTimerRef.current = setTimeout(() => {
         setPressRipple(null);
@@ -711,6 +725,11 @@ export const ProfileIdCard = memo(
       [devotionData.history]
     );
 
+    const weeklyMuhasabah = useMemo(
+      () => computeWeeklyMuhasabah(devotionData.history),
+      [devotionData.history]
+    );
+
     const formatDaySummary = (day) => {
       if (!day) return '';
       const parts = [];
@@ -725,69 +744,268 @@ export const ProfileIdCard = memo(
       return `${label} · Quiet day`;
     };
 
+    const releaseCardPointerCapture = (target, pointerId) => {
+      try {
+        if (target?.hasPointerCapture?.(pointerId)) {
+          target.releasePointerCapture(pointerId);
+        }
+      } catch {
+        // Ignore if capture was already released
+      }
+    };
+
     const handleCardPointerDown = (e) => {
       if (isEditingName || !cardStageRef.current) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
       const isInput = e.target?.closest?.('input, textarea');
       if (isInput) return;
 
+      const rect = cardStageRef.current.getBoundingClientRect();
       pointerSessionRef.current = {
         active: true,
         pointerId: e.pointerId,
         startX: e.clientX,
         startY: e.clientY,
+        lastX: e.clientX,
+        lastY: e.clientY,
+        startTime: performance.now(),
+        cardWidth: rect.width || 360,
         isTouch: e.pointerType === 'touch',
+        swipeLocked: false,
+        verticalLocked: false,
+        captured: false,
       };
+      suppressNextClickRef.current = false;
       setIsInteracting(true);
-      cardStageRef.current.style.setProperty('--card-scale', '0.988');
+      cardStageRef.current.style.setProperty('--card-scale', '0.99');
 
-      const rect = cardStageRef.current.getBoundingClientRect();
       const tilt = computeCardTilt(e.clientX, e.clientY, rect, e.pointerType === 'touch' ? 7 : 6);
       applyTiltVars(tilt, 1);
-      const isFlipTrigger = Boolean(e.target?.closest?.('[data-flip-trigger="true"]'));
-      emitPressRipple(e.clientX, e.clientY, { playAudio: !isFlipTrigger });
+      emitPressRipple(e.clientX, e.clientY);
     };
 
     const handleCardPointerMove = (e) => {
       if (isEditingName || !cardStageRef.current) return;
+      const session = pointerSessionRef.current;
       const isTouch = e.pointerType === 'touch';
-      if (isTouch && !pointerSessionRef.current.active) return;
+
+      if (session.active && session.pointerId === e.pointerId) {
+        session.lastX = e.clientX;
+        session.lastY = e.clientY;
+        const dx = e.clientX - session.startX;
+        const dy = e.clientY - session.startY;
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+
+        // If user clearly started scrolling vertically inside the back panel, respect vertical scroll
+        if (!session.swipeLocked && !session.verticalLocked && absDy >= 14 && absDy > absDx * 1.45) {
+          session.verticalLocked = true;
+        }
+
+        // Lock into live 1:1 3D horizontal card-turn drag as soon as horizontal intent is clear
+        if (!session.swipeLocked && !session.verticalLocked && absDx >= 8 && absDx > absDy * 1.05) {
+          session.swipeLocked = true;
+          suppressNextClickRef.current = true;
+          setIsSwiping(true);
+          try {
+            cardStageRef.current.setPointerCapture?.(e.pointerId);
+            session.captured = true;
+          } catch {
+            // Ignore pointer capture restrictions
+          }
+        }
+
+        if (session.swipeLocked) {
+          const dragAngle = computeCardSwipeDragAngle(dx, session.cardWidth, 148);
+          const normProgress = Math.min(1, Math.abs(dragAngle) / 148);
+          cardStageRef.current.style.setProperty('--card-drag-ry', `${dragAngle}deg`);
+          cardStageRef.current.style.setProperty('--card-rx', '0deg');
+          cardStageRef.current.style.setProperty('--card-ry', '0deg');
+          cardStageRef.current.style.setProperty(
+            '--card-scale',
+            String(Number((0.99 + normProgress * 0.02).toFixed(3)))
+          );
+          cardStageRef.current.style.setProperty(
+            '--foil-x',
+            `${Math.round(50 + (dragAngle / 148) * 48)}%`
+          );
+          cardStageRef.current.style.setProperty('--foil-y', '45%');
+          cardStageRef.current.style.setProperty('--foil-o', '1');
+          cardStageRef.current.style.setProperty(
+            '--holo-angle',
+            `${Math.round(130 + dragAngle * 0.65)}deg`
+          );
+          return;
+        }
+
+        if (session.verticalLocked) return;
+      }
+
+      if (isTouch && !session.active) return;
 
       const rect = cardStageRef.current.getBoundingClientRect();
       const tilt = computeCardTilt(e.clientX, e.clientY, rect, isTouch ? 7.5 : 5.8);
       applyTiltVars(tilt, 1);
     };
 
-    const handleCardPointerUp = (e) => {
+    const finishCardPointerSession = (e, allowFlip = true) => {
       const session = pointerSessionRef.current;
       if (!session.active) return;
+      if (e?.pointerId !== undefined && session.pointerId !== e.pointerId) return;
 
-      const dx = e.clientX - session.startX;
-      const dy = e.clientY - session.startY;
+      const hasEventCoords =
+        e && Number.isFinite(e.clientX) && Number.isFinite(e.clientY) && (e.clientX !== 0 || e.clientY !== 0);
+      const endX = hasEventCoords ? e.clientX : session.lastX;
+      const endY = hasEventCoords ? e.clientY : session.lastY;
+      const dx = endX - session.startX;
+      const dy = endY - session.startY;
+      const durationMs = Math.max(16, performance.now() - session.startTime);
+      const wasLocked = session.swipeLocked;
+      const wasVertical = session.verticalLocked;
+      const wasCaptured = session.captured;
+
       pointerSessionRef.current.active = false;
+      pointerSessionRef.current.swipeLocked = false;
+      pointerSessionRef.current.verticalLocked = false;
+      pointerSessionRef.current.captured = false;
       setIsInteracting(false);
+      setIsSwiping(false);
 
-      const swipeDir = evaluateCardSwipeFlip(dx, dy, 58);
-      if (swipeDir && !isEditingName) {
-        const nextFlipped = !isFlipped;
+      if (wasCaptured && e?.pointerId !== undefined) {
+        releaseCardPointerCapture(cardStageRef.current, e.pointerId);
+      }
+
+      const canEvaluateFlip = (allowFlip || wasLocked) && !wasVertical && !isEditingName;
+      const swipeDir = canEvaluateFlip
+        ? evaluateCardSwipeFlip(dx, dy, {
+            durationMs,
+            cardWidth: session.cardWidth,
+            wasSwipeLocked: wasLocked,
+          })
+        : null;
+
+      if (cardStageRef.current) {
+        cardStageRef.current.style.setProperty('--card-drag-ry', '0deg');
+      }
+
+      if (swipeDir) {
         hapticNavigate();
-        playCardFlipCue({ toFlipped: nextFlipped, finish: activeFinish });
         resetTiltVars();
-        setIsFlipped(nextFlipped);
+        setFlipTurns((cur) => {
+          const nextTurns = resolveNextFlipTurns(cur, swipeDir);
+          playCardFlipCue({ toFlipped: isCardBackVisible(nextTurns), finish: activeFinish });
+          return nextTurns;
+        });
         triggerFoilSweep();
         return;
       }
 
-      if (session.isTouch) {
+      if (wasLocked || session.isTouch) {
         resetTiltVars();
       } else if (cardStageRef.current) {
         cardStageRef.current.style.setProperty('--card-scale', '1');
       }
     };
 
+    const handleCardPointerUp = (e) => {
+      finishCardPointerSession(e, true);
+    };
+
+    const handleCardPointerCancel = (e) => {
+      // Recover gracefully if mobile browser fired pointercancel after horizontal turn was already locked
+      finishCardPointerSession(e, false);
+    };
+
     const handleCardPointerLeave = () => {
-      pointerSessionRef.current.active = false;
+      // Never abort an active pointer drag or touch turn when crossing sub-layers/card edges
+      if (pointerSessionRef.current.active) {
+        return;
+      }
       setIsInteracting(false);
+      setIsSwiping(false);
       resetTiltVars();
+    };
+
+    const finishCardSessionRef = useRef(finishCardPointerSession);
+    finishCardSessionRef.current = finishCardPointerSession;
+
+    // Prevent mobile browsers (Android Chrome / iOS Safari) from hijacking a horizontal card swipe
+    // into native vertical scroll or edge navigation when dragging across the scrollable back face.
+    useEffect(() => {
+      const stage = cardStageRef.current;
+      if (!stage) return undefined;
+
+      const handleNativeTouchMove = (ev) => {
+        const session = pointerSessionRef.current;
+        if (!session.active || !ev.touches?.[0]) return;
+        const t = ev.touches[0];
+        session.lastX = t.clientX;
+        session.lastY = t.clientY;
+        const dx = t.clientX - session.startX;
+        const dy = t.clientY - session.startY;
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+
+        if (!session.swipeLocked && !session.verticalLocked && absDy >= 14 && absDy > absDx * 1.45) {
+          session.verticalLocked = true;
+        }
+
+        if (!session.swipeLocked && !session.verticalLocked && absDx >= 8 && absDx > absDy * 1.05) {
+          session.swipeLocked = true;
+          suppressNextClickRef.current = true;
+          setIsSwiping(true);
+        }
+
+        if (session.swipeLocked && ev.cancelable) {
+          ev.preventDefault();
+        }
+      };
+
+      const handleWindowPointerUp = (ev) => {
+        if (pointerSessionRef.current.active) {
+          finishCardSessionRef.current?.(ev, true);
+        }
+      };
+
+      const handleWindowPointerCancel = (ev) => {
+        if (pointerSessionRef.current.active) {
+          finishCardSessionRef.current?.(ev, false);
+        }
+      };
+
+      stage.addEventListener('touchmove', handleNativeTouchMove, { passive: false });
+      window.addEventListener('pointerup', handleWindowPointerUp, { passive: true });
+      window.addEventListener('pointercancel', handleWindowPointerCancel, { passive: true });
+      return () => {
+        stage.removeEventListener('touchmove', handleNativeTouchMove);
+        window.removeEventListener('pointerup', handleWindowPointerUp);
+        window.removeEventListener('pointercancel', handleWindowPointerCancel);
+      };
+    }, []);
+
+    const handleCardClickCapture = (e) => {
+      if (suppressNextClickRef.current) {
+        suppressNextClickRef.current = false;
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    const handleCardKeyDown = (e) => {
+      if (isEditingName) return;
+      if (e.target?.closest?.('input, textarea')) return;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const dir = e.key === 'ArrowRight' ? 'right' : 'left';
+        hapticNavigate();
+        resetTiltVars();
+        setFlipTurns((cur) => {
+          const nextTurns = resolveNextFlipTurns(cur, dir);
+          playCardFlipCue({ toFlipped: isCardBackVisible(nextTurns), finish: activeFinish });
+          return nextTurns;
+        });
+        triggerFoilSweep();
+      }
     };
 
     const flipToRecords = (tab = recordTab) => {
@@ -796,7 +1014,7 @@ export const ProfileIdCard = memo(
       playCardFlipCue({ toFlipped: true, finish: activeFinish });
       setRecordTab(tab);
       resetTiltVars();
-      setIsFlipped(true);
+      setFlipTurns((cur) => (isCardBackVisible(cur) ? cur : resolveNextFlipTurns(cur, 'right')));
       triggerFoilSweep();
     };
 
@@ -804,8 +1022,38 @@ export const ProfileIdCard = memo(
       hapticNavigate();
       playCardFlipCue({ toFlipped: false, finish: activeFinish });
       resetTiltVars();
-      setIsFlipped(false);
+      setFlipTurns((cur) => (isCardBackVisible(cur) ? resolveNextFlipTurns(cur, 'left') : cur));
       triggerFoilSweep();
+    };
+
+    const handleOpenShare = () => {
+      hapticNavigate();
+      const hijriDayMonth =
+        hijri?.day && hijri?.monthName ? `${hijri.day} ${hijri.monthName}` : '';
+      onOpenSharePass?.({
+        finish: activeFinish,
+        holderName,
+        initials,
+        passId,
+        joinedYear,
+        hijriFormatted: hijri?.year ? `${hijri.year} AH` : hijri?.formatted || '1448 AH',
+        hijriDayMonth,
+        stationNumeral,
+        stationName: currentStationData?.nameEn || 'Patience',
+        stationSubtitle: currentStationData?.subtitle || 'The First Station',
+        stationArabic: currentStationData?.name || 'صبر',
+        yaqeenPct,
+        currentStreak: devotionData.currentStreak || 0,
+        longestStreak: streakStatus.longestStreak || 0,
+        totalPrayers: devotionData.totalPrayers || 0,
+        totalVerses: devotionData.totalVerses || 0,
+        unlockedBadges: devotionData.unlockedBadgeCount || 0,
+        totalBadges: devotionData.totalBadgeCount || 9,
+        todayActive: Boolean(streakStatus.todayActive),
+        todayPaused: Boolean(streakStatus.todayPaused),
+        weekDays: streakStatus.weekDays || [],
+        mrzLine,
+      });
     };
 
     const unlockedStations = maq?.unlockedStations || [0];
@@ -883,36 +1131,34 @@ export const ProfileIdCard = memo(
         {/* 3D INTERACTIVE ILLUMINATED SANCTUARY PASS / ID CARD */}
         <div
           ref={cardStageRef}
+          tabIndex={0}
+          onKeyDown={handleCardKeyDown}
+          onClickCapture={handleCardClickCapture}
           onPointerDown={handleCardPointerDown}
           onPointerMove={handleCardPointerMove}
           onPointerUp={handleCardPointerUp}
-          onPointerCancel={handleCardPointerLeave}
+          onPointerCancel={handleCardPointerCancel}
           onPointerLeave={handleCardPointerLeave}
           data-testid="seeker-id-card"
           data-flipped={isFlipped ? 'true' : 'false'}
+          data-flip-turns={flipTurns}
           data-finish={activeFinish}
           data-sweep-count={sweepTick}
-          className="profile-card-scene w-full relative select-none"
-          style={{
-            '--card-rx': '0deg',
-            '--card-ry': '0deg',
-            '--card-scale': '1',
-            '--foil-x': '50%',
-            '--foil-y': '35%',
-            '--foil-o': '0',
-            '--holo-angle': '130deg',
-            '--px': '0px',
-            '--py': '0px',
-          }}
+          className="profile-card-scene w-full relative select-none cursor-grab active:cursor-grabbing focus:outline-none focus-visible:ring-2 focus-visible:ring-[#dfba70]/60 rounded-[26px]"
         >
           <div className={`profile-card-tilt ${isInteracting ? 'is-interacting' : ''}`}>
-            <div className={`profile-card-flipper ${isFlipped ? 'is-flipped' : ''}`}>
+            <div
+              className={`profile-card-flipper ${isSwiping ? 'is-swiping' : ''}`}
+              style={{ '--card-flip-deg': `${flipTurns * 180}deg` }}
+            >
               {/* ================= FRONT FACE: ILLUMINATED SEEKER SANCTUARY PASS ================= */}
               <article
                 aria-label="Seeker Sanctuary Pass"
                 aria-hidden={isFlipped}
                 inert={isFlipped}
-                className={`profile-card-face profile-card-front relative w-full rounded-[24px] md:rounded-[26px] border overflow-hidden transition-[background,border-color,box-shadow] duration-500 ${cardTheme.outerBorder}`}
+                className={`profile-card-face profile-card-front relative w-full rounded-[24px] md:rounded-[26px] border overflow-hidden transition-[background,border-color,box-shadow] duration-500 ${cardTheme.outerBorder} ${
+                  isFlipped ? 'pointer-events-none' : 'pointer-events-auto'
+                }`}
                 style={cardTheme.surfaceStyle}
               >
                 {/* Procedural Geometric Guilloché Security Lattice (Deep Parallax Layer) */}
@@ -993,7 +1239,7 @@ export const ProfileIdCard = memo(
                         <div className="flex flex-col min-w-0">
                           <div className="flex items-center gap-1.5 min-w-0">
                             <span
-                              className={`font-serif-eng text-[8.5px] sm:text-[9.5px] md:text-[10px] uppercase tracking-[0.1em] sm:tracking-[0.22em] leading-none truncate font-medium ${cardTheme.textMain}`}
+                              className={`font-serif-eng text-[8px] sm:text-[9.5px] md:text-[10px] uppercase tracking-[0.06em] sm:tracking-[0.22em] leading-none whitespace-nowrap font-medium ${cardTheme.textMain}`}
                             >
                               Sanctuary Pass
                             </span>
@@ -1005,7 +1251,7 @@ export const ProfileIdCard = memo(
                             </span>
                           </div>
                           <span
-                            className={`font-mono text-[7.5px] sm:text-[8.5px] tabular-nums tracking-[0.06em] sm:tracking-[0.12em] leading-none mt-1 truncate ${cardTheme.textSub} opacity-75`}
+                            className={`font-mono text-[7px] sm:text-[8.5px] tabular-nums tracking-[0.04em] sm:tracking-[0.12em] leading-none mt-1 truncate ${cardTheme.textSub} opacity-75`}
                           >
                             {passId}
                             <span className="hidden sm:inline"> · Est. {joinedYear}</span>
@@ -1013,7 +1259,7 @@ export const ProfileIdCard = memo(
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                         <HolographicRubElHizbSeal
                           accentHex={rewardHex}
                           className="hidden sm:flex"
@@ -1024,11 +1270,22 @@ export const ProfileIdCard = memo(
                         />
                         <button
                           type="button"
+                          data-testid="share-pass-button"
+                          aria-label="Share Sanctuary Pass on socials"
+                          title="Share Sanctuary Pass"
+                          onClick={handleOpenShare}
+                          className={`min-h-[30px] min-w-[30px] sm:min-h-[36px] px-1.5 sm:px-2.5 rounded-xl border flex items-center justify-center gap-1.5 font-serif-eng text-[8px] sm:text-[9.5px] uppercase tracking-[0.08em] sm:tracking-[0.14em] whitespace-nowrap shrink-0 transition-colors cursor-pointer ${cardTheme.buttonClass}`}
+                        >
+                          <ShareIcon size={11} />
+                          <span className="hidden sm:inline">Share</span>
+                        </button>
+                        <button
+                          type="button"
                           data-testid="flip-to-records"
                           data-flip-trigger="true"
                           aria-label="Flip card to view devotion records"
                           onClick={() => flipToRecords(recordTab)}
-                          className={`min-h-[32px] sm:min-h-[36px] px-2 sm:px-3 rounded-xl border flex items-center gap-1 sm:gap-1.5 font-serif-eng text-[8px] sm:text-[9.5px] uppercase tracking-[0.09em] sm:tracking-[0.16em] whitespace-nowrap shrink-0 transition-colors cursor-pointer ${cardTheme.buttonClass}`}
+                          className={`min-h-[30px] sm:min-h-[36px] px-1.5 sm:px-3 rounded-xl border flex items-center gap-1 sm:gap-1.5 font-serif-eng text-[7.5px] sm:text-[9.5px] uppercase tracking-[0.06em] sm:tracking-[0.16em] whitespace-nowrap shrink-0 transition-colors cursor-pointer ${cardTheme.buttonClass}`}
                         >
                           <FlipIcon size={11} />
                           <span>Records</span>
@@ -1517,7 +1774,9 @@ export const ProfileIdCard = memo(
                 aria-label="Seeker Devotion Records"
                 aria-hidden={!isFlipped}
                 inert={!isFlipped}
-                className={`profile-card-face profile-card-back absolute inset-0 w-full rounded-[24px] md:rounded-[26px] border overflow-hidden transition-[background,border-color,box-shadow] duration-500 ${cardTheme.outerBorder}`}
+                className={`profile-card-face profile-card-back absolute inset-0 w-full rounded-[24px] md:rounded-[26px] border overflow-hidden transition-[background,border-color,box-shadow] duration-500 ${cardTheme.outerBorder} ${
+                  isFlipped ? 'pointer-events-auto' : 'pointer-events-none'
+                }`}
                 style={cardTheme.surfaceStyle}
               >
                 <GuillochePatternLayer
@@ -1613,22 +1872,40 @@ export const ProfileIdCard = memo(
                       })}
                     </div>
 
-                    <button
-                      type="button"
-                      data-testid="flip-to-front"
-                      data-flip-trigger="true"
-                      aria-label="Flip card back to Sanctuary Pass front"
-                      title="Flip to Front"
-                      onClick={flipToFront}
-                      className={`min-h-[32px] min-w-[32px] sm:min-h-[34px] px-2 sm:px-3 rounded-xl border flex items-center justify-center gap-1.5 font-serif-eng text-[9px] sm:text-[9.5px] uppercase tracking-[0.14em] whitespace-nowrap shrink-0 transition-colors cursor-pointer ${cardTheme.buttonClass}`}
-                    >
-                      <FlipIcon size={12} />
-                      <span className="hidden sm:inline">Front</span>
-                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {onOpenSharePass && (
+                        <button
+                          type="button"
+                          data-testid="share-pass-button-back"
+                          aria-label="Share Sanctuary Pass card"
+                          title="Share Sanctuary Pass"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenShare();
+                          }}
+                          className={`min-h-[32px] min-w-[32px] sm:min-h-[34px] sm:min-w-[34px] rounded-xl border flex items-center justify-center shrink-0 transition-colors cursor-pointer ${cardTheme.buttonClass}`}
+                        >
+                          <ShareIcon size={12} />
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        data-testid="flip-to-front"
+                        data-flip-trigger="true"
+                        aria-label="Flip card back to Sanctuary Pass front"
+                        title="Flip to Front"
+                        onClick={flipToFront}
+                        className={`min-h-[32px] min-w-[32px] sm:min-h-[34px] px-2 sm:px-3 rounded-xl border flex items-center justify-center gap-1.5 font-serif-eng text-[9px] sm:text-[9.5px] uppercase tracking-[0.14em] whitespace-nowrap shrink-0 transition-colors cursor-pointer ${cardTheme.buttonClass}`}
+                      >
+                        <FlipIcon size={12} />
+                        <span className="hidden sm:inline">Front</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Back Content Panel */}
-                  <div className="flex-1 min-h-0 flex flex-col justify-between px-5 py-4 sm:px-6 overflow-y-auto hide-scrollbar">
+                  <div className="flex-1 min-h-0 flex flex-col justify-between px-5 py-4 sm:px-6 overflow-y-auto overscroll-contain touch-pan-y hide-scrollbar">
                     {/* TAB 1: STREAK MILESTONES */}
                     {recordTab === 'streak' && (
                       <div className="flex flex-col justify-center gap-5 my-auto h-full">
@@ -1782,20 +2059,45 @@ export const ProfileIdCard = memo(
                           </div>
 
                           <p
-                            className={`font-serif-eng italic text-[10.5px] text-center mt-2.5 truncate ${cardTheme.textSub} opacity-78`}
+                            className={`font-serif-eng italic text-[10px] text-center mt-2 truncate ${cardTheme.textSub} opacity-75`}
                           >
                             {selectedMilestone
                               ? `${selectedMilestone.title} (${selectedMilestone.days}d) · ${selectedMilestone.note}`
                               : 'Tap any seal to inspect its consistency milestone.'}
                           </p>
                         </div>
+
+                        {/* Quiet Weekly Muhasabah (7-day self-reflection without streak guilt) */}
+                        <div
+                          data-testid="weekly-muhasabah"
+                          className={`pt-3 border-t ${cardTheme.subtleDivider} flex flex-col gap-1`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span
+                              className={`font-serif-eng text-[8.5px] uppercase tracking-[0.16em] ${cardTheme.textGold}`}
+                            >
+                              Weekly Muhasabah
+                            </span>
+                            <span
+                              className={`font-serif-eng text-[8.5px] tabular-nums ${cardTheme.textSub} opacity-74`}
+                            >
+                              {weeklyMuhasabah.weekPrayers}/{weeklyMuhasabah.maxPossiblePrayers}{' '}
+                              prayers · 7d
+                            </span>
+                          </div>
+                          <p
+                            className={`font-serif-eng italic text-[10.5px] leading-snug ${cardTheme.textSub} opacity-84`}
+                          >
+                            {weeklyMuhasabah.reflection}
+                          </p>
+                        </div>
                       </div>
                     )}
 
-                    {/* TAB 2: COMPACT 9-MEDALLION VAULT */}
+                    {/* TAB 2: COZY 9-MEDALLION KEEPSAKE VAULT */}
                     {recordTab === 'badges' && (
-                      <div className="flex flex-col justify-between h-full gap-2">
-                        <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5 my-auto">
+                      <div className="flex flex-col justify-between h-full gap-1.5">
+                        <div className="grid grid-cols-3 gap-1.5 sm:gap-2 my-auto">
                           {badgesByTier.flatMap(({ style, items }) =>
                             items.map((badge) => {
                               const isSelected = lockedPreviewId === badge.id;
@@ -1805,7 +2107,7 @@ export const ProfileIdCard = memo(
                                   type="button"
                                   onClick={() => {
                                     if (badge.unlocked) {
-                                      hapticCelebrate();
+                                      hapticBadgeUnlock(badge.tier);
                                       setLockedPreviewId(null);
                                       onInspectBadge?.(badge);
                                     } else {
@@ -1820,24 +2122,24 @@ export const ProfileIdCard = memo(
                                       ? 'Earned, tap to celebrate'
                                       : `Locked, ${badge.current} of ${badge.target} ${badge.unitPlural}`
                                   }`}
-                                  className={`rounded-xl px-1.5 py-2 sm:px-2.5 sm:py-2.5 flex flex-col sm:flex-row items-center text-center sm:text-left gap-1 sm:gap-2 transition-colors cursor-pointer ${
+                                  className={`group rounded-2xl px-1.5 py-1.5 sm:px-2 sm:py-2 flex flex-col sm:flex-row items-center text-center sm:text-left gap-1 sm:gap-2 transition-colors cursor-pointer ${
                                     badge.unlocked
                                       ? isLightCard
-                                        ? 'bg-white/75 hover:bg-white'
-                                        : 'bg-white/[0.055] hover:bg-white/[0.095]'
+                                        ? 'bg-white/80 hover:bg-white shadow-[0_2px_10px_rgba(44,35,24,0.06)]'
+                                        : 'bg-white/[0.06] hover:bg-white/[0.11] shadow-[0_2px_10px_rgba(0,0,0,0.22)]'
                                       : isSelected
                                         ? cardTheme.selectedRowClass
                                         : cardTheme.hoverRowClass
                                   }`}
                                 >
-                                  <div className="shrink-0">
+                                  <div className="shrink-0 transition-transform duration-300 ease-out group-hover:scale-[1.07]">
                                     <BadgeArtwork
                                       motif={badge.motif}
                                       tier={badge.tier}
                                       unlocked={badge.unlocked}
                                       animated={false}
                                       showSheen={badge.unlocked}
-                                      size={32}
+                                      size={48}
                                       isLightMode={isLightCard}
                                     />
                                   </div>
@@ -2040,8 +2342,8 @@ export const ProfileIdCard = memo(
           <span
             className={`font-serif-eng italic text-[10.5px] sm:text-[11px] whitespace-nowrap truncate ${dockSubText} opacity-75`}
           >
-            <span className="sm:hidden">Glide or swipe card</span>
-            <span className="hidden sm:inline">Tilt or swipe card · Tap name to personalize</span>
+            <span className="sm:hidden">Swipe left or right to turn</span>
+            <span className="hidden sm:inline">Swipe left or right to turn · Tap name to personalize</span>
           </span>
 
           <div

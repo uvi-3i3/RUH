@@ -18,16 +18,26 @@ import {
   LearningPathNavIcon,
   ShareIcon,
   CompassIcon,
+  LockIcon,
 } from './components/icons/Icons';
 import { TasksView } from './components/layout/TasksView';
 import { ProfileIdCard } from './components/layout/ProfileIdCard';
 import { LearningPathPage } from './components/layout/LearningPathPage';
 import { captureClickOriginFromEvent } from './utils/learningPathLogic';
 import { isPointerDrag, resolveNextPrayerFocusIndex } from './utils/smoothInteractionLogic';
+import {
+  evaluatePrayerWindow,
+  resolveInitialPrayerFocusIndex,
+  resolveNextUpcomingPrayer,
+  resolveTodayPrayerSchedule,
+} from './utils/prayerWindowLogic';
 import { PRACTICE_SETS } from './data/adhkarData';
 import { TasksSideColumn } from './components/layout/TasksSideColumn';
+import { PropheticLifeArtwork } from './components/layout/PropheticLifeArtwork';
 import { TafakkurOverlay } from './components/layout/TafakkurOverlay';
 import { BurhanOverlay } from './components/layout/BurhanOverlay';
+import { MiraclesOverlay } from './components/layout/MiraclesOverlay';
+import { SharePassModal } from './components/layout/SharePassModal';
 import { SettingsModal } from './components/layout/SettingsModal';
 import { RemindersModal } from './components/layout/RemindersModal';
 import { QiblaModal } from './components/layout/QiblaModal';
@@ -36,15 +46,27 @@ import { DuasModal } from './components/layout/DuasModal';
 import { QadaModal } from './components/layout/QadaModal';
 import { MisbahaMode } from './components/layout/MisbahaMode';
 import { burhanData } from './data/burhanData';
+import { quranMiraclesData } from './data/quranMiraclesData';
+import CONTENT_DATA from './data/content.json';
 import {
   computeQadaTotals,
   getSunnahCalendarContext,
   resolveVerseCopy,
   selectActiveBurhan,
 } from './utils/devotionLogic';
+import {
+  MIRACLES_EXPLORED_STORAGE_KEY,
+  parseExploredMiracleIds,
+  selectActiveMiracle,
+} from './utils/miraclesLogic';
 import { PaintedClouds } from './components/layout/PaintedClouds';
 import { BadgeRewardOverlay } from './components/badges/BadgeRewardOverlay';
 import { SacredNotificationToast } from './components/layout/SacredNotificationToast';
+import { OnboardingFlow } from './components/onboarding/OnboardingFlow';
+import {
+  hasExistingUserActivity,
+  shouldAutoShowOnboarding,
+} from './utils/onboardingLogic';
 import { registerNativeLifecycle } from './native';
 import {
   hapticCelebrate,
@@ -54,9 +76,14 @@ import {
   hapticNavigate,
   hapticSuccess,
   hapticTapLight,
+  hapticTaskComplete,
   hapticToggle,
   hapticUndo,
 } from './utils/haptics';
+import { playPrayerToggleCue, playTaskTickOffCue } from './utils/tactileAudio';
+
+const STATIONS = CONTENT_DATA?.stations || [];
+const ALL_VERSES_FLAT = STATIONS.flatMap((s) => s.verses || []);
 
 export default function App() {
   const { devotionData, prayerTimes, notifications } = useSanctuary();
@@ -68,7 +95,15 @@ export default function App() {
     addYaqeen,
     advanceStation,
   } = devotionData;
-  const { isLightMode, toggleLightMode, devTimePhase } = usePreferences();
+  const {
+    isLightMode,
+    setIsLightMode,
+    toggleLightMode,
+    devTimePhase,
+    isTravelMode,
+    onboardingRecord,
+    saveOnboardingRecord,
+  } = usePreferences();
   const { completedHabitsCount, totalHabitsCount } = useHabits();
   const hijri = useHijriDate();
   const enabledAlertsCount =
@@ -80,33 +115,25 @@ export default function App() {
   const viewRef = useRef('main');
 
   const [verseIndex, setVerseIndex] = useState(0);
-  const [contentData, setContentData] = useState(null);
   const [showTodayList, setShowTodayList] = useState(false);
   const [kashfCeremony, setKashfCeremony] = useState(false);
   const kashfTimerRef = useRef(null);
-  const palette = useTemporalPhase(devTimePhase);
+  const [clockMs, setClockMs] = useState(() => Date.now());
+  const nowDate = useMemo(() => new Date(clockMs), [clockMs]);
+  const palette = useTemporalPhase(devTimePhase, {
+    solarTimes: prayerTimes.prayerData?.times || null,
+    sunrise: prayerTimes.prayerData?.sunrise || null,
+    fallbackPrayers: devotionData.prayers,
+    nowDate,
+  });
   const temporalRef = useRef(palette);
   temporalRef.current = palette;
 
-  const [contentError, setContentError] = useState(false);
   const [copiedFeedback, setCopiedFeedback] = useState(false);
 
-  useEffect(() => {
-    fetch('/data/content.json')
-      .then((r) => r.json())
-      .then((data) => {
-        setContentData(data);
-        setContentError(false);
-      })
-      .catch((e) => {
-        console.error('Error loading content:', e);
-        setContentError(true);
-      });
-  }, []);
-
-  // Derive current station's verses
+  // Derive current station's verses synchronously from bundled content
   const maq = devotionData.maqamat || { currentStation: 0, yaqeenProgress: 0, unlockedStations: [0] };
-  const stations = contentData?.stations || [];
+  const stations = STATIONS;
   const currentStationData = stations[maq.currentStation] || stations[0];
   const verses = currentStationData?.verses || null;
   const nextStation = stations[maq.currentStation + 1] || null;
@@ -116,13 +143,29 @@ export default function App() {
 
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [checkingId, setCheckingId] = useState(null);
-  const prayerFocusedRef = useRef(false);
+  const [lockedNotice, setLockedNotice] = useState(null);
+  const [pendingPassedPrayerId, setPendingPassedPrayerId] = useState(null);
+  const prayerManualFocusRef = useRef(false);
+  const prayerSolarAlignedRef = useRef(false);
+  const prayerInitialAlignedRef = useRef(false);
+  const lockedNoticeTimerRef = useRef(null);
 
   const [inTransit, setInTransit] = useState(false);
   const [verseStyle, setVerseStyle] = useState({ opacity: 1, transform: 'translateY(0px)' });
   const [showSaveGlow, setShowSaveGlow] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
-  const [showBurhanModal, setShowBurhanModal] = useState(false);
+  const [burhanOrigin, setBurhanOrigin] = useState(null);
+  const [burhanClosing, setBurhanClosing] = useState(false);
+  const [miraclesOrigin, setMiraclesOrigin] = useState(null);
+  const [miraclesClosing, setMiraclesClosing] = useState(false);
+  const [exploredMiracleIds, setExploredMiracleIds] = useState(() => {
+    try {
+      return parseExploredMiracleIds(localStorage.getItem(MIRACLES_EXPLORED_STORAGE_KEY));
+    } catch {
+      return [];
+    }
+  });
+  const [sharePassLaunch, setSharePassLaunch] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showReminders, setShowReminders] = useState(false);
   const [showQibla, setShowQibla] = useState(false);
@@ -134,6 +177,17 @@ export default function App() {
   const [learningPathClosing, setLearningPathClosing] = useState(false);
   const [reviewPrayers, setReviewPrayers] = useState(false);
   const [inspectedBadge, setInspectedBadge] = useState(null);
+  const [showLifeArtwork, setShowLifeArtwork] = useState(false);
+  const [onboardingMode, setOnboardingMode] = useState(() => {
+    const searchParams = typeof window !== 'undefined' ? window.location.search : '';
+    const shouldShow = shouldAutoShowOnboarding({
+      storedState: onboardingRecord,
+      hasExistingActivity: hasExistingUserActivity(devotionData),
+      searchParams,
+    });
+    return shouldShow ? 'initial' : null;
+  });
+  const isOnboardingOpen = Boolean(onboardingMode);
   const prayerLongPressTimer = useRef(null);
   const prayerLongPressTriggered = useRef(false);
   const wheelDragRef = useRef({
@@ -160,12 +214,25 @@ export default function App() {
   const wheelDragResetTimerRef = useRef(null);
 
   const isLearningPathOpen = Boolean(learningPathOrigin);
+  const isBurhanWorldOpen = Boolean(burhanOrigin);
+  const isMiraclesWorldOpen = Boolean(miraclesOrigin);
+  const isFullScreenWorldOpen = Boolean(
+    isLearningPathOpen || isBurhanWorldOpen || isMiraclesWorldOpen
+  );
+  const isRewardRevealActive = Boolean(
+    !isOnboardingOpen && (devotionData.activeCelebrationBadge || inspectedBadge)
+  );
+  const isBackgroundPaused = isFullScreenWorldOpen || isRewardRevealActive || isOnboardingOpen;
 
   const isAnyModalOpen = Boolean(
-    showTodayList ||
+    isOnboardingOpen ||
+      showTodayList ||
+      showLifeArtwork ||
       tafakkurPromptId ||
       showArchive ||
-      showBurhanModal ||
+      isBurhanWorldOpen ||
+      isMiraclesWorldOpen ||
+      sharePassLaunch ||
       showSettings ||
       showReminders ||
       showQibla ||
@@ -182,6 +249,7 @@ export default function App() {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key !== 'Escape') return;
+      if (isOnboardingOpen) return;
       if (devotionData.activeCelebrationBadge || inspectedBadge) return;
       if (typeof document !== 'undefined' && document.querySelector('[data-habit-editor-open="true"]')) {
         return;
@@ -191,41 +259,68 @@ export default function App() {
           hapticDismiss();
           setLearningPathClosing(true);
         }
-      } else if (misbahaLaunch) setMisbahaLaunch(null);
+      } else if (miraclesOrigin) {
+        if (!miraclesClosing) {
+          hapticDismiss();
+          setMiraclesClosing(true);
+        }
+      } else if (burhanOrigin) {
+        if (!burhanClosing) {
+          hapticDismiss();
+          setBurhanClosing(true);
+        }
+      } else if (sharePassLaunch) setSharePassLaunch(null);
+      else if (misbahaLaunch) setMisbahaLaunch(null);
       else if (showCityPicker) setShowCityPicker(false);
       else if (tafakkurPromptId) setTafakkurPromptId(null);
       else if (showTodayList) setShowTodayList(false);
+      else if (showLifeArtwork) setShowLifeArtwork(false);
       else if (showReminders) setShowReminders(false);
       else if (showSettings) setShowSettings(false);
       else if (showQibla) setShowQibla(false);
       else if (showDuas) setShowDuas(false);
       else if (showQada) setShowQada(false);
       else if (showArchive) setShowArchive(false);
-      else if (showBurhanModal) setShowBurhanModal(false);
+      else if (pendingPassedPrayerId) setPendingPassedPrayerId(null);
+      else if (lockedNotice) setLockedNotice(null);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
+    isOnboardingOpen,
     devotionData.activeCelebrationBadge,
     inspectedBadge,
     learningPathOrigin,
     learningPathClosing,
+    miraclesOrigin,
+    miraclesClosing,
+    burhanOrigin,
+    burhanClosing,
+    sharePassLaunch,
     misbahaLaunch,
     showCityPicker,
     tafakkurPromptId,
     showTodayList,
+    showLifeArtwork,
     showReminders,
     showSettings,
     showQibla,
     showDuas,
     showQada,
     showArchive,
-    showBurhanModal,
+    pendingPassedPrayerId,
+    lockedNotice,
   ]);
 
   // Android hardware back button & mobile app foreground resume lifecycle
   const nativeBackHandlerRef = useRef(() => false);
   nativeBackHandlerRef.current = () => {
+    if (isOnboardingOpen) {
+      if (onboardingMode === 'replay') {
+        handleSkipOnboarding();
+      }
+      return true;
+    }
     if (devotionData.activeCelebrationBadge) {
       devotionData.dismissCelebrationBadge();
       return true;
@@ -242,6 +337,10 @@ export default function App() {
       if (!learningPathClosing) setLearningPathClosing(true);
       return true;
     }
+    if (sharePassLaunch) {
+      setSharePassLaunch(null);
+      return true;
+    }
     if (misbahaLaunch) {
       setMisbahaLaunch(null);
       return true;
@@ -256,6 +355,10 @@ export default function App() {
     }
     if (showTodayList) {
       setShowTodayList(false);
+      return true;
+    }
+    if (showLifeArtwork) {
+      setShowLifeArtwork(false);
       return true;
     }
     if (showReminders) {
@@ -282,8 +385,20 @@ export default function App() {
       setShowArchive(false);
       return true;
     }
-    if (showBurhanModal) {
-      setShowBurhanModal(false);
+    if (miraclesOrigin) {
+      if (!miraclesClosing) setMiraclesClosing(true);
+      return true;
+    }
+    if (burhanOrigin) {
+      if (!burhanClosing) setBurhanClosing(true);
+      return true;
+    }
+    if (pendingPassedPrayerId) {
+      setPendingPassedPrayerId(null);
+      return true;
+    }
+    if (lockedNotice) {
+      setLockedNotice(null);
       return true;
     }
     if (currentView !== 'main') {
@@ -295,6 +410,7 @@ export default function App() {
 
   const nativeForegroundRef = useRef(() => {});
   nativeForegroundRef.current = () => {
+    setClockMs(Date.now());
     prayerTimes.refresh?.();
     notifications.refreshPermission?.();
     notifications.syncAllNativePrayerSchedules?.();
@@ -329,14 +445,77 @@ export default function App() {
     }
   }, [allCompleted]);
 
+  // Live 30s clock tick so prayer unlock windows, countdowns & solar atmosphere advance automatically
   useEffect(() => {
-    if (prayerFocusedRef.current || !prayerTimes.prayerData?.nextPrayer) return;
-    const nextIdx = PRAYERS.findIndex((p) => p.id === prayerTimes.prayerData.nextPrayer);
-    if (nextIdx >= 0) {
-      setFocusedIndex(nextIdx);
-      prayerFocusedRef.current = true;
+    const id = setInterval(() => setClockMs(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  const todaySchedule = useMemo(
+    () =>
+      resolveTodayPrayerSchedule({
+        prayerTimesData: prayerTimes.prayerData,
+        fallbackPrayers: devotionData.prayers,
+        now: nowDate,
+      }),
+    [prayerTimes.prayerData, devotionData.prayers, nowDate]
+  );
+
+  const prayerWindows = useMemo(() => {
+    const map = {};
+    PRAYERS.forEach((p) => {
+      map[p.id] = evaluatePrayerWindow(p.id, {
+        schedule: todaySchedule,
+        now: nowDate,
+        isTravelMode,
+      });
+    });
+    return map;
+  }, [todaySchedule, nowDate, isTravelMode]);
+
+  const nextUpcomingPrayer = useMemo(
+    () => resolveNextUpcomingPrayer({ schedule: todaySchedule, now: nowDate }),
+    [todaySchedule, nowDate]
+  );
+
+  // Focus the currently open or most relevant unlogged prayer on launch (and once when solar times hydrate)
+  useEffect(() => {
+    if (prayerManualFocusRef.current) return;
+    if (!prayerInitialAlignedRef.current) {
+      prayerInitialAlignedRef.current = true;
+      setFocusedIndex(
+        resolveInitialPrayerFocusIndex({
+          schedule: todaySchedule,
+          completedPrayers,
+          now: nowDate,
+          isTravelMode,
+        })
+      );
+      if (todaySchedule.isLiveSolar) {
+        prayerSolarAlignedRef.current = true;
+      }
+      return;
     }
-  }, [prayerTimes.prayerData?.nextPrayer]);
+    if (todaySchedule.isLiveSolar && !prayerSolarAlignedRef.current) {
+      prayerSolarAlignedRef.current = true;
+      setFocusedIndex(
+        resolveInitialPrayerFocusIndex({
+          schedule: todaySchedule,
+          completedPrayers,
+          now: nowDate,
+          isTravelMode,
+        })
+      );
+    }
+  }, [todaySchedule, completedPrayers, nowDate, isTravelMode]);
+
+  // Dismiss any prayer-level prompt when navigating away from Sanctuary
+  useEffect(() => {
+    if (currentView !== 'main') {
+      setPendingPassedPrayerId(null);
+      setLockedNotice(null);
+    }
+  }, [currentView]);
 
   const stateRef = useRef({
     isPressing: false,
@@ -604,8 +783,16 @@ export default function App() {
 
     if (Math.abs(dy) > 30 && !hideStackForSeal) {
       cancelPrayerAutoFocus();
-      if (dy > 0) setFocusedIndex((p) => Math.min(PRAYERS.length - 1, p + 1));
-      else setFocusedIndex((p) => Math.max(0, p - 1));
+      const nextIdx =
+        dy > 0 ? Math.min(PRAYERS.length - 1, focusedIndex + 1) : Math.max(0, focusedIndex - 1);
+      if (nextIdx !== focusedIndex) {
+        prayerManualFocusRef.current = true;
+        setPendingPassedPrayerId(null);
+        setLockedNotice(null);
+        hapticDetent();
+        playPrayerToggleCue({ direction: dy > 0 ? 1 : -1 });
+        setFocusedIndex(nextIdx);
+      }
     }
   };
 
@@ -622,9 +809,18 @@ export default function App() {
     if (Math.abs(e.deltaY) > 20) {
       cancelPrayerAutoFocus();
       scrollCooldown.current = true;
-      setFocusedIndex((p) =>
-        e.deltaY > 0 ? Math.min(PRAYERS.length - 1, p + 1) : Math.max(0, p - 1)
-      );
+      const nextIdx =
+        e.deltaY > 0
+          ? Math.min(PRAYERS.length - 1, focusedIndex + 1)
+          : Math.max(0, focusedIndex - 1);
+      if (nextIdx !== focusedIndex) {
+        prayerManualFocusRef.current = true;
+        setPendingPassedPrayerId(null);
+        setLockedNotice(null);
+        hapticDetent();
+        playPrayerToggleCue({ direction: e.deltaY > 0 ? 1 : -1 });
+        setFocusedIndex(nextIdx);
+      }
       if (wheelCooldownTimerRef.current) clearTimeout(wheelCooldownTimerRef.current);
       wheelCooldownTimerRef.current = setTimeout(() => {
         wheelCooldownTimerRef.current = null;
@@ -633,8 +829,26 @@ export default function App() {
     }
   };
 
-  const handleTogglePrayer = (prayerId, status = 'ontime') => {
+  const showLockedPrayerWhisper = useCallback((prayerId, windowInfo) => {
+    const prayerObj = PRAYERS.find((p) => p.id === prayerId);
+    if (!prayerObj) return;
+    if (lockedNoticeTimerRef.current) clearTimeout(lockedNoticeTimerRef.current);
+    setLockedNotice({
+      prayerId,
+      label: prayerObj.label,
+      formattedStart: windowInfo?.formattedStart || '',
+      formattedCountdown: windowInfo?.formattedCountdown || '',
+    });
+    lockedNoticeTimerRef.current = setTimeout(() => {
+      lockedNoticeTimerRef.current = null;
+      setLockedNotice(null);
+    }, 4200);
+  }, []);
+
+  const commitPrayerToggle = (prayerId, status = 'ontime') => {
     cancelPrayerAutoFocus();
+    setPendingPassedPrayerId(null);
+    setLockedNotice(null);
 
     if (completedPrayers.includes(prayerId)) {
       hapticUndo();
@@ -644,6 +858,7 @@ export default function App() {
 
     // Commit immediately so rapid taps on adjacent prayers are never dropped
     togglePrayer(prayerId, status);
+    playTaskTickOffCue({ kind: 'prayer' });
     setCheckingId(prayerId);
     if (checkingTimerRef.current) clearTimeout(checkingTimerRef.current);
     checkingTimerRef.current = setTimeout(() => {
@@ -655,7 +870,7 @@ export default function App() {
     const nextCompleted = [...completedPrayers, prayerId];
     if (nextCompleted.length === PRAYERS.length) hapticCelebrate();
     else if (status === 'qada') hapticHeavy();
-    else hapticTapLight();
+    else hapticTaskComplete();
 
     const nextIdx = resolveNextPrayerFocusIndex(PRAYERS, prayerId, nextCompleted);
     prayerAutoFocusTimerRef.current = setTimeout(() => {
@@ -665,6 +880,34 @@ export default function App() {
         setReviewPrayers(false);
       }
     }, 340);
+  };
+
+  const handleTogglePrayer = (prayerId, status = 'ontime') => {
+    cancelPrayerAutoFocus();
+    prayerManualFocusRef.current = true;
+
+    if (completedPrayers.includes(prayerId)) {
+      commitPrayerToggle(prayerId);
+      return;
+    }
+
+    const windowInfo = prayerWindows[prayerId];
+    if (windowInfo && !windowInfo.canLog) {
+      setPendingPassedPrayerId(null);
+      hapticDetent();
+      showLockedPrayerWhisper(prayerId, windowInfo);
+      return;
+    }
+
+    // When a prayer's window has already closed, invite an honest On-Time vs. Qada choice
+    if (windowInfo?.status === 'passed' && status === 'ontime') {
+      setLockedNotice(null);
+      hapticDetent();
+      setPendingPassedPrayerId((cur) => (cur === prayerId ? null : prayerId));
+      return;
+    }
+
+    commitPrayerToggle(prayerId, status);
   };
 
   // Yaqeen from tasks
@@ -695,13 +938,6 @@ export default function App() {
     }
   }, [maq.yaqeenProgress, nextStation, kashfCeremony, advanceStation]);
 
-  const celebrationBadgeId = devotionData.activeCelebrationBadge?.id;
-  useEffect(() => {
-    if (celebrationBadgeId) {
-      hapticCelebrate();
-    }
-  }, [celebrationBadgeId]);
-
   useEffect(() => {
     return () => {
       cancelVerseTransition();
@@ -715,6 +951,7 @@ export default function App() {
       if (doubleTapTimerRef.current) clearTimeout(doubleTapTimerRef.current);
       if (wheelDragResetTimerRef.current) clearTimeout(wheelDragResetTimerRef.current);
       if (prayerLongPressTimer.current) clearTimeout(prayerLongPressTimer.current);
+      if (lockedNoticeTimerRef.current) clearTimeout(lockedNoticeTimerRef.current);
     };
   }, [cancelVerseTransition, cancelPrayerAutoFocus]);
 
@@ -804,11 +1041,12 @@ export default function App() {
     () => selectActiveBurhan(burhanData, maq.currentStation, devotionData.activeDays),
     [maq.currentStation, devotionData.activeDays]
   );
-
-  const allVersesFlat = useMemo(
-    () => (contentData?.stations || []).flatMap((s) => s.verses || []),
-    [contentData]
+  const activeMiracle = useMemo(
+    () => selectActiveMiracle(quranMiraclesData, maq.currentStation, devotionData.activeDays),
+    [maq.currentStation, devotionData.activeDays]
   );
+
+  const allVersesFlat = ALL_VERSES_FLAT;
   const tafakkurVerse = tafakkurPromptId
     ? allVersesFlat.find((v) => v.id === tafakkurPromptId)
     : null;
@@ -816,14 +1054,109 @@ export default function App() {
     ? devotionData.savedVerses.find((v) => v?.id === tafakkurPromptId)?.note || ''
     : '';
 
-  const openTodayList = useCallback(() => setShowTodayList(true), []);
+  const openTodayList = useCallback(() => {
+    setShowLifeArtwork(false);
+    setShowTodayList(true);
+  }, []);
   const closeTodayList = useCallback(() => setShowTodayList(false), []);
-  const openBurhanModal = useCallback(() => setShowBurhanModal(true), []);
+  const openLifeArtwork = useCallback(() => {
+    setShowTodayList(false);
+    setShowLifeArtwork(true);
+  }, []);
+  const closeLifeArtwork = useCallback(() => setShowLifeArtwork(false), []);
+  const openBurhanModal = useCallback((event) => {
+    const origin = captureClickOriginFromEvent(event);
+    setBurhanClosing(false);
+    setBurhanOrigin(origin);
+  }, []);
+  const openMiraclesModal = useCallback((event) => {
+    const origin = captureClickOriginFromEvent(event);
+    setMiraclesClosing(false);
+    setMiraclesOrigin(origin);
+  }, []);
+  const handleMarkMiracleExplored = useCallback((miracleId) => {
+    if (!miracleId) return;
+    setExploredMiracleIds((prev) => {
+      if (prev.includes(miracleId)) return prev;
+      const next = [...prev, miracleId];
+      try {
+        localStorage.setItem(MIRACLES_EXPLORED_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // Ignore storage write errors
+      }
+      return next;
+    });
+  }, []);
+  const handleOpenSharePass = useCallback((payload) => {
+    setSharePassLaunch(payload);
+  }, []);
   const openDuasModal = useCallback(() => setShowDuas(true), []);
   const openQadaModal = useCallback(() => setShowQada(true), []);
   const openArchiveModal = useCallback(() => setShowArchive(true), []);
   const openRemindersModal = useCallback(() => setShowReminders(true), []);
   const openSettingsModal = useCallback(() => setShowSettings(true), []);
+  const handleReplayOnboarding = useCallback(() => setOnboardingMode('replay'), []);
+  const handleSkipOnboarding = useCallback(() => {
+    if (onboardingMode === 'initial') {
+      saveOnboardingRecord({
+        completed: true,
+        skipped: true,
+        completedAt: new Date().toISOString(),
+      });
+    }
+    setOnboardingMode(null);
+  }, [onboardingMode, saveOnboardingRecord]);
+  const handleCompleteOnboarding = useCallback(
+    async (result) => {
+      if (result?.name) {
+        devotionData.setProfile(result.name);
+      }
+      if (result?.chimeProfileId) {
+        devotionData.setNotificationChimeProfile(result.chimeProfileId);
+      }
+      if (typeof result?.leadMinutes === 'number') {
+        devotionData.setNotificationLeadMinutes(result.leadMinutes);
+      }
+      if (result?.dailyIntention) {
+        devotionData.setDailyIntention(result.dailyIntention);
+      }
+      if (result?.selectedVerseId) {
+        devotionData.toggleSaveVerse(result.selectedVerseId, true);
+      }
+      if (Array.isArray(result?.selectedAnchorLabels) && result.selectedAnchorLabels.length > 0) {
+        const existingTodoTexts = new Set(
+          (devotionData.dailyTodos || []).map((t) => (t?.text || '').trim().toLowerCase())
+        );
+        result.selectedAnchorLabels.forEach((label) => {
+          const clean = (label || '').trim();
+          if (clean && !existingTodoTexts.has(clean.toLowerCase())) {
+            devotionData.addDailyTodo(clean);
+            existingTodoTexts.add(clean.toLowerCase());
+          }
+        });
+      }
+      if (result?.enableReminders) {
+        devotionData.setAutoSyncSolarReminders(true);
+        devotionData.setAllPrayerRemindersEnabled(true);
+        try {
+          await notifications.requestPermission?.();
+        } catch {
+          // Graceful fallback if browser blocks or denies notification prompt
+        }
+      }
+      saveOnboardingRecord({
+        completed: true,
+        skipped: false,
+        completedAt: new Date().toISOString(),
+        goalId: result?.goalId || null,
+        struggleIds: result?.struggleIds || [],
+        selectedVerseId: result?.selectedVerseId || null,
+        selectedAnchorIds: result?.selectedAnchorIds || [],
+      });
+      setOnboardingMode(null);
+    },
+    [devotionData, notifications, saveOnboardingRecord]
+  );
   const handleOpenMisbaha = useCallback((launch) => setMisbahaLaunch(launch), []);
   const handleInspectBadge = useCallback((badge) => setInspectedBadge(badge), []);
   const { goToStation } = devotionData;
@@ -844,8 +1177,8 @@ export default function App() {
       onTouchEnd={handleTouchEnd}
       onWheel={handleWheel}
     >
-      {/* Calm Static Gouache Cloud Backdrop */}
-      <PaintedClouds isLightMode={isLightMode} />
+      {/* Live Prayer-Time Synced Gouache Cloud Backdrop */}
+      <PaintedClouds isLightMode={isLightMode} atmosphere={palette} />
 
       {/* On-Demand Interactive Effects Canvas (Press Ring & Celebration Embers) */}
       <canvas ref={canvasRef} className="absolute inset-0 z-[1] pointer-events-none block" />
@@ -860,24 +1193,46 @@ export default function App() {
               : 'linear-gradient(to bottom, rgba(248,245,238,0.68) 0%, rgba(248,245,238,0.22) 22%, rgba(248,245,238,0.18) 78%, rgba(244,240,232,0.52) 100%), radial-gradient(ellipse 74% 66% at 50% 48%, rgba(252,249,243,0.62) 0%, rgba(246,242,235,0.28) 58%, rgba(240,236,228,0.12) 100%)'
             : isHikmah
               ? 'radial-gradient(ellipse 76% 68% at 50% 48%, rgba(4,16,14,0.42) 0%, rgba(3,12,11,0.62) 60%, rgba(2,8,10,0.82) 100%)'
-              : 'linear-gradient(to bottom, rgba(6,9,18,0.55) 0%, rgba(6,9,18,0.22) 24%, rgba(6,9,18,0.18) 76%, rgba(5,7,14,0.62) 100%), radial-gradient(ellipse 74% 66% at 50% 48%, rgba(7,10,19,0.46) 0%, rgba(6,9,16,0.34) 58%, rgba(4,6,12,0.68) 100%)',
+              : 'linear-gradient(to bottom, rgba(6,9,18,0.46) 0%, rgba(6,9,18,0.14) 24%, rgba(6,9,18,0.12) 76%, rgba(5,7,14,0.52) 100%), radial-gradient(ellipse 74% 66% at 50% 48%, rgba(7,10,19,0.38) 0%, rgba(6,9,16,0.24) 58%, rgba(4,6,12,0.56) 100%)',
         }}
       />
 
-      {/* LEFT-RAIL TODAY LIST CAPSULE & DRAWER (Main Sanctuary) */}
-      <TasksSideColumn
-        isVisible={currentView === 'main' && !isLearningPathOpen}
-        isOpen={showTodayList}
-        onOpen={openTodayList}
-        onClose={closeTodayList}
-        accentColor={accentHex}
-      />
+      {/* LEFT-CENTER SACRED LINE ARTWORK (LIFE, HOPES & CALAMITIES — CENTERED ALONE) */}
+      <div
+        aria-hidden={currentView !== 'main' || isBackgroundPaused || undefined}
+        inert={currentView !== 'main' || isBackgroundPaused}
+        className={`fixed left-2 md:left-6 top-0 bottom-0 z-30 flex items-center justify-center pointer-events-none transition-opacity duration-400 ${
+          currentView === 'main' && !isFullScreenWorldOpen && !isOnboardingOpen
+            ? 'opacity-100'
+            : 'opacity-0'
+        }`}
+      >
+        <div
+          className={`transition-all duration-400 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            currentView === 'main' && !isFullScreenWorldOpen && !isOnboardingOpen && !showTodayList
+              ? 'opacity-100 translate-x-0 pointer-events-auto'
+              : 'opacity-0 -translate-x-3 pointer-events-none'
+          }`}
+        >
+          <PropheticLifeArtwork
+            completedCount={completedPrayers.length}
+            totalPrayers={PRAYERS.length}
+            isLightMode={isLightMode}
+            accentColor={accentHex}
+            isOpen={showLifeArtwork}
+            onOpen={openLifeArtwork}
+            onClose={closeLifeArtwork}
+          />
+        </div>
+      </div>
 
       {/* --- WHISPER-QUIET SPATIAL HEADER --- */}
       <header
-        aria-hidden={isLearningPathOpen || undefined}
-        inert={isLearningPathOpen}
-        className="absolute left-0 right-0 z-30 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-5 md:px-10 pointer-events-none"
+        aria-hidden={isBackgroundPaused || undefined}
+        inert={isBackgroundPaused}
+        className={`absolute left-0 right-0 z-30 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-5 md:px-10 pointer-events-none transition-opacity duration-300 ${
+          isOnboardingOpen ? 'opacity-0 invisible' : 'opacity-100'
+        }`}
         style={{ top: 'calc(12px + var(--sat))' }}
       >
         {/* Left Cell: Editorial Hijri Date Stamp + Quiet City Location Trigger */}
@@ -963,9 +1318,11 @@ export default function App() {
 
       {/* --- 3-COLUMN ARCHITECTURAL LAYOUT --- */}
       <div
-        aria-hidden={isLearningPathOpen || undefined}
-        inert={isLearningPathOpen}
-        className="absolute inset-0 z-20 flex w-full h-full px-1 md:px-10 pointer-events-none"
+        aria-hidden={isBackgroundPaused || undefined}
+        inert={isBackgroundPaused}
+        className={`absolute inset-0 z-20 flex w-full h-full px-1 md:px-10 pointer-events-none transition-opacity duration-300 ${
+          isOnboardingOpen ? 'opacity-0 invisible' : 'opacity-100'
+        }`}
       >
         {/* Left Col - Spatial Margin Spacer */}
         <div className="w-[44px] md:w-[140px] flex-shrink-0 h-full pl-1 md:pl-10" />
@@ -998,42 +1355,11 @@ export default function App() {
             >
               <div className="flex flex-col items-center w-full mix-blend-normal py-6 px-3 sm:px-5" style={verseStyle}>
                 {!activeVerse ? (
-                  contentError ? (
-                    <div className="flex flex-col items-center my-12 gap-4">
-                      <span
-                        className={`font-serif-eng text-[11px] uppercase tracking-widest ${tTextSub} opacity-60 text-center`}
-                      >
-                        Unable to load sanctuary content
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          hapticTapLight();
-                          setContentError(false);
-                          fetch('/data/content.json')
-                            .then((r) => r.json())
-                            .then((data) => {
-                              setContentData(data);
-                              setContentError(false);
-                            })
-                            .catch(() => setContentError(true));
-                        }}
-                        className={`font-serif-eng text-[10px] uppercase tracking-widest px-4 py-2 rounded-full border transition-all duration-300 pointer-events-auto cursor-pointer ${
-                          isLightMode
-                            ? 'border-[#9c7533]/40 text-[#9c7533] hover:bg-[#9c7533]/10'
-                            : 'border-[#d2a24b]/40 text-[#d2a24b] hover:bg-[#d2a24b]/10'
-                        }`}
-                      >
-                        Retry
-                      </button>
-                    </div>
-                  ) : (
-                    <div
-                      className={`font-serif-eng text-[11px] uppercase tracking-widest ${tTextSub} opacity-30 animate-pulse my-12`}
-                    >
-                      Entering Sanctuary...
-                    </div>
-                  )
+                  <div
+                    className={`font-serif-eng text-[11px] uppercase tracking-widest ${tTextSub} opacity-30 animate-pulse my-12`}
+                  >
+                    Entering Sanctuary...
+                  </div>
                 ) : (
                   <>
                     {/* Arabic Verse + Press Charge Glow */}
@@ -1266,7 +1592,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* === VIEW 2: TASKS (DAILY DEVOTION & BURHAN) === */}
+          {/* === VIEW 2: TASKS (DAILY DEVOTION, BURHAN & MIRACLES) === */}
           <TasksView
             currentView={currentView}
             dailyTasks={devotionData.dailyTasks}
@@ -1277,8 +1603,11 @@ export default function App() {
             markAdhkarSetRewarded={devotionData.markAdhkarSetRewarded}
             activeDays={devotionData.activeDays}
             onOpenBurhan={openBurhanModal}
+            onOpenMiracles={openMiraclesModal}
+            exploredMiracleIds={exploredMiracleIds}
             onOpenMisbaha={handleOpenMisbaha}
             sunnahContext={sunnahContext}
+            todaySchedule={todaySchedule}
             qadaRemainingCount={qadaTotals.totalRemaining}
             onOpenDuas={openDuasModal}
             onOpenQada={openQadaModal}
@@ -1318,6 +1647,7 @@ export default function App() {
                 onOpenArchive={openArchiveModal}
                 onOpenReminders={openRemindersModal}
                 onOpenSettings={openSettingsModal}
+                onOpenSharePass={handleOpenSharePass}
               />
             )}
           </div>
@@ -1432,36 +1762,188 @@ export default function App() {
 
       {/* --- 5. 3D PRAYER SCROLL WHEEL + ALIGNED QIBLA DOCK (MAIN VIEW ONLY) --- */}
       <div
-        aria-hidden={isLearningPathOpen || undefined}
-        inert={isLearningPathOpen}
+        aria-hidden={isBackgroundPaused || undefined}
+        inert={isBackgroundPaused}
         className="absolute inset-x-0 bottom-0 z-30 pointer-events-none transition-[opacity,visibility,transform] duration-500"
         style={{
           height: 'calc(216px + var(--sab))',
-          opacity: currentView === 'main' && !isLearningPathOpen ? 1 : 0,
-          visibility: currentView === 'main' && !isLearningPathOpen ? 'visible' : 'hidden',
+          opacity: currentView === 'main' && !isFullScreenWorldOpen && !isOnboardingOpen ? 1 : 0,
+          visibility:
+            currentView === 'main' && !isFullScreenWorldOpen && !isOnboardingOpen
+              ? 'visible'
+              : 'hidden',
           transform: currentView === 'main' ? 'translateY(0)' : 'translateY(10px)',
         }}
       >
-        {/* Done Reviewing toggle floating just above the scroll wheel when adjusting completed prayers */}
-        {currentView === 'main' && allCompleted && reviewPrayers && (
+        {/* Single Mutually-Exclusive Slot Above the Prayer Scroll Wheel */}
+        {currentView === 'main' && !isFullScreenWorldOpen && !isOnboardingOpen && (
           <div
-            className="absolute left-1/2 -translate-x-1/2 z-40 flex justify-center"
+            className="absolute left-1/2 -translate-x-1/2 z-40 flex justify-center w-[calc(100%-32px)] max-w-[360px]"
             style={{ bottom: 'calc(176px + var(--sab))' }}
           >
-            <button
-              type="button"
-              onClick={() => {
-                hapticDismiss();
-                setReviewPrayers(false);
-              }}
-              className={`px-3.5 py-1.5 rounded-full font-serif-eng text-[8.5px] uppercase tracking-[0.2em] cursor-pointer pointer-events-auto transition-all opacity-85 hover:opacity-100 whitespace-nowrap border ${
-                isLightMode
-                  ? 'bg-white/75 border-[#9c7533]/25 text-[#9c7533]'
-                  : 'bg-[#0b0e16]/75 border-[#d2a24b]/25 text-[#e5c17b]'
-              }`}
-            >
-              Done Reviewing
-            </button>
+            {pendingPassedPrayerId ? (
+              (() => {
+                const pendingObj = PRAYERS.find((p) => p.id === pendingPassedPrayerId);
+                return (
+                  <div
+                    role="group"
+                    aria-label={`${pendingObj?.label || 'Prayer'} window passed options`}
+                    data-testid="passed-prayer-prompt"
+                    className={`pointer-events-auto flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-2xl border backdrop-blur-md transition-all max-w-full ${
+                      isLightMode
+                        ? 'bg-[#fbf8f1]/94 border-[#9c7533]/28 text-[#1a1814] island-light'
+                        : 'bg-[#0b0e16]/92 border-[#d2a24b]/28 text-[#f5eee0] island-dark'
+                    }`}
+                  >
+                    <span
+                      className={`font-serif-eng text-[8px] sm:text-[8.5px] uppercase tracking-[0.1em] sm:tracking-[0.12em] px-1 whitespace-nowrap ${tTextSub} opacity-80`}
+                    >
+                      {pendingObj?.label}
+                    </span>
+                    <button
+                      type="button"
+                      data-testid="passed-prayer-ontime"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        commitPrayerToggle(pendingPassedPrayerId, 'ontime');
+                      }}
+                      className={`min-h-[28px] px-2 sm:px-2.5 py-1 rounded-xl font-serif-eng text-[8.5px] sm:text-[9px] uppercase tracking-[0.09em] sm:tracking-[0.11em] whitespace-nowrap cursor-pointer transition-colors ${
+                        isLightMode
+                          ? 'bg-[#9c7533] text-white hover:bg-[#856227]'
+                          : 'bg-[#d2a24b]/24 text-[#f0d18d] border border-[#d2a24b]/38 hover:bg-[#d2a24b]/34'
+                      }`}
+                    >
+                      Prayed on time
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="passed-prayer-qada"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        commitPrayerToggle(pendingPassedPrayerId, 'qada');
+                      }}
+                      className={`min-h-[28px] px-2 sm:px-2.5 py-1 rounded-xl font-serif-eng text-[8.5px] sm:text-[9px] uppercase tracking-[0.09em] sm:tracking-[0.11em] whitespace-nowrap cursor-pointer border transition-colors ${
+                        isLightMode
+                          ? 'border-black/14 text-[#4a453d] hover:bg-black/5'
+                          : 'border-white/15 text-[#e4dac8]/85 hover:bg-white/10'
+                      }`}
+                    >
+                      Missed · Qada
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Dismiss"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        hapticDismiss();
+                        setPendingPassedPrayerId(null);
+                      }}
+                      className={`w-6 h-6 rounded-lg flex items-center justify-center text-[13px] leading-none cursor-pointer opacity-60 hover:opacity-100 shrink-0 ${tTextSub}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })()
+            ) : lockedNotice ? (
+              <div
+                role="status"
+                aria-live="polite"
+                data-testid="locked-prayer-notice"
+                className={`pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-2xl border backdrop-blur-md transition-all ${
+                  isLightMode
+                    ? 'bg-[#fbf8f1]/92 border-[#9c7533]/24 text-[#1a1814] island-light'
+                    : 'bg-[#0b0e16]/90 border-white/15 text-[#f5eee0] island-dark'
+                }`}
+              >
+                <LockIcon
+                  size={12}
+                  className={isLightMode ? 'text-[#9c7533] shrink-0' : 'text-[#d2a24b] shrink-0'}
+                />
+                <span className="font-serif-eng text-[10px] tracking-[0.04em] whitespace-nowrap">
+                  {lockedNotice.label} opens at {lockedNotice.formattedStart}
+                  {lockedNotice.formattedCountdown ? ` · ${lockedNotice.formattedCountdown}` : ''}
+                </span>
+                {!prayerTimes.hasLocation ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      hapticNavigate();
+                      setLockedNotice(null);
+                      setShowCityPicker(true);
+                    }}
+                    className="font-serif-eng text-[9px] uppercase tracking-[0.14em] underline underline-offset-2 whitespace-nowrap cursor-pointer"
+                    style={{ color: accentHex }}
+                  >
+                    Set City
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      hapticNavigate();
+                      setLockedNotice(null);
+                      setShowSettings(true);
+                    }}
+                    className="font-serif-eng text-[9px] uppercase tracking-[0.14em] underline underline-offset-2 whitespace-nowrap cursor-pointer opacity-80 hover:opacity-100"
+                    style={{ color: accentHex }}
+                  >
+                    Travel?
+                  </button>
+                )}
+              </div>
+            ) : allCompleted && reviewPrayers ? (
+              <button
+                type="button"
+                onClick={() => {
+                  hapticDismiss();
+                  setReviewPrayers(false);
+                }}
+                className={`px-3.5 py-1.5 rounded-full font-serif-eng text-[8.5px] uppercase tracking-[0.2em] cursor-pointer pointer-events-auto transition-all opacity-85 hover:opacity-100 whitespace-nowrap border ${
+                  isLightMode
+                    ? 'bg-white/75 border-[#9c7533]/25 text-[#9c7533]'
+                    : 'bg-[#0b0e16]/75 border-[#d2a24b]/25 text-[#e5c17b]'
+                }`}
+              >
+                Done Reviewing
+              </button>
+            ) : !hideStackForSeal && nextUpcomingPrayer ? (
+              <div
+                data-testid="next-prayer-whisper"
+                className="flex items-center justify-center gap-1.5 text-center pointer-events-auto"
+              >
+                <span
+                  className={`font-serif-eng text-[9.5px] sm:text-[10px] uppercase tracking-[0.15em] whitespace-nowrap ${tTextSub} ${
+                    isLightMode ? 'opacity-78' : 'opacity-70'
+                  }`}
+                  style={{ textShadow: glowSub }}
+                >
+                  {nextUpcomingPrayer.label} in {nextUpcomingPrayer.formattedCountdown}
+                  <span className="opacity-65"> · {nextUpcomingPrayer.formattedTime}</span>
+                  {isTravelMode ? (
+                    <span className="ml-1.5" style={{ color: accentHex }}>
+                      · Travel
+                    </span>
+                  ) : null}
+                </span>
+                {!prayerTimes.hasLocation && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      hapticNavigate();
+                      setShowCityPicker(true);
+                    }}
+                    className="font-serif-eng text-[9px] uppercase tracking-[0.16em] whitespace-nowrap cursor-pointer opacity-85 hover:opacity-100 transition-opacity"
+                    style={{ color: accentHex, textShadow: glowSub }}
+                  >
+                    · Set City
+                  </button>
+                )}
+              </div>
+            ) : null}
           </div>
         )}
 
@@ -1543,8 +2025,13 @@ export default function App() {
                 const steps = Math.round(-deltaY / 32);
                 const nextIdx = Math.max(0, Math.min(PRAYERS.length - 1, drag.startIndex + steps));
                 if (nextIdx !== drag.lastStepIndex) {
+                  const dir = nextIdx > drag.lastStepIndex ? 1 : -1;
                   drag.lastStepIndex = nextIdx;
+                  prayerManualFocusRef.current = true;
+                  setPendingPassedPrayerId(null);
+                  setLockedNotice(null);
                   hapticDetent();
+                  playPrayerToggleCue({ direction: dir });
                   setFocusedIndex(nextIdx);
                 }
               }
@@ -1598,8 +2085,17 @@ export default function App() {
               const itemStatus = prayerStatuses[item.id] || 'ontime';
               const isChecking = checkingId === item.id;
               const RenderIcon = getPrayerIcon(item.iconType);
+              const windowInfo = prayerWindows[item.id] || {
+                status: 'active',
+                canLog: true,
+                formattedCountdown: '',
+                formattedStart: '',
+              };
+              const isLocked = !isCompletedItem && !windowInfo.canLog;
+              const isPassedUnlogged = !isCompletedItem && windowInfo.status === 'passed';
+              const isTravelUnlocked = !isCompletedItem && windowInfo.status === 'travel-unlocked';
               const isNextPrayer =
-                prayerTimes.prayerData?.nextPrayer === item.id && !isCompletedItem;
+                nextUpcomingPrayer?.id === item.id && !nextUpcomingPrayer.isTomorrow && !isCompletedItem;
 
               const yPos =
                 offset === 0
@@ -1616,7 +2112,9 @@ export default function App() {
               const cardOpacity = !isVisible
                 ? 0
                 : isActive
-                  ? 1
+                  ? isLocked
+                    ? 0.92
+                    : 1
                   : isAdjacent
                     ? isLightMode
                       ? 0.68
@@ -1625,11 +2123,27 @@ export default function App() {
                       ? 0.25
                       : 0.22;
 
+              const subtitleText = isCompletedItem
+                ? itemStatus === 'qada'
+                  ? 'Qada · Tap to undo'
+                  : 'Prayed · Tap to undo'
+                : isLocked
+                  ? windowInfo.formattedCountdown
+                    ? `Opens in ${windowInfo.formattedCountdown}`
+                    : `Opens at ${windowInfo.formattedStart}`
+                  : isPassedUnlogged
+                    ? 'Window passed · Tap to log'
+                    : isTravelUnlocked
+                      ? 'Travel · Combining'
+                      : 'Now open · Tap to log';
+
               return (
                 <button
                   key={item.id}
                   type="button"
                   role="option"
+                  data-prayer-id={item.id}
+                  data-prayer-window={windowInfo.status}
                   aria-selected={isActive}
                   aria-hidden={!isVisible}
                   tabIndex={isActive ? 0 : -1}
@@ -1638,12 +2152,16 @@ export default function App() {
                       ? itemStatus === 'qada'
                         ? ' (Qada, tap to undo)'
                         : ' (Completed, tap to undo)'
-                      : ''
+                      : isLocked
+                        ? ` (Locked until ${windowInfo.formattedStart})`
+                        : isPassedUnlogged
+                          ? ' (Window passed, tap to log on time or Qada)'
+                          : ''
                   }`}
                   onPointerDown={() => {
                     if (!isActive) return;
                     prayerLongPressTriggered.current = false;
-                    if (!isCompletedItem) {
+                    if (!isCompletedItem && windowInfo.canLog) {
                       prayerLongPressTimer.current = setTimeout(() => {
                         if (wheelDragRef.current.didDrag) return;
                         prayerLongPressTriggered.current = true;
@@ -1672,7 +2190,11 @@ export default function App() {
                     }
                     if (!isActive) {
                       cancelPrayerAutoFocus();
+                      prayerManualFocusRef.current = true;
+                      setPendingPassedPrayerId(null);
+                      setLockedNotice(null);
                       hapticDetent();
+                      playPrayerToggleCue({ direction: i > focusedIndex ? 1 : -1 });
                       setFocusedIndex(i);
                       return;
                     }
@@ -1687,12 +2209,16 @@ export default function App() {
                       ? isActive
                         ? isChecking || isCompletedItem
                           ? 'bg-white/88 border-[#9c7533]/48 island-light'
-                          : 'bg-white/84 hover:bg-white/94 border-[#9c7533]/24 island-light'
+                          : isLocked
+                            ? 'bg-white/70 border-[#9c7533]/14 island-light'
+                            : 'bg-white/84 hover:bg-white/94 border-[#9c7533]/24 island-light'
                         : 'bg-white/66 border-[#9c7533]/16'
                       : isActive
                         ? isChecking || isCompletedItem
                           ? 'bg-[#d2a24b]/16 border-[#d2a24b]/42 island-dark'
-                          : 'bg-[#0b0e16]/86 hover:bg-[#0e1320]/94 border-white/[0.16] island-dark'
+                          : isLocked
+                            ? 'bg-[#0b0e16]/74 border-white/[0.1] island-dark'
+                            : 'bg-[#0b0e16]/86 hover:bg-[#0e1320]/94 border-white/[0.16] island-dark'
                         : 'bg-[#0b0e16]/68 border-white/[0.11]'
                   }`}
                   style={{
@@ -1712,9 +2238,13 @@ export default function App() {
                           ? isLightMode
                             ? 'text-[#9c7533]'
                             : 'text-[#d2a24b]'
-                          : isLightMode
-                            ? 'text-[#4a453d] opacity-80 group-hover:text-[#9c7533]'
-                            : 'text-[#e4dac8] opacity-80 group-hover:text-[#d2a24b]'
+                          : isLocked
+                            ? isLightMode
+                              ? 'text-[#4a453d] opacity-45'
+                              : 'text-[#e4dac8] opacity-45'
+                            : isLightMode
+                              ? 'text-[#4a453d] opacity-80 group-hover:text-[#9c7533]'
+                              : 'text-[#e4dac8] opacity-80 group-hover:text-[#d2a24b]'
                       }`}
                     />
                     <div className="flex flex-col items-start min-w-0">
@@ -1726,9 +2256,13 @@ export default function App() {
                             ? isLightMode
                               ? 'text-[#9c7533] font-medium'
                               : 'text-[#d2a24b]'
-                            : isLightMode
-                              ? 'text-[#1a1814]'
-                              : 'text-[#f5eee0]'
+                            : isLocked
+                              ? isLightMode
+                                ? 'text-[#1a1814]/68'
+                                : 'text-[#f5eee0]/68'
+                              : isLightMode
+                                ? 'text-[#1a1814]'
+                                : 'text-[#f5eee0]'
                         }`}
                         style={{ letterSpacing: '0.12em' }}
                       >
@@ -1741,20 +2275,14 @@ export default function App() {
                               ? isLightMode
                                 ? 'text-[#9c7533]/90'
                                 : 'text-[#d2a24b]/90'
-                              : isNextPrayer
+                              : isTravelUnlocked || isNextPrayer
                                 ? isLightMode
                                   ? 'text-[#9c7533]/92'
                                   : 'text-[#d2a24b]/92'
                                 : `${tTextSub} opacity-75`
                           }`}
                         >
-                          {isCompletedItem
-                            ? itemStatus === 'qada'
-                              ? 'Qada · Tap to undo'
-                              : 'Prayed · Tap to undo'
-                            : isNextPrayer && prayerTimes.prayerData?.formattedCountdown
-                              ? `In ${prayerTimes.prayerData.formattedCountdown} · Hold Qada`
-                              : 'Tap to log · Hold Qada'}
+                          {subtitleText}
                         </span>
                       )}
                     </div>
@@ -1769,11 +2297,14 @@ export default function App() {
                           ? isLightMode
                             ? 'text-[#9c7533] opacity-90'
                             : 'text-[#d2a24b] opacity-90'
-                          : `${tTextSub} opacity-75`
+                          : isLocked
+                            ? `${tTextSub} opacity-55`
+                            : `${tTextSub} opacity-75`
                       }`}
                       style={{ letterSpacing: '0.04em' }}
                     >
                       {prayerTimes.prayerData?.formatted[item.id] ||
+                        windowInfo.formattedStart ||
                         devotionData.prayers[item.id]?.time ||
                         ''}
                     </span>
@@ -1790,6 +2321,11 @@ export default function App() {
                         <CheckCircleIcon
                           size={isActive ? 18 : 15}
                           className={isLightMode ? 'text-[#9c7533] opacity-85' : 'text-[#d2a24b] opacity-85'}
+                        />
+                      ) : isLocked ? (
+                        <LockIcon
+                          size={isActive ? 15 : 13}
+                          className={isLightMode ? 'text-[#4a453d] opacity-42' : 'text-[#e4dac8] opacity-42'}
                         />
                       ) : (
                         <CircleIcon
@@ -1808,6 +2344,15 @@ export default function App() {
             })}
           </div>
         )}
+
+        {/* Bottom-Left Today Intentions Dock Twin + Unfurling Illuminated Ledger */}
+        <TasksSideColumn
+          isVisible={currentView === 'main' && !isFullScreenWorldOpen && !showLifeArtwork}
+          isOpen={showTodayList}
+          onOpen={openTodayList}
+          onClose={closeTodayList}
+          accentColor={accentHex}
+        />
 
         {/* Qibla Compass Button aligned cleanly beside the focal slot of the wheel */}
         <button
@@ -1876,9 +2421,10 @@ export default function App() {
         />
       )}
 
-      {showBurhanModal && (
+      {burhanOrigin && (
         <BurhanOverlay
-          isOpen
+          origin={burhanOrigin}
+          isClosing={burhanClosing}
           burhan={activeBurhan}
           allBurhans={burhanData}
           burhanNotes={devotionData.burhanNotes}
@@ -1887,15 +2433,49 @@ export default function App() {
           isSimpleMode={devotionData.isSimpleMode}
           onSaveNote={devotionData.saveBurhanNote}
           onComplete={devotionData.completeBurhan}
-          onClose={() => setShowBurhanModal(false)}
+          onRequestClose={() => setBurhanClosing(true)}
+          onExited={() => {
+            setBurhanOrigin(null);
+            setBurhanClosing(false);
+          }}
+        />
+      )}
+
+      {miraclesOrigin && (
+        <MiraclesOverlay
+          origin={miraclesOrigin}
+          isClosing={miraclesClosing}
+          featuredMiracle={activeMiracle}
+          allMiracles={quranMiraclesData}
+          exploredIds={exploredMiracleIds}
+          isLightMode={isLightMode}
+          isSimpleMode={devotionData.isSimpleMode}
+          onMarkExplored={handleMarkMiracleExplored}
+          onRequestClose={() => setMiraclesClosing(true)}
+          onExited={() => {
+            setMiraclesOrigin(null);
+            setMiraclesClosing(false);
+          }}
+        />
+      )}
+
+      {sharePassLaunch && (
+        <SharePassModal
+          isOpen
+          initialFinish={sharePassLaunch.finish}
+          isLightMode={isLightMode}
+          cardData={sharePassLaunch}
+          onClose={() => setSharePassLaunch(null)}
         />
       )}
 
       {showSettings && (
         <SettingsModal
           isOpen
+          atmosphere={palette}
           onClose={() => setShowSettings(false)}
           onOpenCityPicker={() => setShowCityPicker(true)}
+          onReplayOnboarding={handleReplayOnboarding}
         />
       )}
 
@@ -1962,7 +2542,7 @@ export default function App() {
       )}
 
       {/* SACRED BADGE LOTTIE-STYLE REWARD & SHOWCASE OVERLAY */}
-      {(devotionData.activeCelebrationBadge || inspectedBadge) && (
+      {!isOnboardingOpen && (devotionData.activeCelebrationBadge || inspectedBadge) && (
         <BadgeRewardOverlay
           badge={devotionData.activeCelebrationBadge || inspectedBadge}
           isLightMode={isLightMode}
@@ -1979,6 +2559,24 @@ export default function App() {
               setInspectedBadge(null);
             }
           }}
+        />
+      )}
+
+      {/* GUIDED SANCTUARY ONBOARDING FLOW */}
+      {isOnboardingOpen && (
+        <OnboardingFlow
+          isOpen
+          isReplay={onboardingMode === 'replay'}
+          isLightMode={isLightMode}
+          setIsLightMode={setIsLightMode}
+          accentHex={accentHex}
+          stations={stations}
+          devotionData={devotionData}
+          prayerTimes={prayerTimes}
+          notifications={notifications}
+          initialRecord={onboardingRecord}
+          onComplete={handleCompleteOnboarding}
+          onSkip={handleSkipOnboarding}
         />
       )}
 
@@ -2030,7 +2628,7 @@ export default function App() {
         </div>
       )}
       {/* SERENE LOCAL PRAYER NOTIFICATION BANNER */}
-      {!isLearningPathOpen && (
+      {!isFullScreenWorldOpen && !isOnboardingOpen && (
         <SacredNotificationToast
           toast={notifications.activeToast}
           isLightMode={isLightMode}

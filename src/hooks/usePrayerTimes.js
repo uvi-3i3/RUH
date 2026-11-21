@@ -232,6 +232,7 @@ export function usePrayerTimes() {
 
     return {
       times,
+      sunrise: pt.sunrise,
       formatted: {
         fajr: formatTime(times.fajr),
         dhuhr: formatTime(times.dhuhr),

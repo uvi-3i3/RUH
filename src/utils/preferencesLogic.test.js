@@ -7,10 +7,12 @@ import {
   parseHapticsEnabled,
   parseTactileAudioEnabled,
   parseThemeMode,
+  parseTravelMode,
   serializeAtmospherePhase,
   serializeHapticsEnabled,
   serializeTactileAudioEnabled,
   serializeThemeMode,
+  serializeTravelMode,
 } from './preferencesLogic';
 import { createHabitEntry, reorderHabitInList, updateHabitInList } from './habitLogic';
 import { sanitizeBackupPayload } from './devotionLogic';
@@ -38,6 +40,16 @@ test('tactile audio preference defaults to true and parses/serializes cleanly', 
   assert.equal(parseTactileAudioEnabled(false), false);
   assert.equal(serializeTactileAudioEnabled(true), 'true');
   assert.equal(serializeTactileAudioEnabled(false), 'false');
+});
+
+test('travel mode preference defaults to false and parses/serializes cleanly', () => {
+  assert.equal(PREFERENCE_STORAGE_KEYS.TRAVEL_MODE, 'ruh_travel_mode_v1');
+  assert.equal(parseTravelMode(null), false);
+  assert.equal(parseTravelMode('false'), false);
+  assert.equal(parseTravelMode('true'), true);
+  assert.equal(parseTravelMode(true), true);
+  assert.equal(serializeTravelMode(true), 'true');
+  assert.equal(serializeTravelMode(false), 'false');
 });
 
 test('atmosphere phase parsing and serialization validates solar range 0..4', () => {

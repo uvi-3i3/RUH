@@ -2,11 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   BADGE_TIERS,
+  COZY_BADGE_CONFIG,
   SACRED_BADGES,
   computeBadgeProgress,
   evaluateBadges,
   extractBadgeMetrics,
   getBadgeTierStyle,
+  getCozyBadgeConfig,
 } from './badgeLogic.js';
 import { getLocalDateStr } from './devotionLogic.js';
 
@@ -20,6 +22,25 @@ test('SACRED_BADGES defines balanced Silver, Gold, and Platinum tiers', () => {
   assert.equal(platinum.length, 3);
   assert.ok(BADGE_TIERS.silver.order < BADGE_TIERS.gold.order);
   assert.ok(BADGE_TIERS.gold.order < BADGE_TIERS.platinum.order);
+});
+
+test('COZY_BADGE_CONFIG maps every SACRED_BADGES motif with safe full-bleed crop scales', () => {
+  assert.equal(Object.keys(COZY_BADGE_CONFIG).length, SACRED_BADGES.length);
+
+  for (const badge of SACRED_BADGES) {
+    const cfg = getCozyBadgeConfig(badge.motif);
+    assert.equal(cfg.motif, badge.motif);
+    assert.ok(
+      cfg.cropScale >= 1.15 && cfg.cropScale <= 1.5,
+      `Expected full-bleed cropScale for ${badge.motif}, got ${cfg.cropScale}`
+    );
+    assert.ok(cfg.sceneLabel && cfg.sceneLabel.length >= 6);
+    assert.ok(cfg.alt && cfg.alt.length >= 20);
+    assert.ok(cfg.warmGlow && cfg.warmGlow.startsWith('rgba('));
+  }
+
+  // Unknown motif safely falls back to crescent_dawn
+  assert.equal(getCozyBadgeConfig('nonexistent_motif').motif, 'crescent_dawn');
 });
 
 test('extractBadgeMetrics aggregates prayers, dhikr, streaks, daily 5 prayers, and reflections', () => {

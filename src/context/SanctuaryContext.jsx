@@ -15,11 +15,17 @@ import {
   parseHapticsEnabled,
   parseTactileAudioEnabled,
   parseThemeMode,
+  parseTravelMode,
   serializeAtmospherePhase,
   serializeHapticsEnabled,
   serializeTactileAudioEnabled,
   serializeThemeMode,
+  serializeTravelMode,
 } from '../utils/preferencesLogic';
+import {
+  parseOnboardingState,
+  serializeOnboardingState,
+} from '../utils/onboardingLogic';
 import { setHapticsEnabled } from '../utils/haptics';
 import { setTactileAudioEnabled } from '../utils/tactileAudio';
 import {
@@ -66,6 +72,24 @@ function loadInitialTactileAudioEnabled() {
   }
 }
 
+function loadInitialTravelMode() {
+  if (typeof window === 'undefined') return false;
+  try {
+    return parseTravelMode(localStorage.getItem(PREFERENCE_STORAGE_KEYS.TRAVEL_MODE));
+  } catch {
+    return false;
+  }
+}
+
+function loadInitialOnboardingRecord() {
+  if (typeof window === 'undefined') return null;
+  try {
+    return parseOnboardingState(localStorage.getItem(PREFERENCE_STORAGE_KEYS.ONBOARDING));
+  } catch {
+    return null;
+  }
+}
+
 export function SanctuaryProvider({ children }) {
   const devotionData = useDevotionData();
   const prayerTimes = usePrayerTimes();
@@ -77,6 +101,8 @@ export function SanctuaryProvider({ children }) {
   const [isTactileAudioEnabled, setIsTactileAudioEnabledState] = useState(
     loadInitialTactileAudioEnabled
   );
+  const [isTravelMode, setIsTravelModeState] = useState(loadInitialTravelMode);
+  const [onboardingRecord, setOnboardingRecordState] = useState(loadInitialOnboardingRecord);
 
   const toggleLightMode = useCallback(() => {
     setIsLightMode((prev) => !prev);
@@ -94,6 +120,17 @@ export function SanctuaryProvider({ children }) {
     setIsTactileAudioEnabledState((prev) => !prev);
   }, []);
 
+  const toggleTravelMode = useCallback(() => {
+    setIsTravelModeState((prev) => !prev);
+  }, []);
+
+  const saveOnboardingRecord = useCallback((nextRecord) => {
+    const serialized = serializeOnboardingState(nextRecord);
+    const parsed = parseOnboardingState(serialized);
+    setOnboardingRecordState(parsed);
+    mirroredSet(PREFERENCE_STORAGE_KEYS.ONBOARDING, serialized);
+  }, []);
+
   // Hydrate preference keys from native Capacitor Preferences if WebView storage was purged
   useEffect(() => {
     let cancelled = false;
@@ -102,6 +139,8 @@ export function SanctuaryProvider({ children }) {
       PREFERENCE_STORAGE_KEYS.ATMOSPHERE_PHASE,
       PREFERENCE_STORAGE_KEYS.HAPTICS_ENABLED,
       PREFERENCE_STORAGE_KEYS.TACTILE_AUDIO_ENABLED,
+      PREFERENCE_STORAGE_KEYS.TRAVEL_MODE,
+      PREFERENCE_STORAGE_KEYS.ONBOARDING,
     ]).then((recovered) => {
       if (cancelled) return;
       if (recovered[PREFERENCE_STORAGE_KEYS.THEME_MODE]) {
@@ -120,6 +159,16 @@ export function SanctuaryProvider({ children }) {
       if (recovered[PREFERENCE_STORAGE_KEYS.TACTILE_AUDIO_ENABLED] !== undefined) {
         setIsTactileAudioEnabledState(
           parseTactileAudioEnabled(recovered[PREFERENCE_STORAGE_KEYS.TACTILE_AUDIO_ENABLED])
+        );
+      }
+      if (recovered[PREFERENCE_STORAGE_KEYS.TRAVEL_MODE] !== undefined) {
+        setIsTravelModeState(
+          parseTravelMode(recovered[PREFERENCE_STORAGE_KEYS.TRAVEL_MODE])
+        );
+      }
+      if (recovered[PREFERENCE_STORAGE_KEYS.ONBOARDING] !== undefined) {
+        setOnboardingRecordState(
+          parseOnboardingState(recovered[PREFERENCE_STORAGE_KEYS.ONBOARDING])
         );
       }
     });
@@ -159,6 +208,11 @@ export function SanctuaryProvider({ children }) {
     );
   }, [isTactileAudioEnabled]);
 
+  // Sync Travel Mode toggle to storage
+  useEffect(() => {
+    mirroredSet(PREFERENCE_STORAGE_KEYS.TRAVEL_MODE, serializeTravelMode(isTravelMode));
+  }, [isTravelMode]);
+
   // Keep top-level preference keys reactive across tabs/windows
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -171,6 +225,10 @@ export function SanctuaryProvider({ children }) {
         setIsHapticsEnabledState(parseHapticsEnabled(e.newValue));
       } else if (e.key === PREFERENCE_STORAGE_KEYS.TACTILE_AUDIO_ENABLED) {
         setIsTactileAudioEnabledState(parseTactileAudioEnabled(e.newValue));
+      } else if (e.key === PREFERENCE_STORAGE_KEYS.TRAVEL_MODE) {
+        setIsTravelModeState(parseTravelMode(e.newValue));
+      } else if (e.key === PREFERENCE_STORAGE_KEYS.ONBOARDING) {
+        setOnboardingRecordState(parseOnboardingState(e.newValue));
       }
     };
     window.addEventListener('storage', handleStorage);
@@ -190,6 +248,11 @@ export function SanctuaryProvider({ children }) {
       isTactileAudioEnabled,
       setIsTactileAudioEnabled: setIsTactileAudioEnabledState,
       toggleTactileAudioEnabled,
+      isTravelMode,
+      setIsTravelMode: setIsTravelModeState,
+      toggleTravelMode,
+      onboardingRecord,
+      saveOnboardingRecord,
       isSimpleMode: devotionData.isSimpleMode,
       toggleSimpleMode: devotionData.toggleSimpleMode,
       isAmbientEnabled: devotionData.isAmbientEnabled,
@@ -198,6 +261,11 @@ export function SanctuaryProvider({ children }) {
       setNotificationLeadMinutes: devotionData.setNotificationLeadMinutes,
       notificationChime: devotionData.notificationChime,
       toggleNotificationChime: devotionData.toggleNotificationChime,
+      notificationChimeProfile: devotionData.notificationChimeProfile,
+      setNotificationChimeProfile: devotionData.setNotificationChimeProfile,
+      autoSyncSolarReminders: devotionData.autoSyncSolarReminders,
+      setAutoSyncSolarReminders: devotionData.setAutoSyncSolarReminders,
+      toggleAutoSyncSolarReminders: devotionData.toggleAutoSyncSolarReminders,
       prayers: devotionData.prayers,
       customReminders: devotionData.customReminders,
       profile: devotionData.profile,
@@ -226,6 +294,10 @@ export function SanctuaryProvider({ children }) {
       toggleHapticsEnabled,
       isTactileAudioEnabled,
       toggleTactileAudioEnabled,
+      isTravelMode,
+      toggleTravelMode,
+      onboardingRecord,
+      saveOnboardingRecord,
       devotionData.isSimpleMode,
       devotionData.toggleSimpleMode,
       devotionData.isAmbientEnabled,
@@ -234,6 +306,11 @@ export function SanctuaryProvider({ children }) {
       devotionData.setNotificationLeadMinutes,
       devotionData.notificationChime,
       devotionData.toggleNotificationChime,
+      devotionData.notificationChimeProfile,
+      devotionData.setNotificationChimeProfile,
+      devotionData.autoSyncSolarReminders,
+      devotionData.setAutoSyncSolarReminders,
+      devotionData.toggleAutoSyncSolarReminders,
       devotionData.prayers,
       devotionData.customReminders,
       devotionData.profile,

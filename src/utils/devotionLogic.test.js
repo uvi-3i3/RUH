@@ -9,7 +9,6 @@ import {
   gregorianToHijri,
   resolveBurhanCopy,
   filterBurhansByCategory,
-  findResonantVerse,
 } from './devotionLogic.js';
 
 test('computeStreaks calculates current and longest streaks accurately', () => {
@@ -137,43 +136,6 @@ test('filterBurhansByCategory isolates islam and theism proofs cleanly', () => {
     filterBurhansByCategory(sample, 'theism').map((x) => x.id),
     ['b1']
   );
-});
-
-test('findResonantVerse matches reflection themes offline and excludes the current verse', () => {
-  const verses = [
-    {
-      id: 's1v1',
-      t: 'Allah does not burden a soul beyond that it can bear.',
-      c: 'A guarantee of resilience during hard trials.',
-    },
-    {
-      id: 's3v1',
-      t: 'We are closer to him than his jugular vein.',
-      c: 'Comfort in moments of intense isolation and loneliness.',
-    },
-    {
-      id: 's4v1',
-      t: 'Do not despair of the mercy of Allah.',
-      c: 'Comforting verse for anyone carrying guilt of past sins and seeking forgiveness.',
-    },
-    {
-      id: 's2h1',
-      t: 'Whoever gives thanks for a blessing has bound it.',
-      c: 'Gratitude preserves and multiplies good things.',
-    },
-  ];
-
-  const lonelyMatch = findResonantVerse('I feel completely alone and isolated tonight.', verses, 's1v1');
-  assert.equal(lonelyMatch?.id, 's3v1');
-
-  const guiltMatch = findResonantVerse('I feel ashamed of my mistakes and need forgiveness.', verses, 's1v1');
-  assert.equal(guiltMatch?.id, 's4v1');
-
-  const excludedSelf = findResonantVerse('Trying to bear a heavy trial', verses, 's1v1');
-  assert.notEqual(excludedSelf?.id, 's1v1');
-
-  assert.equal(findResonantVerse('', verses), null);
-  assert.equal(findResonantVerse('gratitude', []), null);
 });
 
 test('generateCleanStarfield guarantees non-overlapping stars within clean sky bounds', async () => {
@@ -305,11 +267,6 @@ test('buildStreakStatus tracks 7-day cadence, practices activity, at-risk state,
   assert.equal(emptyStatus.activeMilestone, null);
   assert.equal(emptyStatus.nextMilestone.id, 'bidayah');
   assert.equal(emptyStatus.progressToNextPct, 0);
-
-  const { getStreakCelebrationSignature } = await import('./devotionLogic.js');
-  assert.equal(getStreakCelebrationSignature(emptyStatus), null);
-  assert.equal(getStreakCelebrationSignature(atRiskStatus), null);
-  assert.equal(getStreakCelebrationSignature(activeStatus), '2026-11-13|3|3');
 });
 
 test('computeStreaks and buildStreakStatus preserve continuity across paused rest days', async () => {
@@ -336,11 +293,10 @@ test('computeStreaks and buildStreakStatus preserve continuity across paused res
   assert.equal(status.weekDays[6].paused, true);
 });
 
-test('getSunnahCalendarContext, computeQadaTotals, filterDuas, and sanitizeBackupPayload work accurately', async () => {
+test('getSunnahCalendarContext, computeQadaTotals, and sanitizeBackupPayload work accurately', async () => {
   const {
     getSunnahCalendarContext,
     computeQadaTotals,
-    filterDuas,
     sanitizeBackupPayload,
   } = await import('./devotionLogic.js');
 
@@ -370,14 +326,6 @@ test('getSunnahCalendarContext, computeQadaTotals, filterDuas, and sanitizeBacku
   assert.equal(qadaStats.remainingPrayers, 25);
   assert.equal(qadaStats.totalRemaining, 30);
   assert.equal(qadaStats.completionPct, 25);
-
-  const sampleDuas = [
-    { id: 'd1', category: 'anxiety', title: 'Calm Heart', translation: 'Lift worry', moment: 'stress' },
-    { id: 'd2', category: 'family', title: 'Parents', translation: 'Mercy on parents', moment: 'home' },
-  ];
-  assert.equal(filterDuas(sampleDuas, 'anxiety', '', []).length, 1);
-  assert.equal(filterDuas(sampleDuas, 'favorites', '', ['d2']).map((d) => d.id)[0], 'd2');
-  assert.equal(filterDuas(sampleDuas, 'all', 'worry', []).length, 1);
 
   assert.equal(sanitizeBackupPayload(null), null);
   assert.equal(sanitizeBackupPayload([]), null);

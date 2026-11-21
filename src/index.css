@@ -143,6 +143,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .animate-badge-enter,
+  .animate-badge-materialize,
+  .animate-reveal-veil,
+  .animate-reveal-gather,
   .animate-badge-float,
   .animate-badge-orbit-cw,
   .animate-badge-orbit-ccw,
@@ -293,13 +296,74 @@
   }
 }
 
+@keyframes badgeMaterialize {
+  0% {
+    transform: perspective(900px) scale(0.28) rotateY(-38deg) rotateZ(-8deg) translate3d(0, 22px, 0);
+    opacity: 0;
+    filter: brightness(1.85) blur(12px);
+  }
+  38% {
+    transform: perspective(900px) scale(1.11) rotateY(10deg) rotateZ(2deg) translate3d(0, -6px, 0);
+    opacity: 1;
+    filter: brightness(1.18) blur(0px);
+  }
+  68% {
+    transform: perspective(900px) scale(0.97) rotateY(-3deg) rotateZ(-0.8deg) translate3d(0, 1.5px, 0);
+    opacity: 1;
+    filter: brightness(1.03) blur(0px);
+  }
+  100% {
+    transform: perspective(900px) scale(1) rotateY(0deg) rotateZ(0deg) translate3d(0, 0px, 0);
+    opacity: 1;
+    filter: brightness(1) blur(0px);
+  }
+}
+
+@keyframes revealVeilIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes revealGatherCore {
+  0% {
+    transform: scale(0.25);
+    opacity: 0;
+  }
+  55% {
+    transform: scale(1.18);
+    opacity: 0.95;
+  }
+  100% {
+    transform: scale(0.65);
+    opacity: 1;
+  }
+}
+
 .animate-badge-enter {
   animation: badgeMedallionEnter 620ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   will-change: transform, opacity;
 }
 
+.animate-badge-materialize {
+  animation: badgeMaterialize 880ms cubic-bezier(0.18, 0.96, 0.28, 1) forwards;
+  will-change: transform, opacity, filter;
+}
+
+.animate-reveal-veil {
+  animation: revealVeilIn 360ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-reveal-gather {
+  animation: revealGatherCore 240ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  will-change: transform, opacity;
+}
+
 .animate-badge-float {
-  animation: badgeFloatIdle 4.2s ease-in-out 620ms infinite;
+  animation: badgeFloatIdle 4.2s ease-in-out 780ms infinite;
   will-change: transform;
 }
 
@@ -569,13 +633,14 @@
 .profile-card-flipper {
   position: relative;
   width: 100%;
+  transform: rotateY(calc(var(--card-flip-deg, 0deg) + var(--card-drag-ry, 0deg)));
   transform-style: preserve-3d;
-  transition: transform 680ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 640ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
 }
 
-.profile-card-flipper.is-flipped {
-  transform: rotateY(180deg);
+.profile-card-flipper.is-swiping {
+  transition: none;
 }
 
 .profile-card-face {
@@ -583,8 +648,12 @@
   -webkit-backface-visibility: hidden;
 }
 
+.profile-card-front {
+  transform: rotateY(0deg) translateZ(1px);
+}
+
 .profile-card-back {
-  transform: rotateY(180deg);
+  transform: rotateY(180deg) translateZ(1px);
 }
 
 .profile-card-foil {
@@ -674,6 +743,38 @@
   will-change: transform, opacity;
 }
 
+@keyframes ledgerUnfurl {
+  0% {
+    opacity: 0;
+    transform: translate3d(-4px, 16px, 0) scale(0.92);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes ledgerRowReveal {
+  0% {
+    opacity: 0;
+    transform: translate3d(-6px, 6px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.animate-ledger-unfurl {
+  transform-origin: bottom left;
+  animation: ledgerUnfurl 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+}
+
+.animate-ledger-row {
+  animation: ledgerRowReveal 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .profile-card-tilt,
   .profile-card-parallax-deep,
@@ -685,10 +786,16 @@
     transition: none !important;
   }
   .profile-card-ripple,
-  .profile-card-sweep {
+  .profile-card-sweep,
+  .animate-ledger-unfurl,
+  .animate-ledger-row {
     animation: none !important;
+  }
+  .profile-card-ripple,
+  .profile-card-sweep {
     opacity: 0 !important;
   }
 }
+
 
 

@@ -1,25 +1,41 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BadgeArtwork } from './BadgeArtwork';
 import { CelebrationCanvas } from './CelebrationCanvas';
-import { getBadgeTierStyle } from '../../utils/badgeLogic';
-import { hapticCelebrate, hapticDismiss, hapticNavigate } from '../../utils/haptics';
+import { getBadgeTierStyle, getCozyBadgeConfig } from '../../utils/badgeLogic';
+import {
+  REWARD_REVEAL_PHASES,
+  canDismissReveal,
+  getInitialRevealPhase,
+  getRewardRevealTimings,
+  isBadgeMaterialized,
+  shouldTriggerAutoRevealHaptic,
+} from '../../utils/rewardRevealLogic';
+import { hapticBadgeUnlock, hapticDismiss, hapticNavigate } from '../../utils/haptics';
+import { playBadgeRevealCue } from '../../utils/tactileAudio';
 
-const LOTTIE_BURST_RAYS = Array.from({ length: 24 }).map((_, idx) => {
+const BURST_RAYS = Array.from({ length: 24 }).map((_, idx) => {
   const angleDeg = idx * 15;
   const rad = (angleDeg * Math.PI) / 180;
   const isMajor = idx % 2 === 0;
-  const rInner = isMajor ? 62 : 70;
-  const rOuter = isMajor ? 116 : 98;
+  const rInner = isMajor ? 72 : 82;
+  const rOuter = isMajor ? 142 : 118;
   return {
     id: idx,
     isMajor,
-    x1: (120 + Math.cos(rad) * rInner).toFixed(1),
-    y1: (120 + Math.sin(rad) * rInner).toFixed(1),
-    x2: (120 + Math.cos(rad) * rOuter).toFixed(1),
-    y2: (120 + Math.sin(rad) * rOuter).toFixed(1),
-    delay: `${40 + (idx % 4) * 38}ms`,
+    x1: (150 + Math.cos(rad) * rInner).toFixed(1),
+    y1: (150 + Math.sin(rad) * rInner).toFixed(1),
+    x2: (150 + Math.cos(rad) * rOuter).toFixed(1),
+    y2: (150 + Math.sin(rad) * rOuter).toFixed(1),
+    delay: `${35 + (idx % 4) * 34}ms`,
   };
 });
+
+function checkPrefersReducedMotion() {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false;
+  }
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
 
 export const BadgeRewardOverlay = ({
   badge,
@@ -28,22 +44,163 @@ export const BadgeRewardOverlay = ({
   queueRemaining = 0,
   onClose,
 }) => {
+  const reducedMotion = checkPrefersReducedMotion();
   const [replayCount, setReplayCount] = useState(0);
   const [burstCount, setBurstCount] = useState(1);
   const [tapPulseKey, setTapPulseKey] = useState(0);
   const [tilt, setTilt] = useState({ rx: 0, ry: 0 });
+  const [phase, setPhase] = useState(() =>
+    getInitialRevealPhase({ isNewUnlock, reducedMotion })
+  );
 
-  const stageKey = badge ? `${badge.id}-${replayCount}` : 'none';
-  const burstKey = badge ? `${badge.id}-${burstCount}` : 'none';
+  const overlayRef = useRef(null);
+  const exitTimerRef = useRef(null);
+  const cueFiredKeyRef = useRef(null);
 
+  const badgeId = badge?.id || null;
+  const badgeTier = badge?.tier || null;
+  const sequenceKey = badgeId ? `${badgeId}-${replayCount}` : 'none';
+  const stageKey = badgeId ? `${badgeId}-${replayCount}` : 'none';
+  const burstKey = badgeId ? `${badgeId}-${burstCount}` : 'none';
+
+  const timings = useMemo(
+    () => getRewardRevealTimings({ isNewUnlock, reducedMotion }),
+    [isNewUnlock, reducedMotion]
+  );
+
+  // 1. Pause underlying screen interactions (scroll lock, focus capture, data attribute)
   useEffect(() => {
-    if (!badge) return;
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape') onClose?.();
+    if (!badgeId) return;
+    const prevOverflow = document.body.style.overflow;
+    const prevTouchAction = document.body.style.touchAction;
+    const prevActiveEl =
+      document.activeElement && typeof document.activeElement.focus === 'function'
+        ? document.activeElement
+        : null;
+
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    document.body.dataset.revealPaused = 'true';
+
+    if (prevActiveEl && prevActiveEl !== document.body && typeof prevActiveEl.blur === 'function') {
+      prevActiveEl.blur();
+    }
+    overlayRef.current?.focus?.({ preventScroll: true });
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.touchAction = prevTouchAction;
+      delete document.body.dataset.revealPaused;
+      if (exitTimerRef.current) {
+        clearTimeout(exitTimerRef.current);
+        exitTimerRef.current = null;
+      }
+      if (prevActiveEl && document.contains(prevActiveEl)) {
+        prevActiveEl.focus?.({ preventScroll: true });
+      }
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [badge, onClose]);
+  }, [badgeId]);
+
+  // 2. Drive choreography phases: gathering -> materializing -> presented
+  useEffect(() => {
+    if (!badgeId) return;
+    cueFiredKeyRef.current = null;
+    setTilt({ rx: 0, ry: 0 });
+
+    const initialPhase = getInitialRevealPhase({ isNewUnlock, reducedMotion });
+    setPhase(initialPhase);
+
+    const timers = [];
+    if (initialPhase === REWARD_REVEAL_PHASES.GATHERING) {
+      timers.push(
+        setTimeout(() => {
+          setPhase(REWARD_REVEAL_PHASES.MATERIALIZING);
+        }, timings.gatherMs)
+      );
+      timers.push(
+        setTimeout(() => {
+          setPhase(REWARD_REVEAL_PHASES.PRESENTED);
+        }, timings.gatherMs + timings.materializeMs)
+      );
+    } else if (initialPhase === REWARD_REVEAL_PHASES.MATERIALIZING) {
+      timers.push(
+        setTimeout(() => {
+          setPhase(REWARD_REVEAL_PHASES.PRESENTED);
+        }, timings.materializeMs)
+      );
+    }
+
+    return () => {
+      for (const t of timers) clearTimeout(t);
+    };
+  }, [badgeId, isNewUnlock, reducedMotion, replayCount, timings.gatherMs, timings.materializeMs]);
+
+  // 3. Fire ceremonial haptic burst & tactile chime right at badge materialization
+  useEffect(() => {
+    if (!badgeId || !badgeTier) return;
+    const isMaterializeMoment = reducedMotion
+      ? phase === REWARD_REVEAL_PHASES.PRESENTED
+      : phase === REWARD_REVEAL_PHASES.MATERIALIZING;
+
+    if (!isMaterializeMoment) return;
+    if (cueFiredKeyRef.current === sequenceKey) return;
+    cueFiredKeyRef.current = sequenceKey;
+
+    playBadgeRevealCue(badgeTier);
+    if (
+      shouldTriggerAutoRevealHaptic({
+        isNewUnlock,
+        phase,
+        reducedMotion,
+      })
+    ) {
+      hapticBadgeUnlock(badgeTier);
+    }
+  }, [badgeId, badgeTier, isNewUnlock, phase, reducedMotion, sequenceKey]);
+
+  const requestClose = useCallback(
+    (useNavigateHaptic = false) => {
+      if (!canDismissReveal(phase)) return;
+      if (useNavigateHaptic) {
+        hapticNavigate();
+      } else {
+        hapticDismiss();
+      }
+      setPhase(REWARD_REVEAL_PHASES.EXITING);
+      exitTimerRef.current = setTimeout(() => {
+        exitTimerRef.current = null;
+        onClose?.();
+      }, timings.exitMs);
+    },
+    [phase, onClose, timings.exitMs]
+  );
+
+  // 4. Trap background keyboard shortcuts & guard Escape until presented
+  useEffect(() => {
+    if (!badgeId) return;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (canDismissReveal(phase)) {
+          requestClose(false);
+        }
+        return;
+      }
+      // Pause background arrow/space navigation keys while reveal owns the viewport
+      if (
+        e.key === 'ArrowUp' ||
+        e.key === 'ArrowDown' ||
+        e.key === 'ArrowLeft' ||
+        e.key === 'ArrowRight'
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [badgeId, phase, requestClose]);
 
   const tierStyle = useMemo(
     () => (badge ? getBadgeTierStyle(badge.tier, isLightMode) : null),
@@ -53,10 +210,19 @@ export const BadgeRewardOverlay = ({
   if (!badge || !tierStyle) return null;
 
   const { palette } = tierStyle;
-  const tTextMain = isLightMode ? 'text-[#1a1814]' : 'text-[rgba(246,240,228,0.96)]';
-  const tTextSub = isLightMode ? 'text-[#3a3329]' : 'text-[rgba(228,218,200,0.74)]';
+  const cozyCfg = getCozyBadgeConfig(badge.motif);
+  const materialized = isBadgeMaterialized(phase);
+  const dismissable = canDismissReveal(phase);
+  const isExiting = phase === REWARD_REVEAL_PHASES.EXITING;
+
+  const tTextMain = isLightMode ? 'text-[#1a1814]' : 'text-[rgba(248,243,234,0.98)]';
+  const tTextSub = isLightMode ? 'text-[#352e25]' : 'text-[rgba(232,223,206,0.8)]';
+  const openAirTextShadow = isLightMode
+    ? '0 1px 14px rgba(255, 255, 255, 0.85)'
+    : '0 2px 18px rgba(4, 7, 16, 0.85)';
 
   const handlePointerMove = (e) => {
+    if (!materialized || isExiting) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const nx = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
     const ny = ((e.clientY - rect.top) / rect.height - 0.5) * 2;
@@ -66,82 +232,100 @@ export const BadgeRewardOverlay = ({
     });
   };
 
-  const triggerReplay = () => {
-    hapticCelebrate();
+  const triggerReplay = (e) => {
+    e.stopPropagation();
+    if (!dismissable) return;
+    hapticBadgeUnlock(badge.tier);
     setReplayCount((c) => c + 1);
     setBurstCount((c) => c + 1);
     setTilt({ rx: 0, ry: 0 });
   };
 
-  const triggerTapCelebrate = () => {
-    hapticCelebrate();
+  const triggerTapCelebrate = (e) => {
+    e.stopPropagation();
+    if (!materialized || isExiting) return;
+    hapticBadgeUnlock(badge.tier);
+    playBadgeRevealCue(badge.tier);
     setBurstCount((c) => c + 1);
     setTapPulseKey((c) => c + 1);
   };
 
   return (
     <div
+      ref={overlayRef}
       role="dialog"
       aria-modal="true"
       aria-label={`${badge.title} — ${tierStyle.label} Badge`}
       data-testid="badge-reward-overlay"
       data-tier={badge.tier}
-      className="fixed inset-0 z-[115] flex items-center justify-center px-5 py-6"
+      data-phase={phase}
+      data-new-unlock={isNewUnlock ? 'true' : 'false'}
+      tabIndex={-1}
+      onWheel={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
+      onClick={() => {
+        if (dismissable) requestClose(false);
+      }}
+      className={`fixed inset-0 z-[120] flex flex-col items-center justify-center px-6 py-8 overflow-hidden select-none outline-none transition-opacity duration-300 ${
+        isExiting ? 'opacity-0 pointer-events-none' : 'opacity-100'
+      }`}
     >
-      {/* Frosted Celestial Backdrop */}
+      {/* Full-Viewport Atmospheric Pause Veil — NO modal box or bordered container */}
       <div
-        onClick={() => {
-          hapticDismiss();
-          onClose?.();
-        }}
-        className={`absolute inset-0 transition-opacity duration-500 ${
+        aria-hidden="true"
+        className={`animate-reveal-veil fixed inset-0 pointer-events-none transition-colors duration-500 ${
           isLightMode
-            ? 'bg-[#e7eef6]/82 backdrop-blur-md'
-            : 'bg-[#040710]/86 backdrop-blur-md'
+            ? 'bg-[#ecf2f8]/86 backdrop-blur-xl'
+            : 'bg-[#040710]/80 backdrop-blur-xl'
         }`}
       />
 
-      {/* Reward Showcase Card */}
+      {/* Expansive Open-Air Candlelight & Tier Aura Halo Centered Behind Floating Badge */}
       <div
-        className={`relative w-full max-w-[368px] rounded-[28px] border px-6 pt-7 pb-6 flex flex-col items-center text-center overflow-hidden transition-colors duration-500 ${
-          isLightMode
-            ? 'bg-white/92 border-white shadow-[0_24px_64px_rgba(26,24,20,0.16)]'
-            : 'bg-[#0a0f1a]/94 border-white/[0.14] shadow-[0_28px_72px_rgba(0,0,0,0.76)]'
+        aria-hidden="true"
+        className="fixed inset-0 pointer-events-none transition-opacity duration-700"
+        style={{
+          opacity: materialized ? 1 : 0.45,
+          background: isLightMode
+            ? `radial-gradient(circle at 50% 41%, ${cozyCfg.warmGlow} 0%, ${palette.ray} 24%, rgba(255,252,245,0.4) 44%, transparent 72%)`
+            : `radial-gradient(circle at 50% 41%, ${cozyCfg.warmGlow} 0%, ${palette.ray} 22%, rgba(8,14,26,0.3) 46%, transparent 74%)`,
+        }}
+      />
+
+      {/* Full-Screen 60fps Foil Confetti & Luminous Stardust Fireworks */}
+      <CelebrationCanvas
+        tier={badge.tier}
+        isLightMode={isLightMode}
+        burstKey={burstKey}
+        active={materialized}
+        originYRatio={0.4}
+      />
+
+      {/* Boxless Open-Air Celebration Choreography */}
+      <div
+        className={`relative z-30 w-full max-w-[380px] flex flex-col items-center text-center transition-transform duration-300 ${
+          isExiting ? '-translate-y-3 scale-[0.97]' : 'translate-y-0 scale-100'
         }`}
       >
-        {/* 60fps Canvas Metallic Foil, Diamond Confetti & Stardust Fireworks */}
-        <CelebrationCanvas
-          tier={badge.tier}
-          isLightMode={isLightMode}
-          burstKey={burstKey}
-        />
-
-        {/* Subtle Radial Aura Wash at Top */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-x-0 -top-12 h-72 pointer-events-none"
-          style={{
-            background: `radial-gradient(circle at 50% 48%, ${palette.ray} 0%, transparent 72%)`,
-          }}
-        />
-
-        {/* Quiet Overline Kicker */}
+        {/* Quiet Floating Overline */}
         <div
           key={`kicker-${stageKey}`}
-          className="animate-badge-copy relative z-30 flex items-center justify-center gap-2 mb-1.5"
-          style={{ '--c-delay': '20ms' }}
+          className={`flex items-center justify-center gap-2 mb-3 transition-opacity duration-500 ${
+            materialized ? 'animate-badge-copy opacity-100' : 'opacity-0'
+          }`}
+          style={{ '--c-delay': `${Math.max(40, timings.copyRevealDelayMs - 240)}ms`, textShadow: openAirTextShadow }}
         >
           <span
-            className="font-serif-eng text-[9px] uppercase tracking-[0.24em] font-medium"
+            className="font-serif-eng text-[10px] uppercase tracking-[0.26em] font-medium"
             style={{ color: palette.text }}
           >
-            {isNewUnlock ? 'Medallion Bestowed' : `${tierStyle.label} Medallion`}
+            {isNewUnlock ? 'Badge Unlocked' : `${tierStyle.label} Keepsake`}
           </span>
-          <span className={`${tTextSub} opacity-40 text-[9px]`} aria-hidden="true">
+          <span className={`${tTextSub} opacity-45 text-[10px]`} aria-hidden="true">
             ·
           </span>
           <span
-            className="font-calligraphy text-[14px] leading-none"
+            className="font-calligraphy text-[16px] leading-none"
             style={{ color: palette.text }}
             dir="rtl"
           >
@@ -149,219 +333,245 @@ export const BadgeRewardOverlay = ({
           </span>
         </div>
 
-        {/* Interactive Lottie-Style Choreographed Medallion Stage */}
+        {/* Open-Air Floating Medallion Stage (Zero Box, Zero Frame) */}
         <button
           type="button"
           aria-label={`Celebrate ${badge.title} medallion burst`}
           onClick={triggerTapCelebrate}
           onPointerMove={handlePointerMove}
           onPointerLeave={() => setTilt({ rx: 0, ry: 0 })}
-          className="relative z-30 w-[236px] h-[222px] flex items-center justify-center cursor-pointer focus:outline-none"
+          className="relative w-[280px] h-[258px] sm:w-[300px] sm:h-[272px] flex items-center justify-center cursor-pointer focus:outline-none"
         >
-          {/* Rotating Celestial Light Rays */}
-          <div
-            key={`rays-${stageKey}`}
-            aria-hidden="true"
-            className="animate-badge-rays absolute w-[252px] h-[252px] rounded-full pointer-events-none"
-            style={{
-              background: `conic-gradient(from 0deg, transparent 0deg 14deg, ${palette.ray} 20deg 28deg, transparent 34deg 56deg, ${palette.ray} 62deg 70deg, transparent 78deg 108deg, ${palette.ray} 114deg 122deg, transparent 130deg 164deg, ${palette.ray} 170deg 178deg, transparent 186deg 220deg, ${palette.ray} 226deg 234deg, transparent 242deg 278deg, ${palette.ray} 284deg 292deg, transparent 300deg 360deg)`,
-              maskImage: 'radial-gradient(circle, black 20%, rgba(0,0,0,0.48) 54%, transparent 76%)',
-              WebkitMaskImage:
-                'radial-gradient(circle, black 20%, rgba(0,0,0,0.48) 54%, transparent 76%)',
-            }}
-          />
+          {/* Phase 1: Anticipatory Gathering Light Seed */}
+          {!materialized && (
+            <span
+              aria-hidden="true"
+              className="animate-reveal-gather absolute w-24 h-24 rounded-full pointer-events-none"
+              style={{
+                background: `radial-gradient(circle, #fffaf0 0%, ${cozyCfg.warmGlow} 42%, transparent 72%)`,
+                filter: 'blur(4px)',
+              }}
+            />
+          )}
 
-          {/* Sacred Dual-Ring Geometry Orbit Behind Medallion */}
-          <svg
-            width="230"
-            height="230"
-            viewBox="0 0 160 160"
-            aria-hidden="true"
-            className="absolute inset-0 m-auto pointer-events-none"
-          >
-            <g className="animate-badge-orbit-cw" style={{ transformOrigin: '80px 80px' }} opacity="0.24">
-              <circle
-                cx="80"
-                cy="80"
-                r="73"
-                fill="none"
-                stroke={palette.primary}
-                strokeWidth="0.7"
-                strokeDasharray="3 5"
-              />
-            </g>
-            <g className="animate-badge-orbit-ccw" style={{ transformOrigin: '80px 80px' }} opacity="0.18">
-              <rect
-                x="23"
-                y="23"
-                width="114"
-                height="114"
-                rx="16"
-                fill="none"
-                stroke={palette.primary}
-                strokeWidth="0.65"
-              />
-              <rect
-                x="23"
-                y="23"
-                width="114"
-                height="114"
-                rx="16"
-                transform="rotate(45 80 80)"
-                fill="none"
-                stroke={palette.primary}
-                strokeWidth="0.65"
-              />
-            </g>
-          </svg>
-
-          {/* Impact Flash Bloom */}
-          <span
-            key={`impact-${burstKey}`}
-            aria-hidden="true"
-            className="animate-badge-impact absolute w-[160px] h-[160px] rounded-full pointer-events-none"
-            style={{
-              background: `radial-gradient(circle, ${palette.glow} 0%, transparent 70%)`,
-            }}
-          />
-
-          {/* 24-Ray Staggered Lottie Tapered Radial Stroke Bursts */}
-          <svg
-            key={`lottie-burst-${burstKey}`}
-            width="240"
-            height="240"
-            viewBox="0 0 240 240"
-            aria-hidden="true"
-            className="absolute inset-0 m-auto pointer-events-none"
-          >
-            {LOTTIE_BURST_RAYS.map((ray) => (
-              <line
-                key={ray.id}
-                x1={ray.x1}
-                y1={ray.y1}
-                x2={ray.x2}
-                y2={ray.y2}
-                stroke={
-                  ray.isMajor
-                    ? isLightMode
-                      ? palette.primary
-                      : palette.highlight
-                    : palette.secondary
-                }
-                strokeWidth={ray.isMajor ? '2' : '1.25'}
-                strokeLinecap="round"
-                className="animate-lottie-burst"
-                style={{ '--l-delay': ray.delay }}
-              />
-            ))}
-          </svg>
-
-          {/* 3 Staggered Geometric Shockwaves */}
-          <span
-            key={`shock-a-${burstKey}`}
-            aria-hidden="true"
-            className="animate-badge-shockwave absolute w-[128px] h-[128px] rounded-full border-2 pointer-events-none"
-            style={{ borderColor: palette.primary }}
-          />
-          <span
-            key={`shock-oct-${burstKey}`}
-            aria-hidden="true"
-            className="animate-badge-octagon absolute w-[132px] h-[132px] rounded-[24px] border pointer-events-none"
-            style={{ borderColor: isLightMode ? palette.secondary : palette.highlight }}
-          />
-          <span
-            key={`shock-b-${burstKey}`}
-            aria-hidden="true"
-            className="animate-badge-shockwave absolute w-[112px] h-[112px] rounded-full border border-dashed pointer-events-none"
-            style={{
-              borderColor: palette.primary,
-              animationDelay: '180ms',
-            }}
-          />
-
-          {/* Crisp Jewel Reveal + Interactive Tap Pulse */}
-          <div key={`medallion-${stageKey}`} className="animate-badge-enter relative z-10">
-            <div key={`tap-${tapPulseKey}`} className={tapPulseKey > 0 ? 'animate-badge-pulse-tap' : ''}>
+          {/* Phase 2 & 3: Materializing Celestial Halo, Burst Rays, Shockwaves & Floating Cozy Medallion */}
+          {materialized && (
+            <>
+              {/* Expansive Open-Air Rotating Light Rays */}
               <div
-                className="animate-badge-float transition-transform duration-300 ease-out"
+                key={`rays-${stageKey}`}
+                aria-hidden="true"
+                className="animate-badge-rays absolute w-[330px] h-[330px] sm:w-[370px] sm:h-[370px] rounded-full pointer-events-none"
                 style={{
-                  transform: `perspective(700px) rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg)`,
+                  background: `conic-gradient(from 0deg, transparent 0deg 14deg, ${palette.ray} 20deg 28deg, transparent 34deg 56deg, ${palette.ray} 62deg 70deg, transparent 78deg 108deg, ${palette.ray} 114deg 122deg, transparent 130deg 164deg, ${palette.ray} 170deg 178deg, transparent 186deg 220deg, ${palette.ray} 226deg 234deg, transparent 242deg 278deg, ${palette.ray} 284deg 292deg, transparent 300deg 360deg)`,
+                  maskImage: 'radial-gradient(circle, black 16%, rgba(0,0,0,0.42) 50%, transparent 74%)',
+                  WebkitMaskImage:
+                    'radial-gradient(circle, black 16%, rgba(0,0,0,0.42) 50%, transparent 74%)',
                 }}
+              />
+
+              {/* Delicate Dual-Ring Celestial Orbit Behind Floating Medallion */}
+              <svg
+                width="280"
+                height="280"
+                viewBox="0 0 160 160"
+                aria-hidden="true"
+                className="absolute inset-0 m-auto pointer-events-none"
               >
-                <BadgeArtwork
-                  motif={badge.motif}
-                  tier={badge.tier}
-                  unlocked
-                  animated
-                  showSheen
-                  replayKey={replayCount}
-                  size={178}
-                  isLightMode={isLightMode}
-                />
+                <g className="animate-badge-orbit-cw" style={{ transformOrigin: '80px 80px' }} opacity="0.28">
+                  <circle
+                    cx="80"
+                    cy="80"
+                    r="74"
+                    fill="none"
+                    stroke={palette.primary}
+                    strokeWidth="0.65"
+                    strokeDasharray="3 5.5"
+                  />
+                </g>
+                <g className="animate-badge-orbit-ccw" style={{ transformOrigin: '80px 80px' }} opacity="0.16">
+                  <rect
+                    x="22"
+                    y="22"
+                    width="116"
+                    height="116"
+                    rx="18"
+                    fill="none"
+                    stroke={palette.primary}
+                    strokeWidth="0.6"
+                  />
+                  <rect
+                    x="22"
+                    y="22"
+                    width="116"
+                    height="116"
+                    rx="18"
+                    transform="rotate(45 80 80)"
+                    fill="none"
+                    stroke={palette.primary}
+                    strokeWidth="0.6"
+                  />
+                </g>
+              </svg>
+
+              {/* Materialization Impact Flash Bloom */}
+              <span
+                key={`impact-${burstKey}`}
+                aria-hidden="true"
+                className="animate-badge-impact absolute w-[200px] h-[200px] rounded-full pointer-events-none"
+                style={{
+                  background: `radial-gradient(circle, ${cozyCfg.warmGlow} 0%, ${palette.glow} 42%, transparent 74%)`,
+                }}
+              />
+
+              {/* 24-Ray Staggered Tapered Radial Stroke Bursts */}
+              <svg
+                key={`lottie-burst-${burstKey}`}
+                width="300"
+                height="300"
+                viewBox="0 0 300 300"
+                aria-hidden="true"
+                className="absolute inset-0 m-auto pointer-events-none"
+              >
+                {BURST_RAYS.map((ray) => (
+                  <line
+                    key={ray.id}
+                    x1={ray.x1}
+                    y1={ray.y1}
+                    x2={ray.x2}
+                    y2={ray.y2}
+                    stroke={
+                      ray.isMajor
+                        ? isLightMode
+                          ? palette.primary
+                          : palette.highlight
+                        : palette.secondary
+                    }
+                    strokeWidth={ray.isMajor ? '2.1' : '1.3'}
+                    strokeLinecap="round"
+                    className="animate-lottie-burst"
+                    style={{ '--l-delay': ray.delay }}
+                  />
+                ))}
+              </svg>
+
+              {/* Expanding Geometric Shockwaves */}
+              <span
+                key={`shock-a-${burstKey}`}
+                aria-hidden="true"
+                className="animate-badge-shockwave absolute w-[148px] h-[148px] rounded-full border-2 pointer-events-none"
+                style={{ borderColor: palette.primary }}
+              />
+              <span
+                key={`shock-oct-${burstKey}`}
+                aria-hidden="true"
+                className="animate-badge-octagon absolute w-[154px] h-[154px] rounded-[28px] border pointer-events-none"
+                style={{ borderColor: isLightMode ? palette.secondary : palette.highlight }}
+              />
+              <span
+                key={`shock-b-${burstKey}`}
+                aria-hidden="true"
+                className="animate-badge-shockwave absolute w-[132px] h-[132px] rounded-full border border-dashed pointer-events-none"
+                style={{
+                  borderColor: palette.primary,
+                  animationDelay: '180ms',
+                }}
+              />
+
+              {/* Luminous Materializing Cozy Keepsake Medallion */}
+              <div key={`medallion-${stageKey}`} className="animate-badge-materialize relative z-10">
+                <div
+                  key={`tap-${tapPulseKey}`}
+                  className={tapPulseKey > 0 ? 'animate-badge-pulse-tap' : ''}
+                >
+                  <div
+                    className="animate-badge-float transition-transform duration-300 ease-out"
+                    style={{
+                      transform: `perspective(760px) rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg)`,
+                      filter: isLightMode
+                        ? 'drop-shadow(0 20px 36px rgba(42, 30, 14, 0.22))'
+                        : 'drop-shadow(0 22px 44px rgba(0, 0, 0, 0.65))',
+                    }}
+                  >
+                    <BadgeArtwork
+                      motif={badge.motif}
+                      tier={badge.tier}
+                      unlocked
+                      animated
+                      showSheen
+                      replayKey={replayCount}
+                      size={208}
+                      isLightMode={isLightMode}
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            </>
+          )}
         </button>
 
-        {/* Quiet Interactive Tap Whisper */}
-        <span
-          className={`relative z-30 font-serif-eng text-[8px] uppercase tracking-[0.2em] ${tTextSub} opacity-55 -mt-1 mb-2`}
-        >
-          Tap medallion to celebrate
-        </span>
-
-        {/* Badge Calligraphy + Title + Flourish Divider + Description */}
+        {/* Floating Open-Air Typography (Zero Box) */}
         <div
           key={`copy-${stageKey}`}
-          className="animate-badge-copy relative z-30 flex flex-col items-center w-full"
-          style={{ '--c-delay': '60ms' }}
+          className={`flex flex-col items-center w-full mt-1 transition-opacity duration-500 ${
+            materialized ? 'animate-badge-copy opacity-100' : 'opacity-0'
+          }`}
+          style={{
+            '--c-delay': `${timings.copyRevealDelayMs}ms`,
+            textShadow: openAirTextShadow,
+          }}
         >
           <span
-            className="font-calligraphy text-[28px] leading-none mb-1.5"
+            className="font-calligraphy text-[32px] leading-none mb-2"
             style={{ color: palette.text }}
             dir="rtl"
           >
             {badge.arabic}
           </span>
 
-          <h2 className={`font-serif-eng text-[25px] font-medium leading-tight tracking-wide ${tTextMain}`}>
+          <h2 className={`font-serif-eng text-[30px] sm:text-[34px] font-medium leading-tight tracking-wide ${tTextMain}`}>
             {badge.title}
           </h2>
 
-          {/* Animated Metallic Flourish Underline */}
+          {/* Delicate Metallic Hairline Flourish */}
           <div
             aria-hidden="true"
-            className="animate-badge-flourish h-[1px] w-16 my-2 rounded-full"
+            className="animate-badge-flourish h-[1px] w-20 my-2.5 rounded-full"
             style={{
               background: `linear-gradient(90deg, transparent, ${palette.primary}, transparent)`,
             }}
           />
 
           <p
-            className="font-serif-eng text-[10px] uppercase tracking-[0.2em]"
-            style={{ color: palette.text, opacity: 0.92 }}
+            className="font-serif-eng text-[10.5px] uppercase tracking-[0.22em]"
+            style={{ color: palette.text, opacity: 0.94 }}
           >
             {tierStyle.label} Tier · {badge.subtitle}
           </p>
 
-          <p className={`font-serif-eng italic text-[13px] leading-relaxed mt-2 max-w-[288px] ${tTextSub}`}>
+          <p className={`font-serif-eng italic text-[13.5px] leading-relaxed mt-2.5 max-w-[310px] ${tTextSub}`}>
             {badge.description}
           </p>
         </div>
 
-        {/* Actions */}
+        {/* Minimal Floating Open-Air Actions */}
         <div
           key={`actions-${stageKey}`}
-          className="animate-badge-copy relative z-30 w-full flex items-center gap-2.5 mt-5"
-          style={{ '--c-delay': '100ms' }}
+          onClick={(e) => e.stopPropagation()}
+          className={`flex items-center justify-center gap-3 mt-7 transition-all duration-500 ${
+            dismissable
+              ? 'opacity-100 translate-y-0 pointer-events-auto'
+              : 'opacity-0 translate-y-2 pointer-events-none'
+          }`}
         >
           <button
             type="button"
             onClick={triggerReplay}
-            className={`min-h-[44px] px-4 rounded-2xl border font-serif-eng text-[10px] uppercase tracking-[0.18em] transition-colors cursor-pointer shrink-0 ${
+            disabled={!dismissable}
+            className={`min-h-[44px] px-5 rounded-full border font-serif-eng text-[10px] uppercase tracking-[0.2em] transition-colors cursor-pointer ${
               isLightMode
-                ? 'border-black/15 text-[#2c2720] hover:bg-black/[0.05]'
-                : 'border-white/14 text-[#e4dac8] hover:bg-white/[0.07]'
+                ? 'border-black/15 bg-white/55 text-[#2c2720] hover:bg-white/85'
+                : 'border-white/18 bg-white/[0.06] text-[#ece4d5] hover:bg-white/[0.13]'
             }`}
           >
             Replay
@@ -369,24 +579,28 @@ export const BadgeRewardOverlay = ({
 
           <button
             type="button"
-            onClick={() => {
-              if (queueRemaining > 0) {
-                hapticNavigate();
-              } else {
-                hapticDismiss();
-              }
-              onClose?.();
-            }}
-            className="flex-1 min-h-[44px] px-5 rounded-2xl font-serif-eng text-[11px] uppercase tracking-[0.2em] font-medium transition-transform active:scale-[0.98] cursor-pointer"
+            onClick={() => requestClose(queueRemaining > 0)}
+            disabled={!dismissable}
+            className="min-h-[44px] px-7 rounded-full font-serif-eng text-[11px] uppercase tracking-[0.22em] font-medium transition-transform active:scale-[0.97] cursor-pointer"
             style={{
               backgroundColor: palette.primary,
               color: isLightMode ? '#ffffff' : '#080c14',
-              boxShadow: `0 6px 24px ${palette.glow}`,
+              boxShadow: `0 8px 28px ${palette.glow}`,
             }}
           >
-            {queueRemaining > 0 ? `Next Medallion (${queueRemaining})` : 'Continue'}
+            {queueRemaining > 0 ? `Next Badge (${queueRemaining})` : 'Continue'}
           </button>
         </div>
+
+        {/* Quiet Interactive Hint */}
+        <p
+          className={`font-serif-eng text-[8.5px] uppercase tracking-[0.22em] mt-4 transition-opacity duration-500 ${tTextSub} ${
+            dismissable ? 'opacity-55' : 'opacity-0'
+          }`}
+          style={{ textShadow: openAirTextShadow }}
+        >
+          Tap medallion to celebrate · Tap anywhere to continue
+        </p>
       </div>
     </div>
   );

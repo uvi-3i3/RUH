@@ -15,6 +15,13 @@ import {
   ROLLING_NOTIFICATION_ID_BASE,
 } from '../utils/notificationLogic';
 import { getLocalDateStr } from '../utils/devotionLogic';
+import {
+  computeSolarReminderSyncPatch,
+  getAdhanChimeProfileMeta,
+  normalizeAdhanChimeProfile,
+} from '../utils/adhanChimeLogic';
+import { playAdhanChime, stopAdhanChime } from '../utils/adhanChimePlayer';
+import { hapticDetent, hapticTaskComplete } from '../utils/haptics';
 
 const SENT_STORAGE_KEY = 'ruh_sent_notifications_v1';
 const ANDROID_PRAYER_CHANNEL_ID = 'ruh_prayers';
@@ -45,45 +52,18 @@ function getBrowserPermissionState() {
   return Notification.permission || 'default';
 }
 
-function playGentleChime() {
-  if (typeof window === 'undefined') return;
-  try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const now = ctx.currentTime;
-
-    const notes = [528, 792];
-    notes.forEach((freq, idx) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, now + idx * 0.14);
-
-      gain.gain.setValueAtTime(0.0001, now + idx * 0.14);
-      gain.gain.exponentialRampToValueAtTime(0.045, now + idx * 0.14 + 0.08);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.14 + 1.4);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now + idx * 0.14);
-      osc.stop(now + idx * 0.14 + 1.45);
-    });
-
-    setTimeout(() => {
-      ctx.close?.().catch(() => {});
-    }, 1800);
-  } catch {
-    // Audio playback blocked cleanly before user gesture
-  }
-}
-
 export function useLocalNotifications({ devotionData, prayerTimes }) {
   const [permission, setPermission] = useState(getBrowserPermissionState);
   const [activeToast, setActiveToast] = useState(null);
+  const [playingChimeProfileId, setPlayingChimeProfileId] = useState(null);
   const sentKeysRef = useRef(readInitialSentKeys());
   const toastTimerRef = useRef(null);
   const channelCreatedRef = useRef(false);
+
+  const effectiveChimeProfile = normalizeAdhanChimeProfile(
+    devotionData?.notificationChimeProfile,
+    devotionData?.notificationChime !== false
+  );
 
   const isNative = Capacitor.isNativePlatform();
   const ptCoords = prayerTimes?.coords || null;
@@ -150,6 +130,8 @@ export function useLocalNotifications({ devotionData, prayerTimes }) {
       clearTimeout(toastTimerRef.current);
       toastTimerRef.current = null;
     }
+    stopAdhanChime();
+    setPlayingChimeProfileId(null);
     setActiveToast(null);
   }, []);
 
@@ -259,15 +241,54 @@ export function useLocalNotifications({ devotionData, prayerTimes }) {
     [ensureAndroidChannel, isNative]
   );
 
+  const stopAdhanChimePreview = useCallback(() => {
+    stopAdhanChime();
+    setPlayingChimeProfileId(null);
+  }, []);
+
+  const previewAdhanChime = useCallback(
+    (profileId, preferredPrayerId) => {
+      const safeProfile = normalizeAdhanChimeProfile(profileId ?? effectiveChimeProfile, true);
+      if (safeProfile === 'silent') {
+        stopAdhanChime();
+        setPlayingChimeProfileId(null);
+        hapticDetent();
+        return false;
+      }
+      const prayerId = preferredPrayerId || prayerTimes?.prayerData?.nextPrayer || 'maghrib';
+      setPlayingChimeProfileId(safeProfile);
+      const res = playAdhanChime(safeProfile, {
+        prayerId,
+        leadMinutes: 0,
+        isPreview: true,
+        onEnd: () => {
+          setPlayingChimeProfileId((cur) => (cur === safeProfile ? null : cur));
+        },
+      });
+      return res.played;
+    },
+    [effectiveChimeProfile, prayerTimes?.prayerData?.nextPrayer]
+  );
+
   const deliverNotification = useCallback(
     async (payload) => {
-      showSanctuaryToast(payload);
-      if (devotionData.notificationChime) {
-        playGentleChime();
+      const chimeMeta = getAdhanChimeProfileMeta(effectiveChimeProfile);
+      showSanctuaryToast({
+        ...payload,
+        chimeProfileId: effectiveChimeProfile,
+        chimeProfileLabel: chimeMeta.label,
+      });
+      if (effectiveChimeProfile !== 'silent') {
+        playAdhanChime(effectiveChimeProfile, {
+          prayerId: payload?.prayerId || 'maghrib',
+          leadMinutes: payload?.leadMinutes || 0,
+          isPreview: false,
+        });
       }
+      hapticTaskComplete();
       return dispatchOsNotification(payload);
     },
-    [devotionData.notificationChime, dispatchOsNotification, showSanctuaryToast]
+    [effectiveChimeProfile, dispatchOsNotification, showSanctuaryToast]
   );
 
   const requestPermission = useCallback(async () => {
@@ -365,11 +386,27 @@ export function useLocalNotifications({ devotionData, prayerTimes }) {
         new Date()
       );
 
-      // Render Sanctuary alert + subtle chime immediately so UI feedback is instantaneous
-      showSanctuaryToast(payload);
-      if (devotionData.notificationChime) {
-        playGentleChime();
+      const chimeMeta = getAdhanChimeProfileMeta(effectiveChimeProfile);
+      const enrichedPayload = {
+        ...payload,
+        chimeProfileId: effectiveChimeProfile,
+        chimeProfileLabel: chimeMeta.label,
+      };
+
+      // Render Sanctuary alert + gentle Adhan chime immediately so UI feedback is instantaneous
+      showSanctuaryToast(enrichedPayload);
+      if (effectiveChimeProfile !== 'silent') {
+        setPlayingChimeProfileId(effectiveChimeProfile);
+        playAdhanChime(effectiveChimeProfile, {
+          prayerId: nextPrayerId,
+          leadMinutes: devotionData.notificationLeadMinutes || 0,
+          isPreview: true,
+          onEnd: () => {
+            setPlayingChimeProfileId((cur) => (cur === effectiveChimeProfile ? null : cur));
+          },
+        });
       }
+      hapticTaskComplete();
 
       let currentPerm = await refreshPermission();
       if (currentPerm === 'default') {
@@ -379,15 +416,15 @@ export function useLocalNotifications({ devotionData, prayerTimes }) {
         ]);
       }
 
-      const osDelivered = await dispatchOsNotification(payload);
-      return { permission: currentPerm, osDelivered, payload };
+      const osDelivered = await dispatchOsNotification(enrichedPayload);
+      return { permission: currentPerm, osDelivered, payload: enrichedPayload };
     },
     [
       devotionData.dailyCompletedPrayers,
-      devotionData.notificationChime,
       devotionData.notificationLeadMinutes,
       devotionData.prayers,
       dispatchOsNotification,
+      effectiveChimeProfile,
       prayerTimes?.prayerData?.nextPrayer,
       refreshPermission,
       requestPermission,
@@ -608,16 +645,30 @@ export function useLocalNotifications({ devotionData, prayerTimes }) {
     };
   }, [persistSentKeys, refreshPermission]);
 
-  // Cleanup active toast timeout on unmount
+  // Cleanup active toast timeout & any preview chime on unmount
   useEffect(() => {
     return () => {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      stopAdhanChime();
     };
   }, []);
 
   const syncPrayerReminderTimes = devotionData.syncPrayerReminderTimes;
   const solarTimes = prayerTimes?.prayerData?.times;
   const canSyncSolarTimes = Boolean(solarTimes);
+  const autoSyncSolarReminders = devotionData.autoSyncSolarReminders !== false;
+
+  // Automatically keep prayer reminder times synced to live solar calculations when enabled
+  useEffect(() => {
+    if (!autoSyncSolarReminders || !solarTimes) return;
+    const { hasChanges, nextTimesHHMM } = computeSolarReminderSyncPatch({
+      currentPrayers: devotionData.prayers,
+      solarTimes,
+    });
+    if (hasChanges) {
+      syncPrayerReminderTimes?.(nextTimesHHMM);
+    }
+  }, [autoSyncSolarReminders, solarTimes, devotionData.prayers, syncPrayerReminderTimes]);
 
   const syncFromLiveSolarTimes = useCallback(() => {
     if (!solarTimes) return false;
@@ -628,8 +679,9 @@ export function useLocalNotifications({ devotionData, prayerTimes }) {
       }
     }
     syncPrayerReminderTimes?.(formatted);
+    devotionData.setAutoSyncSolarReminders?.(true);
     return true;
-  }, [syncPrayerReminderTimes, solarTimes]);
+  }, [syncPrayerReminderTimes, solarTimes, devotionData.setAutoSyncSolarReminders]);
 
   return useMemo(
     () => ({
@@ -640,11 +692,16 @@ export function useLocalNotifications({ devotionData, prayerTimes }) {
       refreshPermission,
       requestPermission,
       sendPreviewAlert,
+      previewAdhanChime,
+      stopAdhanChimePreview,
+      playingChimeProfileId,
+      effectiveChimeProfile,
       scheduleNativeReminder,
       cancelNativeReminder,
       syncAllNativePrayerSchedules,
       syncFromLiveSolarTimes,
       canSyncSolarTimes,
+      autoSyncSolarReminders,
       prayerIdMap: PRAYER_ID_MAP,
     }),
     [
@@ -655,11 +712,16 @@ export function useLocalNotifications({ devotionData, prayerTimes }) {
       refreshPermission,
       requestPermission,
       sendPreviewAlert,
+      previewAdhanChime,
+      stopAdhanChimePreview,
+      playingChimeProfileId,
+      effectiveChimeProfile,
       scheduleNativeReminder,
       cancelNativeReminder,
       syncAllNativePrayerSchedules,
       syncFromLiveSolarTimes,
       canSyncSolarTimes,
+      autoSyncSolarReminders,
     ]
   );
 }

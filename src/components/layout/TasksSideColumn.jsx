@@ -1,7 +1,8 @@
 import { memo, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useHabits, usePreferences } from '../../context/sanctuaryStore';
 import { computeTodaySummary } from '../../utils/habitLogic';
-import { CheckCircleIcon, PlusIcon, SparklesIcon, TrashIcon, XIcon } from '../icons/Icons';
+import { PlusIcon, SparklesIcon, TrashIcon, XIcon } from '../icons/Icons';
 import {
   hapticCelebrate,
   hapticDestructive,
@@ -9,9 +10,20 @@ import {
   hapticNavigate,
   hapticSuccess,
   hapticTapLight,
+  hapticTaskComplete,
   hapticUndo,
 } from '../../utils/haptics';
+import { playTaskTickOffCue } from '../../utils/tactileAudio';
 
+/**
+ * Bottom-Left Sanctuary Dock Twin (mirroring Qibla on bottom-right) +
+ * Unfurling Illuminated-Thread Ledger for Today's Intentions.
+ *
+ * At rest, occupies only a quiet 44x56px glass tile at bottom-left, keeping
+ * the entire left vertical margin open and serene for the centered Prophetic
+ * Line Artwork. On tap, an illuminated ledger unfurls upward from the anchor
+ * with a vertical golden thread and diamond beads that light up task by task.
+ */
 export const TasksSideColumn = memo(({
   isVisible = true,
   isOpen = false,
@@ -36,8 +48,10 @@ export const TasksSideColumn = memo(({
       hapticUndo();
     } else if (summary.completedTodos + 1 >= summary.totalTodos) {
       hapticCelebrate();
+      playTaskTickOffCue({ kind: 'quest' });
     } else {
-      hapticSuccess();
+      hapticTaskComplete();
+      playTaskTickOffCue({ kind: 'quest' });
     }
     toggleDailyTodo(todo.id);
   };
@@ -58,355 +72,335 @@ export const TasksSideColumn = memo(({
     removeDailyTodo(todoId);
   };
 
-  // Ring geometry for left Today trigger capsule
-  const r = 12.5;
+  // Miniature progress ring inside the 44x56 bottom-left dock tile
+  const r = 10.5;
   const circ = 2 * Math.PI * r;
   const pct = Math.min(1, Math.max(0, summary.percentage / 100));
   const dashOffset = circ * (1 - pct);
   const allDone = summary.allCompleted;
 
-  const pillSurface = isLightMode
-    ? 'bg-[#f4efe4]/84 border-[#1e1b18]/12 shadow-[0_10px_28px_rgba(30,24,16,0.08),inset_0_1px_0_rgba(255,255,255,0.85)]'
-    : 'bg-[#090d18]/78 border-[#f0e6d2]/12 shadow-[0_12px_34px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.08)]';
+  const goldAccent = isLightMode ? '#9c7533' : accentColor || '#e4c078';
+  const goldBright = isLightMode ? '#b08330' : '#f2d594';
 
-  const cardSurface = isLightMode
-    ? 'bg-[#f6f1e7]/92 border-[#1e1b18]/12 text-[#1a1814] shadow-[0_18px_48px_rgba(24,18,10,0.18),inset_0_1px_0_rgba(255,255,255,0.85)]'
-    : 'bg-[#0a0f1c]/90 border-[#f0e6d2]/14 text-[#f5eee0] shadow-[0_20px_54px_rgba(0,0,0,0.65),inset_0_1px_0_rgba(255,255,255,0.08)]';
+  const ledgerSurface = isLightMode
+    ? 'bg-[#f6f1e7]/94 border-[#9c7533]/24 text-[#1a1814] shadow-[0_22px_56px_rgba(24,18,10,0.20),inset_0_1px_0_rgba(255,255,255,0.9)]'
+    : 'bg-[#090d18]/92 border-[#f0e6d2]/14 text-[#f5eee0] shadow-[0_24px_62px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.08)]';
 
-  const mutedText = isLightMode ? 'text-[#7a6f5d]' : 'text-[#f0e6d2]/45';
+  const mutedText = isLightMode ? 'text-[#6c6150]' : 'text-[#e8decb]/56';
+  const hairlineBorder = isLightMode ? 'border-[#1e1b18]/10' : 'border-white/10';
+  const threadTrack = isLightMode ? 'rgba(54, 46, 36, 0.16)' : 'rgba(240, 230, 210, 0.14)';
 
   return (
     <>
-      {/* LEFT-RAIL COMPACT "TODAY" QUEST TRIGGER */}
-      <aside
-        aria-label="Today's Quests Trigger"
+      {/* BOTTOM-LEFT DOCK TILE (Exact architectural mirror of bottom-right Qibla dock) */}
+      <button
+        type="button"
+        data-testid="today-dock-trigger"
+        aria-label={`Open Today's Intentions (${summary.completedTodos} of ${summary.totalTodos} completed)`}
+        aria-expanded={isOpen}
         aria-hidden={!isVisible || isOpen || undefined}
-        inert={!isVisible || isOpen}
-        className={`fixed left-2.5 md:left-7 top-1/2 -translate-y-1/2 z-30 transition-all duration-400 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        tabIndex={isVisible && !isOpen ? 0 : -1}
+        onClick={() => {
+          hapticNavigate();
+          onOpen?.();
+        }}
+        style={{ bottom: 'calc(67px + var(--sab))' }}
+        className={`group absolute left-3 sm:left-6 w-[44px] h-[56px] rounded-2xl border flex flex-col items-center justify-center gap-1 transition-[transform,opacity,background-color,border-color] duration-300 active:scale-[0.97] cursor-pointer z-30 ${
           isVisible && !isOpen
-            ? 'opacity-100 translate-x-0 pointer-events-auto'
-            : 'opacity-0 -translate-x-3 pointer-events-none'
+            ? 'opacity-100 scale-100 pointer-events-auto'
+            : 'opacity-0 scale-90 pointer-events-none'
+        } ${
+          allDone
+            ? isLightMode
+              ? 'bg-white/88 border-[#9c7533]/48 text-[#9c7533] island-light'
+              : 'bg-[#0b0e16]/88 border-[#d2a24b]/48 text-[#d2a24b] island-dark'
+            : isLightMode
+              ? 'bg-white/78 hover:bg-white/90 border-[#9c7533]/22 text-[#4a453d] hover:text-[#9c7533] island-light'
+              : 'bg-[#0b0e16]/80 hover:bg-[#0e1320]/90 border-white/[0.14] text-[#e4dac8]/85 hover:text-[#d2a24b] island-dark'
         }`}
       >
-        <button
-          type="button"
-          onClick={() => {
-            hapticNavigate();
-            onOpen?.();
-          }}
-          aria-label={`Open Today's List (${summary.completedTodos} of ${summary.totalTodos} completed)`}
-          aria-expanded={isOpen}
-          className={`group flex flex-col items-center justify-center gap-1.5 w-[44px] md:w-[48px] py-2.5 px-1.5 rounded-full border backdrop-blur-md cursor-pointer transition-[transform,opacity,background-color,border-color] duration-300 active:scale-95 ${pillSurface}`}
-        >
-          {/* Radial Progress + Quest Icon */}
-          <div className="relative w-7 h-7 flex items-center justify-center shrink-0">
-            <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 30 30">
+        <div className="relative w-6 h-6 flex items-center justify-center shrink-0">
+          <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 26 26" aria-hidden="true">
+            <circle
+              cx="13"
+              cy="13"
+              r={r}
+              fill="none"
+              stroke={isLightMode ? 'rgba(74,69,61,0.14)' : 'rgba(240,230,210,0.14)'}
+              strokeWidth="1.4"
+            />
+            {pct > 0 && (
               <circle
-                cx="15"
-                cy="15"
+                cx="13"
+                cy="13"
                 r={r}
                 fill="none"
-                stroke={isLightMode ? 'rgba(30,27,24,0.12)' : 'rgba(240,230,210,0.12)'}
-                strokeWidth="1.75"
-              />
-              {pct > 0 && (
-                <circle
-                  cx="15"
-                  cy="15"
-                  r={r}
-                  fill="none"
-                  stroke={accentColor}
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeDasharray={circ}
-                  strokeDashoffset={dashOffset}
-                  className="transition-all duration-500 ease-out"
-                />
-              )}
-            </svg>
-            {allDone ? (
-              <SparklesIcon
-                className="w-3.5 h-3.5 transition-transform duration-300 group-hover:scale-110"
-                style={{ color: accentColor }}
-              />
-            ) : (
-              <svg
-                className="w-3.5 h-3.5 transition-transform duration-300 group-hover:scale-110"
-                style={{ color: accentColor }}
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
+                stroke={goldAccent}
+                strokeWidth="1.7"
                 strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M12 3l2.4 5.2L20 9.3l-4 4.1.9 5.6-4.9-2.6-4.9 2.6.9-5.6-4-4.1 5.6-1.1L12 3z" />
-              </svg>
+                strokeDasharray={circ}
+                strokeDashoffset={dashOffset}
+                className="transition-all duration-500 ease-out"
+              />
             )}
-          </div>
+          </svg>
+          {allDone ? (
+            <SparklesIcon
+              className="w-3 h-3 transition-transform duration-300 group-hover:scale-110"
+              style={{ color: goldAccent }}
+            />
+          ) : (
+            <span className="font-serif-eng text-[8.5px] font-medium tabular-nums leading-none tracking-tight">
+              {summary.completedTodos}/{summary.totalTodos}
+            </span>
+          )}
+        </div>
 
-          {/* Tabular Quest Counter (e.g. 0/3) */}
-          <span
-            className="text-[10px] font-medium tabular-nums tracking-tight leading-none"
-            style={{
-              color: allDone
-                ? accentColor
-                : isLightMode
-                  ? 'rgba(26,24,20,0.88)'
-                  : 'rgba(245,238,224,0.92)',
-            }}
-          >
-            {summary.completedTodos}/{summary.totalTodos}
-          </span>
+        <span className="font-serif-eng text-[7px] uppercase tracking-[0.14em] leading-none opacity-75">
+          Today
+        </span>
+      </button>
 
-          {/* Crisp TODAY Micro-Caption */}
-          <span
-            className={`text-[7px] md:text-[7.5px] uppercase tracking-[0.18em] font-semibold leading-none ${mutedText}`}
-          >
-            Today
-          </span>
-        </button>
-      </aside>
+      {/* UNFURLING ILLUMINATED-THREAD LEDGER (Rises directly from the bottom-left anchor) */}
+      {isOpen &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <>
+            {/* Quiet atmospheric scrim so the Sanctuary sky stays present */}
+            <div
+              className="fixed inset-0 z-40 bg-black/18 backdrop-blur-[1px]"
+              onClick={() => {
+                hapticDismiss();
+                setIsAdding(false);
+                onClose?.();
+              }}
+            />
 
-      {/* FLOATING GAME-STYLE SIDE QUEST CARD */}
-      {isOpen && (
-        <>
-          {/* Transparent tap-outside catcher so the Sanctuary sky stays visible */}
-          <div
-            className="fixed inset-0 z-30 bg-black/15"
-            onClick={() => {
-              hapticDismiss();
-              setIsAdding(false);
-              onClose?.();
-            }}
-          />
+            <div
+              role="dialog"
+              aria-modal="false"
+              aria-label="Today's Intentions"
+              data-testid="today-ledger-sheet"
+              onClick={(e) => e.stopPropagation()}
+              style={{ bottom: 'calc(67px + var(--sab))' }}
+              className={`fixed left-3 sm:left-6 z-50 w-[calc(100vw-24px)] max-w-[318px] rounded-[24px] border backdrop-blur-xl px-4 pt-4 pb-3.5 animate-ledger-unfurl ${ledgerSurface}`}
+            >
+              {/* Delicate top ornamental hairline */}
+              <div
+                aria-hidden="true"
+                className="mx-auto mb-3 h-[1px] w-12 opacity-45"
+                style={{
+                  background: `linear-gradient(90deg, transparent, ${goldAccent}, transparent)`,
+                }}
+              />
 
-          <div
-            role="dialog"
-            aria-modal="false"
-            aria-label="Today's List"
-            onClick={(e) => e.stopPropagation()}
-            className={`fixed left-3 md:left-7 top-1/2 -translate-y-1/2 z-40 w-[268px] sm:w-[288px] rounded-[22px] border backdrop-blur-md p-3.5 transition-[transform,opacity] duration-300 ${cardSurface}`}
-          >
-            {/* Compact Quest Card Header */}
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <div className="flex items-center gap-1.5">
-                <span
-                  className="text-[11px] leading-none"
-                  style={{ color: accentColor }}
-                  aria-hidden="true"
-                >
-                  ✦
-                </span>
-                <h2 className="text-[10.5px] uppercase tracking-[0.22em] font-semibold">
-                  Today
-                </h2>
-                <span
-                  className="text-[10px] font-semibold tabular-nums px-1.5 py-0.5 rounded-full"
-                  style={{
-                    backgroundColor: `${accentColor}1f`,
-                    color: accentColor,
-                  }}
-                >
-                  {summary.completedTodos}/{summary.totalTodos}
-                </span>
-              </div>
+              {/* Editorial Ledger Header (Zero pill badges) */}
+              <div className="flex items-start justify-between gap-2 mb-3">
+                <div className="min-w-0">
+                  <h2 className="font-serif-eng text-[15px] leading-tight tracking-[0.02em]">
+                    Today’s Intentions
+                  </h2>
+                  <p className={`text-[10.5px] tabular-nums tracking-[0.06em] mt-0.5 ${mutedText}`}>
+                    {summary.completedTodos} of {summary.totalTodos} illuminated
+                  </p>
+                </div>
 
-              <div className="flex items-center gap-1">
-                {summary.totalTodos < 12 && (
+                <div className="flex items-center gap-0.5 -mr-1 -mt-1 shrink-0">
+                  {summary.totalTodos < 12 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        hapticTapLight();
+                        setIsAdding((v) => !v);
+                      }}
+                      aria-label="Add custom intention"
+                      className={`w-9 h-9 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
+                        isAdding
+                          ? isLightMode
+                            ? 'bg-[#9c7533]/12'
+                            : 'bg-white/12'
+                          : isLightMode
+                            ? 'hover:bg-[#1e1b18]/[0.06] text-[#5a5042]'
+                            : 'hover:bg-white/[0.08] text-[#f0e6d2]/65'
+                      }`}
+                      style={isAdding ? { color: goldAccent } : undefined}
+                    >
+                      <PlusIcon className="w-4 h-4" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
-                      hapticTapLight();
-                      setIsAdding((v) => !v);
+                      hapticDismiss();
+                      setIsAdding(false);
+                      onClose?.();
                     }}
-                    aria-label="Add custom task"
-                    className={`w-7 h-7 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
-                      isAdding
-                        ? 'bg-white/15'
-                        : isLightMode
-                          ? 'hover:bg-[#1e1b18]/[0.06] text-[#5a5042]'
-                          : 'hover:bg-white/[0.08] text-[#f0e6d2]/65'
+                    aria-label="Close Today's Intentions"
+                    className={`w-9 h-9 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
+                      isLightMode
+                        ? 'hover:bg-[#1e1b18]/[0.06] text-[#5a5042]'
+                        : 'hover:bg-white/[0.08] text-[#f0e6d2]/65'
                     }`}
-                    style={isAdding ? { color: accentColor } : undefined}
                   >
-                    <PlusIcon className="w-3.5 h-3.5" />
+                    <XIcon className="w-4 h-4" />
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    hapticDismiss();
-                    setIsAdding(false);
-                    onClose?.();
-                  }}
-                  aria-label="Close Today's List"
-                  className={`w-7 h-7 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
-                    isLightMode
-                      ? 'hover:bg-[#1e1b18]/[0.06] text-[#5a5042]'
-                      : 'hover:bg-white/[0.08] text-[#f0e6d2]/65'
-                  }`}
-                >
-                  <XIcon className="w-3.5 h-3.5" />
-                </button>
+                </div>
               </div>
-            </div>
 
-            {/* Thin Game-Style Progress Bar */}
-            <div
-              className={`w-full h-1 rounded-full overflow-hidden mb-3 ${
-                isLightMode ? 'bg-[#1e1b18]/10' : 'bg-white/10'
-              }`}
-            >
-              <div
-                className="h-full w-full rounded-full origin-left transition-transform duration-300 ease-out"
-                style={{
-                  transform: `scaleX(${Math.max(0, Math.min(1, summary.percentage / 100))})`,
-                  backgroundColor: accentColor,
-                }}
-              />
-            </div>
-
-            {/* Optional Compact Inline Add Input */}
-            {isAdding && (
-              <form onSubmit={handleAddSubmit} className="flex items-center gap-1.5 mb-2.5">
-                <input
-                  type="text"
-                  value={newTodoText}
-                  onChange={(e) => setNewTodoText(e.target.value)}
-                  placeholder="New task..."
-                  aria-label="Add a task for today"
-                  autoFocus
-                  maxLength={72}
-                  className={`flex-1 min-w-0 h-8 px-2.5 rounded-lg border text-[12px] focus:outline-none ${
-                    isLightMode
-                      ? 'bg-white/70 border-[#1e1b18]/15 placeholder:text-[#7a6f5d]/65'
-                      : 'bg-white/[0.05] border-white/12 placeholder:text-[#f0e6d2]/35'
-                  }`}
-                />
-                <button
-                  type="submit"
-                  disabled={!newTodoText.trim()}
-                  aria-label="Add task"
-                  className="h-8 px-2.5 rounded-lg text-[10px] uppercase tracking-[0.14em] font-semibold cursor-pointer disabled:opacity-35"
-                  style={{
-                    backgroundColor: `${accentColor}24`,
-                    color: accentColor,
-                  }}
+              {/* Inline Add Intention Composer */}
+              {isAdding && (
+                <form
+                  onSubmit={handleAddSubmit}
+                  className={`flex items-center gap-2 mb-3 pb-3 border-b ${hairlineBorder}`}
                 >
-                  Add
-                </button>
-              </form>
-            )}
-
-            {/* Game-Style Quest Rows */}
-            <div className="space-y-1.5 max-h-[48dvh] overflow-y-auto no-scrollbar">
-              {(dailyTodos || []).map((todo) => {
-                const done = Boolean(todo.completed);
-                const reward = typeof todo.reward === 'number' ? todo.reward : 5;
-                return (
-                  <div
-                    key={todo.id}
-                    onClick={() => handleToggleTodo(todo)}
-                    role="checkbox"
-                    aria-checked={done}
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleToggleTodo(todo);
-                      }
-                    }}
-                    className={`group min-h-[42px] px-3 py-2 rounded-xl border flex items-center justify-between gap-2.5 cursor-pointer transition-all duration-200 active:scale-[0.98] ${
-                      done
-                        ? isLightMode
-                          ? 'bg-[#7c5a1e]/[0.07] border-[#7c5a1e]/20'
-                          : 'bg-[#d4af37]/[0.08] border-[#d4af37]/25'
-                        : isLightMode
-                          ? 'bg-[#1e1b18]/[0.025] border-[#1e1b18]/[0.08] hover:bg-[#1e1b18]/[0.05]'
-                          : 'bg-white/[0.03] border-white/[0.07] hover:bg-white/[0.06]'
+                  <input
+                    type="text"
+                    value={newTodoText}
+                    onChange={(e) => setNewTodoText(e.target.value)}
+                    placeholder="Write a quiet intention..."
+                    aria-label="Add an intention for today"
+                    autoFocus
+                    maxLength={72}
+                    className={`flex-1 min-w-0 h-9 px-3 rounded-xl border text-[12.5px] font-serif focus:outline-none ${
+                      isLightMode
+                        ? 'bg-white/75 border-[#1e1b18]/15 placeholder:text-[#7a6f5d]/65 focus:border-[#9c7533]/45'
+                        : 'bg-white/[0.05] border-white/12 placeholder:text-[#f0e6d2]/35 focus:border-[#d2a24b]/45'
                     }`}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!newTodoText.trim()}
+                    aria-label="Add intention"
+                    className="h-9 px-3 rounded-xl text-[10px] uppercase tracking-[0.14em] font-semibold cursor-pointer disabled:opacity-35 transition-opacity"
+                    style={{
+                      backgroundColor: `${goldAccent}22`,
+                      color: goldAccent,
+                    }}
                   >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      {/* Diamond / Check Quest Node */}
-                      <span
-                        className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 transition-all ${
-                          done
-                            ? ''
-                            : isLightMode
-                              ? 'border border-[#1e1b18]/28'
-                              : 'border border-white/28'
-                        }`}
-                        style={
-                          done
-                            ? { backgroundColor: `${accentColor}28`, color: accentColor }
-                            : undefined
-                        }
-                      >
-                        {done && <CheckCircleIcon className="w-3.5 h-3.5" />}
-                      </span>
+                    Add
+                  </button>
+                </form>
+              )}
 
-                      <span
-                        className={`text-[12.5px] font-serif leading-snug break-words transition-opacity ${
-                          done ? 'line-through opacity-55' : ''
-                        }`}
-                      >
-                        {todo.text}
-                      </span>
-                    </div>
+              {/* ILLUMINATED THREAD TASK LIST */}
+              <div className="relative pl-5 max-h-[44dvh] overflow-y-auto no-scrollbar">
+                {/* Continuous Vertical Spine Track */}
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-[7px] top-3 bottom-3 w-[1px]"
+                  style={{ backgroundColor: threadTrack }}
+                />
+                {/* Glowing Illuminated Thread Fill */}
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-[7px] top-3 bottom-3 w-[1.5px] origin-top transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]"
+                  style={{
+                    transform: `scaleY(${pct})`,
+                    background: `linear-gradient(180deg, ${goldBright}, ${goldAccent})`,
+                    boxShadow: pct > 0 ? `0 0 8px ${goldAccent}66` : 'none',
+                  }}
+                />
 
-                    <div className="flex items-center gap-1 shrink-0">
-                      {/* Game-Style +Yaqeen Reward Tag */}
-                      <span
-                        className={`text-[9.5px] font-semibold tabular-nums tracking-wider px-1.5 py-0.5 rounded-md ${
-                          done ? '' : mutedText
-                        }`}
-                        style={
-                          done
-                            ? { color: accentColor }
-                            : isLightMode
-                              ? { backgroundColor: 'rgba(30,27,24,0.05)' }
-                              : { backgroundColor: 'rgba(255,255,255,0.05)' }
-                        }
+                <div className="space-y-1">
+                  {(dailyTodos || []).map((todo, idx) => {
+                    const done = Boolean(todo.completed);
+                    const reward = typeof todo.reward === 'number' ? todo.reward : 5;
+                    return (
+                      <div
+                        key={todo.id}
+                        style={{ animationDelay: `${idx * 40}ms` }}
+                        className="relative flex items-center gap-1 animate-ledger-row"
                       >
-                        {done ? '✦ Done' : `+${reward} ✦`}
-                      </span>
+                        {/* Diamond Bead Anchored on the Vertical Thread */}
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute -left-[17px] top-1/2 -translate-y-1/2 w-[9px] h-[9px] rotate-45 transition-all duration-400"
+                          style={{
+                            backgroundColor: done
+                              ? goldBright
+                              : isLightMode
+                                ? '#f6f1e7'
+                                : '#090d18',
+                            border: `1.25px solid ${
+                              done
+                                ? goldAccent
+                                : isLightMode
+                                  ? 'rgba(54,46,36,0.34)'
+                                  : 'rgba(240,230,210,0.32)'
+                            }`,
+                            boxShadow: done ? `0 0 10px ${goldAccent}99` : 'none',
+                          }}
+                        />
 
-                      {todo.isCustom && (
+                        {/* Full-row Accessible Button */}
                         <button
                           type="button"
-                          onClick={(e) => handleRemoveTodo(e, todo.id)}
-                          aria-label={`Remove ${todo.text}`}
-                          className={`w-6 h-6 rounded-md flex items-center justify-center cursor-pointer transition-colors ${
-                            isLightMode
-                              ? 'text-[#7a6f5d] hover:bg-[#1e1b18]/10'
-                              : 'text-[#f0e6d2]/40 hover:bg-white/10'
+                          role="checkbox"
+                          aria-checked={done}
+                          onClick={() => handleToggleTodo(todo)}
+                          className={`group flex-1 min-w-0 min-h-[44px] px-2.5 py-2 rounded-xl flex items-center justify-between gap-2.5 text-left cursor-pointer transition-colors duration-200 active:scale-[0.99] ${
+                            done
+                              ? isLightMode
+                                ? 'bg-[#9c7533]/[0.07]'
+                                : 'bg-[#d4af37]/[0.08]'
+                              : isLightMode
+                                ? 'hover:bg-[#1e1b18]/[0.04]'
+                                : 'hover:bg-white/[0.04]'
                           }`}
                         >
-                          <TrashIcon className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                          <span
+                            className={`font-serif text-[13px] leading-snug break-words transition-all duration-300 ${
+                              done ? 'line-through opacity-55' : 'opacity-95'
+                            }`}
+                          >
+                            {todo.text}
+                          </span>
 
-            {/* Subtle All-Quests-Complete Banner */}
-            {allDone && (
-              <div
-                className="mt-2.5 pt-2 border-t text-center text-[10px] uppercase tracking-[0.2em] font-medium"
-                style={{
-                  borderColor: isLightMode ? 'rgba(30,27,24,0.08)' : 'rgba(255,255,255,0.08)',
-                  color: accentColor,
-                }}
-              >
-                ✦ All Today’s Quests Complete
+                          <span
+                            className={`text-[10px] tabular-nums tracking-[0.06em] shrink-0 transition-colors ${
+                              done ? '' : mutedText
+                            }`}
+                            style={done ? { color: goldAccent } : undefined}
+                          >
+                            {done ? '✦' : `+${reward}`}
+                          </span>
+                        </button>
+
+                        {todo.isCustom && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleRemoveTodo(e, todo.id)}
+                            aria-label={`Remove ${todo.text}`}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
+                              isLightMode
+                                ? 'text-[#7a6f5d] hover:bg-[#1e1b18]/10'
+                                : 'text-[#f0e6d2]/45 hover:bg-white/10'
+                            }`}
+                          >
+                            <TrashIcon className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            )}
-          </div>
-        </>
-      )}
+
+              {/* Quiet Ledger Epilogue */}
+              <div
+                className={`mt-3 pt-2.5 border-t flex items-center justify-between text-[10px] tracking-[0.12em] uppercase ${hairlineBorder}`}
+              >
+                <span className={allDone ? 'font-medium' : mutedText} style={allDone ? { color: goldAccent } : undefined}>
+                  {allDone ? '✦ All intentions fulfilled' : 'Tap an intention to illuminate'}
+                </span>
+                <span className={`tabular-nums ${mutedText}`}>
+                  {Math.round(summary.percentage)}%
+                </span>
+              </div>
+            </div>
+          </>,
+          document.body
+        )}
     </>
   );
 });

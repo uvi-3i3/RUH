@@ -1,93 +1,61 @@
 import { useState, useEffect, useMemo } from 'react';
-import { TEMPORAL_PALETTES } from '../data/temporalPalettes';
-
-// Keyframe timeline: [minutes_from_midnight, palette_index]
-// Between keyframes of different palettes, the engine cross-fades.
-// 0=fajr, 1=dhuhr, 2=asr, 3=maghrib, 4=isha
-const STOPS = [
-  [0,    4],   // 00:00 → deep night (isha)
-  [240,  4],   // 04:00 → still isha
-  [300,  0],   // 05:00 → fajr fully in (1hr transition from isha)
-  [390,  0],   // 06:30 → fajr holding
-  [720,  1],   // 12:00 → dhuhr fully in (5.5hr dawn→gold transition)
-  [900,  1],   // 15:00 → dhuhr holding
-  [960,  2],   // 16:00 → asr fully in (1hr transition)
-  [1050, 2],   // 17:30 → asr holding
-  [1110, 3],   // 18:30 → maghrib fully in (1hr transition)
-  [1200, 3],   // 20:00 → maghrib holding
-  [1260, 4],   // 21:00 → isha fully in (1hr transition)
-  [1440, 4],   // 24:00 → wraps to midnight
-];
-
-function lerpVal(a, b, t) {
-  return Math.round(a + (b - a) * t);
-}
-
-function lerpColor(a, b, t) {
-  return { r: lerpVal(a.r, b.r, t), g: lerpVal(a.g, b.g, t), b: lerpVal(a.b, b.b, t) };
-}
-
-function lerpSide(a, b, t) {
-  return {
-    bg:        lerpColor(a.bg, b.bg, t),
-    clouds:    a.clouds.map((c, i) => lerpColor(c, b.clouds[i], t)),
-    orbCore:   lerpColor(a.orbCore, b.orbCore, t),
-    orbGlow:   lerpColor(a.orbGlow, b.orbGlow, t),
-    orbCorona: lerpColor(a.orbCorona, b.orbCorona, t),
-    ember:     lerpColor(a.ember, b.ember, t),
-    accent:    lerpColor(a.accent, b.accent, t),
-  };
-}
-
-function blendPalettes(idxA, idxB, t) {
-  const a = TEMPORAL_PALETTES[idxA];
-  const b = TEMPORAL_PALETTES[idxB];
-  return {
-    name: t < 0.5 ? a.name : b.name,
-    dark:  lerpSide(a.dark, b.dark, t),
-    light: lerpSide(a.light, b.light, t),
-  };
-}
-
-function getPaletteForMinute(minute) {
-  for (let i = 0; i < STOPS.length - 1; i++) {
-    const [mA, pA] = STOPS[i];
-    const [mB, pB] = STOPS[i + 1];
-    if (minute >= mA && minute < mB) {
-      if (pA === pB) return TEMPORAL_PALETTES[pA];
-      const t = (minute - mA) / (mB - mA);
-      return blendPalettes(pA, pB, t);
-    }
-  }
-  return TEMPORAL_PALETTES[4]; // fallback: isha
-}
+import { resolveSolarAtmosphereState } from '../utils/atmosphereSyncLogic';
 
 // Convert RGB object → hex string
 export function rgbToHex(c) {
-  return '#' + [c.r, c.g, c.b].map(x => Math.max(0, Math.min(255, x)).toString(16).padStart(2, '0')).join('');
+  return (
+    '#' +
+    [c.r, c.g, c.b]
+      .map((x) => Math.max(0, Math.min(255, x)).toString(16).padStart(2, '0'))
+      .join('')
+  );
 }
 
-export function useTemporalPhase(devOverride) {
-  const [minuteOfDay, setMinuteOfDay] = useState(() => {
-    const now = new Date();
-    return now.getHours() * 60 + now.getMinutes();
-  });
+/**
+ * Live prayer-time atmosphere hook.
+ * Smoothly syncs palette & sky atmosphere visuals to the user's real calculated
+ * solar prayer schedule (`prayerTimes.prayerData.times` + `sunrise`), falling back
+ * to their configured prayer times or canonical solar anchors when no city is set.
+ * Supports locking any specific phase (`devOverride` 0..4) for calm manual preview.
+ */
+export function useTemporalPhase(devOverride, options = {}) {
+  const { solarTimes = null, sunrise = null, fallbackPrayers = null, nowDate = null } = options;
+
+  const [internalTickMs, setInternalTickMs] = useState(() => Date.now());
 
   useEffect(() => {
-    if (devOverride !== null && devOverride !== undefined) return;
+    if (nowDate instanceof Date) return undefined;
+    if (devOverride !== null && devOverride !== undefined) return undefined;
     const interval = setInterval(() => {
-      const now = new Date();
-      setMinuteOfDay(now.getHours() * 60 + now.getMinutes());
-    }, 60000); // re-check every minute
+      setInternalTickMs(Date.now());
+    }, 30000);
     return () => clearInterval(interval);
-  }, [devOverride]);
+  }, [devOverride, nowDate]);
 
-  const palette = useMemo(() => {
-    if (devOverride !== null && devOverride !== undefined) {
-      return TEMPORAL_PALETTES[devOverride];
-    }
-    return getPaletteForMinute(minuteOfDay);
-  }, [minuteOfDay, devOverride]);
+  const effectiveNow = nowDate instanceof Date ? nowDate : new Date(internalTickMs);
 
-  return palette;
+  const atmosphere = useMemo(() => {
+    const state = resolveSolarAtmosphereState({
+      now: effectiveNow,
+      solarTimes,
+      sunrise,
+      fallbackPrayers,
+      manualPhase: devOverride,
+    });
+
+    return {
+      ...state.palette,
+      phaseIndex: state.phaseIndex,
+      phaseId: state.phaseId,
+      meta: state.meta,
+      source: state.source,
+      isAutoSynced: state.isAutoSynced,
+      blend: state.blend,
+      skyVisuals: state.skyVisuals,
+      nextPhaseId: state.nextPhaseId,
+      anchors: state.anchors,
+    };
+  }, [effectiveNow, solarTimes, sunrise, fallbackPrayers, devOverride]);
+
+  return atmosphere;
 }

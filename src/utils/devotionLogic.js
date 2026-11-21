@@ -217,172 +217,6 @@ export function gregorianToHijri(gDate = new Date()) {
   return { year: hijriYear, month: hijriMonth, day: hijriDay };
 }
 
-const STOP_WORDS = new Set([
-  'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with',
-  'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has',
-  'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'can', 'may',
-  'might', 'must', 'i', 'me', 'my', 'myself', 'we', 'our', 'you', 'your', 'he',
-  'him', 'his', 'she', 'her', 'it', 'its', 'they', 'them', 'their', 'this', 'that',
-  'these', 'those', 'what', 'which', 'who', 'whom', 'when', 'where', 'why', 'how',
-  'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other', 'some', 'such',
-  'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'just',
-  'feel', 'feeling', 'felt', 'really', 'like', 'about', 'into', 'through', 'even',
-]);
-
-const SPIRITUAL_CLUSTERS = {
-  hardship: [
-    'hard', 'hardship', 'difficult', 'difficulty', 'burden', 'heavy', 'struggle',
-    'pain', 'hurt', 'trial', 'test', 'suffer', 'suffering', 'overwhelm', 'overwhelmed',
-    'exhausted', 'tired', 'stress', 'stressed', 'relief', 'ease', 'bear', 'handle',
-    'survive', 'pressure', 'problem', 'problems',
-  ],
-  patience: [
-    'patient', 'patience', 'sabr', 'wait', 'waiting', 'endure', 'endurance',
-    'anger', 'angry', 'mad', 'frustrated', 'rage', 'provoke', 'calm', 'restraint',
-    'control', 'discipline', 'delay', 'steady',
-  ],
-  gratitude: [
-    'grateful', 'gratitude', 'thank', 'thanks', 'thankful', 'shukr', 'blessing',
-    'blessings', 'gift', 'gifts', 'goodness', 'kind', 'kindness', 'appreciate',
-    'content', 'abundance',
-  ],
-  loneliness: [
-    'alone', 'lonely', 'loneliness', 'isolated', 'isolation', 'abandoned',
-    'unseen', 'empty', 'forgotten', 'near', 'nearness', 'closer', 'presence',
-    'companion', 'company',
-  ],
-  trust: [
-    'worry', 'worried', 'worries', 'anxious', 'anxiety', 'fear', 'afraid',
-    'uncertain', 'uncertainty', 'future', 'tomorrow', 'control', 'trust',
-    'tawakkul', 'rely', 'reliance', 'enough', 'sufficient', 'safety', 'delegate',
-  ],
-  repentance: [
-    'sin', 'sins', 'sinned', 'mistake', 'mistakes', 'guilt', 'guilty', 'shame',
-    'regret', 'sorry', 'forgive', 'forgiveness', 'pardon', 'mercy', 'merciful',
-    'repent', 'repentance', 'tawbah', 'despair', 'hopeless', 'broken', 'brokenness',
-    'return', 'clean', 'erase', 'wipe',
-  ],
-  sincerity: [
-    'sincere', 'sincerity', 'intention', 'intentions', 'motive', 'motives',
-    'ego', 'pride', 'praise', 'approval', 'criticism', 'insult', 'judged',
-    'hidden', 'authentic', 'pure', 'show', 'showing',
-  ],
-  speech: [
-    'speak', 'speech', 'words', 'tongue', 'silent', 'silence', 'quiet', 'gossip',
-    'harm', 'harmless', 'hurtful', 'mouth', 'listen', 'behave', 'character',
-    'manners', 'gentle',
-  ],
-};
-
-const STEM_WORD = (w) => {
-  if (w.length <= 4) return w;
-  return w
-    .replace(/(ingly|edly|ness|ment|tion|able|ible|less|ful|ing|ies|ied|ed|es|s)$/i, '')
-    .toLowerCase();
-};
-
-function tokenizeWithConcepts(text) {
-  const words = String(text || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9\s'-]/g, ' ')
-    .split(/\s+/)
-    .map((w) => w.replace(/^['-]+|['-]+$/g, ''))
-    .filter((w) => w.length >= 2 && !STOP_WORDS.has(w));
-
-  const tokens = [];
-  for (const w of words) {
-    tokens.push(w);
-    const stemmed = STEM_WORD(w);
-    if (stemmed && stemmed !== w && stemmed.length >= 3) {
-      tokens.push(stemmed);
-    }
-    for (const [concept, cluster] of Object.entries(SPIRITUAL_CLUSTERS)) {
-      if (cluster.includes(w) || cluster.includes(stemmed)) {
-        tokens.push(`__concept_${concept}`);
-      }
-    }
-  }
-  return tokens;
-}
-
-/**
- * Find the most thematically resonant verse for a reflection note completely offline.
- * Combines concept-cluster expansion with TF-IDF cosine similarity.
- */
-export function findResonantVerse(userReflection, potentialVerses, excludeVerseId = null) {
-  if (!userReflection || !String(userReflection).trim() || !Array.isArray(potentialVerses) || potentialVerses.length === 0) {
-    return null;
-  }
-
-  const candidates = excludeVerseId
-    ? potentialVerses.filter((v) => v && v.id !== excludeVerseId)
-    : potentialVerses.filter(Boolean);
-  const pool = candidates.length > 0 ? candidates : potentialVerses.filter(Boolean);
-  if (pool.length === 0) return null;
-
-  const queryTokens = tokenizeWithConcepts(userReflection);
-  if (queryTokens.length === 0) return null;
-
-  const docTokenLists = pool.map((verse) => {
-    const meaning = `${verse.t || ''} ${verse.c || ''} ${verse.simpleT || ''} ${verse.simpleC || ''}`;
-    return tokenizeWithConcepts(meaning);
-  });
-
-  // Compute IDF across the local corpus
-  const docFreq = new Map();
-  for (const tokens of docTokenLists) {
-    const unique = new Set(tokens);
-    for (const tok of unique) {
-      docFreq.set(tok, (docFreq.get(tok) || 0) + 1);
-    }
-  }
-
-  const N = pool.length;
-  const toWeightedVector = (tokens) => {
-    const tf = new Map();
-    for (const tok of tokens) {
-      tf.set(tok, (tf.get(tok) || 0) + 1);
-    }
-    const vec = new Map();
-    for (const [tok, count] of tf.entries()) {
-      const df = docFreq.get(tok) || 0;
-      const idf = Math.log(1 + N / (1 + df));
-      const weight = tok.startsWith('__concept_') ? 1.35 : 1.0;
-      vec.set(tok, count * idf * weight);
-    }
-    return vec;
-  };
-
-  const queryVec = toWeightedVector(queryTokens);
-
-  let bestVerse = null;
-  let bestScore = 0;
-
-  for (let i = 0; i < pool.length; i++) {
-    const docVec = toWeightedVector(docTokenLists[i]);
-    let dot = 0;
-    let normQ = 0;
-    let normD = 0;
-    for (const [k, qv] of queryVec.entries()) {
-      normQ += qv * qv;
-      if (docVec.has(k)) {
-        dot += qv * docVec.get(k);
-      }
-    }
-    for (const dv of docVec.values()) {
-      normD += dv * dv;
-    }
-    const denom = Math.sqrt(normQ) * Math.sqrt(normD);
-    const score = denom > 0 ? dot / denom : 0;
-    if (score > bestScore) {
-      bestScore = score;
-      bestVerse = pool[i];
-    }
-  }
-
-  return bestVerse || pool[0];
-}
-
 /**
  * Deterministic PRNG (Mulberry32) for consistent, non-flickering starfield layout.
  */
@@ -761,20 +595,6 @@ export function buildStreakStatus(history = {}, referenceDate = new Date(), paus
 }
 
 /**
- * Compute a deterministic celebration signature for today's active streak.
- * Returns null if today has no logged devotion yet so inactive days do not celebrate.
- */
-export function getStreakCelebrationSignature(status) {
-  if (!status || !status.todayActive) return null;
-  const todayNode = Array.isArray(status.weekDays)
-    ? status.weekDays[status.weekDays.length - 1]
-    : null;
-  const dateStr = todayNode?.dateStr || '';
-  const tier = todayNode?.tier || 1;
-  return `${dateStr}|${status.currentStreak || 0}|${tier}`;
-}
-
-/**
  * Determine timely Sunnah lifestyle prompts based on the day of week and Hijri calendar date.
  */
 export function getSunnahCalendarContext(date = new Date(), hijri = null) {
@@ -880,27 +700,6 @@ export function computeQadaTotals(qada = {}) {
 }
 
 /**
- * Filter categorized Duas by category ('all' | 'favorites' | categoryId) and search text.
- */
-export function filterDuas(duas = [], category = 'all', query = '', favoriteIds = []) {
-  if (!Array.isArray(duas)) return [];
-  const favSet = new Set(Array.isArray(favoriteIds) ? favoriteIds : []);
-  const q = (query || '').trim().toLowerCase();
-
-  return duas.filter((d) => {
-    if (!d) return false;
-    if (category === 'favorites') {
-      if (!favSet.has(d.id)) return false;
-    } else if (category && category !== 'all') {
-      if (d.category !== category) return false;
-    }
-    if (!q) return true;
-    const haystack = `${d.title || ''} ${d.translation || ''} ${d.transliteration || ''} ${d.moment || ''} ${d.source || ''}`.toLowerCase();
-    return haystack.includes(q);
-  });
-}
-
-/**
  * Validate and normalize an imported Ruh JSON backup payload safely.
  */
 export function sanitizeBackupPayload(raw) {
@@ -945,11 +744,20 @@ export function sanitizeBackupPayload(raw) {
       }
     }
     const leadNum = Number(raw.settings.notificationLeadMinutes);
+    const legacyChime = raw.settings.notificationChime !== false;
+    const validChimeProfiles = ['hijaz_whisper', 'fajr_ney', 'sanctuary_bell', 'silent'];
+    const safeChimeProfile = validChimeProfiles.includes(raw.settings.notificationChimeProfile)
+      ? raw.settings.notificationChimeProfile
+      : legacyChime
+        ? 'hijaz_whisper'
+        : 'silent';
     cleanSettings = {
       isSimpleMode: Boolean(raw.settings.isSimpleMode),
       isAmbientEnabled: Boolean(raw.settings.isAmbientEnabled),
       notificationLeadMinutes: [0, 5, 10, 15].includes(leadNum) ? leadNum : 0,
-      notificationChime: raw.settings.notificationChime !== false,
+      notificationChime: safeChimeProfile !== 'silent',
+      notificationChimeProfile: safeChimeProfile,
+      autoSyncSolarReminders: raw.settings.autoSyncSolarReminders !== false,
       prayers: Object.keys(safePrayers).length > 0 ? safePrayers : undefined,
       customReminders: Array.isArray(raw.settings.customReminders)
         ? raw.settings.customReminders

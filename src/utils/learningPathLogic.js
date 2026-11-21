@@ -217,20 +217,6 @@ export function computeLessonOneProgress(discoveredIds, totalCount = 11) {
 }
 
 /**
- * Returns adjacent landmark ID along the Lesson I sequence (`direction`: 1 for Next, -1 for Prev).
- */
-export function getAdjacentLandmarkId(landmarks, currentId, direction = 1) {
-  if (!Array.isArray(landmarks) || landmarks.length === 0) return null;
-  const idx = landmarks.findIndex((item) => item.id === currentId);
-  if (idx === -1) {
-    return landmarks[0].id;
-  }
-  const step = direction < 0 ? -1 : 1;
-  const nextIdx = (idx + step + landmarks.length) % landmarks.length;
-  return landmarks[nextIdx].id;
-}
-
-/**
  * Groups Lesson I Pillars into their two canonical sections ('islam' and 'iman')
  * with per-group discovery counts and completion status for immediate first-glance clarity.
  */

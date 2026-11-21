@@ -8,16 +8,18 @@ import {
 } from '../../context/sanctuaryStore';
 import {
   HAPTIC_TYPES,
+  hapticBadgeUnlock,
   hapticDestructive,
   hapticDetent,
   hapticDismiss,
   hapticNavigate,
   hapticSuccess,
+  hapticTaskComplete,
   hapticToggle,
   hapticWarning,
   triggerHaptic,
 } from '../../utils/haptics';
-import { playCardRippleCue } from '../../utils/tactileAudio';
+import { playTaskTickOffCue } from '../../utils/tactileAudio';
 
 const TIME_PHASES = [
   { id: null, label: 'Auto (Solar)' },
@@ -36,7 +38,9 @@ export const SettingsModal = ({
   prayerTimes: prayerTimesProp,
   devTimePhase: devTimePhaseProp,
   setDevTimePhase: setDevTimePhaseProp,
+  atmosphere,
   onOpenCityPicker,
+  onReplayOnboarding,
 }) => {
   const sanctuaryCtx = useOptionalSanctuary();
   const prefsCtx = useOptionalPreferences();
@@ -50,6 +54,8 @@ export const SettingsModal = ({
   const toggleHapticsEnabled = prefsCtx?.toggleHapticsEnabled;
   const isTactileAudioEnabled = prefsCtx?.isTactileAudioEnabled ?? true;
   const toggleTactileAudioEnabled = prefsCtx?.toggleTactileAudioEnabled;
+  const isTravelMode = prefsCtx?.isTravelMode ?? false;
+  const toggleTravelMode = prefsCtx?.toggleTravelMode;
 
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [nameInput, setNameInput] = useState(devotionData?.profile?.name || 'Seeker');
@@ -163,7 +169,7 @@ export const SettingsModal = ({
         setBackupNotice({ type: 'success', text: 'Sanctuary restored from backup.' });
       } else {
         hapticWarning();
-        setBackupNotice({ type: 'error', text: 'Invalid backup file. Please choose a Ruh JSON export.' });
+        setBackupNotice({ type: 'error', text: 'Invalid backup file. Please choose a Ruh backup export.' });
       }
     } catch {
       hapticWarning();
@@ -267,16 +273,47 @@ export const SettingsModal = ({
 
           {/* Atmosphere & Temporal Palette Selector */}
           <div
+            data-testid="settings-atmosphere-card"
             className={`w-full p-5 rounded-3xl border flex flex-col gap-3 ${
               isLightMode ? 'bg-white/70 border-black/10 shadow-xs' : 'bg-white/[0.03] border-white/10'
             }`}
           >
-            <span className={`font-serif-eng text-base font-medium ${tTextMain}`}>
-              Sanctuary Atmosphere
-            </span>
+            <div className="flex items-center justify-between gap-2">
+              <span className={`font-serif-eng text-base font-medium ${tTextMain}`}>
+                Sanctuary Atmosphere
+              </span>
+              {atmosphere?.meta && (
+                <span
+                  data-testid="settings-atmosphere-status"
+                  className="font-serif-eng text-[10px] uppercase tracking-[0.14em] shrink-0"
+                  style={{ color: accentHex }}
+                >
+                  {devTimePhase === null
+                    ? atmosphere.source === 'solar'
+                      ? `Live Solar · ${atmosphere.meta.shortLabel}`
+                      : `Auto · ${atmosphere.meta.shortLabel}`
+                    : `Locked · ${atmosphere.meta.shortLabel}`}
+                </span>
+              )}
+            </div>
             <p className={`font-serif-eng text-xs leading-relaxed opacity-70 ${tTextSub}`}>
-              By default, Ruh shifts its ambient light across the five solar prayer phases. You may also lock a specific atmosphere.
+              {devTimePhase === null && prayerTimes?.hasLocation
+                ? `Synced to real solar prayer times in ${prayerTimes.cityLabel}. The sky, horizon warmth, and starlight shift across Fajr, Dhuhr, Asr, Maghrib, and Isha.`
+                : 'Shifts sky light, horizon warmth, and starlight across the five daily prayer windows. Set your city for exact solar synchronization or lock a phase.'}
             </p>
+            {devTimePhase === null && !prayerTimes?.hasLocation && onOpenCityPicker && (
+              <button
+                type="button"
+                onClick={() => {
+                  hapticNavigate();
+                  onOpenCityPicker();
+                }}
+                className="self-start font-serif-eng text-[10.5px] uppercase tracking-[0.14em] cursor-pointer hover:opacity-100 opacity-90 transition-opacity"
+                style={{ color: accentHex }}
+              >
+                Set City for Exact Solar Sync →
+              </button>
+            )}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
               {TIME_PHASES.map((phase) => {
                 const isSelected = devTimePhase === phase.id;
@@ -284,6 +321,8 @@ export const SettingsModal = ({
                   <button
                     key={String(phase.id)}
                     type="button"
+                    data-testid={`atmosphere-phase-${phase.id === null ? 'auto' : phase.id}`}
+                    aria-pressed={isSelected}
                     onClick={() => {
                       hapticDetent();
                       if (setDevTimePhase) setDevTimePhase(phase.id);
@@ -422,8 +461,51 @@ export const SettingsModal = ({
               </button>
             </div>
             <p className={`font-serif-eng text-xs leading-relaxed opacity-70 ${tTextSub}`}>
-              Distinct Capacitor haptic pulses calibrated for scroll detents, switches, prayer logs, and celebrations.
+              Distinct tactile signatures for task completions, navigation glides, scroll detents, and tier-scaled badge unlocks.
             </p>
+            {isHapticsEnabled && (
+              <div
+                data-testid="haptic-profile-previews"
+                className="grid grid-cols-3 gap-2 pt-0.5"
+              >
+                <button
+                  type="button"
+                  data-testid="haptic-preview-task"
+                  onClick={() => hapticTaskComplete()}
+                  className={`min-h-[34px] px-2 py-1.5 rounded-xl border font-serif-eng text-[9.5px] uppercase tracking-[0.12em] cursor-pointer transition-colors ${
+                    isLightMode
+                      ? 'border-black/12 text-[#1a1814] hover:bg-black/5'
+                      : 'border-white/14 text-[#f5eee0]/90 hover:bg-white/8'
+                  }`}
+                >
+                  Task
+                </button>
+                <button
+                  type="button"
+                  data-testid="haptic-preview-navigate"
+                  onClick={() => hapticNavigate()}
+                  className={`min-h-[34px] px-2 py-1.5 rounded-xl border font-serif-eng text-[9.5px] uppercase tracking-[0.12em] cursor-pointer transition-colors ${
+                    isLightMode
+                      ? 'border-black/12 text-[#1a1814] hover:bg-black/5'
+                      : 'border-white/14 text-[#f5eee0]/90 hover:bg-white/8'
+                  }`}
+                >
+                  Navigate
+                </button>
+                <button
+                  type="button"
+                  data-testid="haptic-preview-badge"
+                  onClick={() => hapticBadgeUnlock('gold')}
+                  className={`min-h-[34px] px-2 py-1.5 rounded-xl border font-serif-eng text-[9.5px] uppercase tracking-[0.12em] cursor-pointer transition-colors ${
+                    isLightMode
+                      ? 'border-[#9c7533]/30 text-[#8a621c] hover:bg-[#9c7533]/10'
+                      : 'border-[#d2a24b]/30 text-[#e8c67c] hover:bg-[#d2a24b]/12'
+                  }`}
+                >
+                  Badge
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Tactile Audio Cues Card */}
@@ -445,7 +527,7 @@ export const SettingsModal = ({
                   hapticToggle(nextEnabled);
                   toggleTactileAudioEnabled?.();
                   if (nextEnabled) {
-                    playCardRippleCue({ xPct: 50, yPct: 45, finish: isLightMode ? 'parchment' : 'obsidian', force: true });
+                    playTaskTickOffCue({ kind: 'prayer', force: true });
                   }
                 }}
                 className={`w-12 h-6 rounded-full transition-all duration-300 flex items-center px-1 cursor-pointer ${
@@ -466,7 +548,7 @@ export const SettingsModal = ({
               </button>
             </div>
             <p className={`font-serif-eng text-xs leading-relaxed opacity-70 ${tTextSub}`}>
-              Whisper-subtle parchment turn and spatial glass ripple acoustics on the Sanctuary Pass card.
+              Gentle acoustic cues for prayer toggles, task check-offs, Sanctuary Pass flips, and badge reveals.
             </p>
           </div>
 
@@ -530,6 +612,91 @@ export const SettingsModal = ({
             </div>
           </div>
 
+          {/* Travel Mode (Combining Prayers / Jam' Taqdim) Card */}
+          <div
+            data-testid="settings-travel-mode-card"
+            className={`w-full p-5 rounded-3xl border flex flex-col gap-3 ${
+              isLightMode ? 'bg-white/70 border-black/10 shadow-xs' : 'bg-white/[0.03] border-white/10'
+            }`}
+          >
+            <div className="flex justify-between items-center gap-3">
+              <span className={`font-serif-eng text-base font-medium ${tTextMain}`}>
+                Travel Mode (Combining Prayers)
+              </span>
+              <button
+                type="button"
+                role="switch"
+                data-testid="settings-travel-mode-toggle"
+                aria-checked={isTravelMode}
+                aria-label="Toggle Travel Mode for combining prayers"
+                onClick={() => {
+                  const nextEnabled = !isTravelMode;
+                  hapticToggle(nextEnabled);
+                  toggleTravelMode?.();
+                }}
+                className={`w-12 h-6 rounded-full transition-all duration-300 flex items-center px-1 shrink-0 cursor-pointer ${
+                  isTravelMode
+                    ? isLightMode
+                      ? 'bg-[#9c7533]'
+                      : 'bg-[#d2a24b]'
+                    : isLightMode
+                      ? 'bg-black/15'
+                      : 'bg-white/15'
+                }`}
+              >
+                <div
+                  className={`w-4 h-4 rounded-full bg-white shadow-xs transition-transform duration-300 ${
+                    isTravelMode ? 'translate-x-6' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+            <p className={`font-serif-eng text-xs leading-relaxed opacity-70 ${tTextSub}`}>
+              Unlocks upcoming prayers early when traveling and combining prayers (Jam&apos; Taqdim), overriding standard prayer-time gating.
+            </p>
+          </div>
+
+          {/* Sanctuary Onboarding Replay Card */}
+          {onReplayOnboarding && (
+            <div
+              data-testid="settings-onboarding-card"
+              className={`w-full p-5 rounded-3xl border flex flex-col gap-3 ${
+                isLightMode ? 'bg-white/70 border-black/10 shadow-xs' : 'bg-white/[0.03] border-white/10'
+              }`}
+            >
+              <div className="flex justify-between items-center gap-2">
+                <span className={`font-serif-eng text-base font-medium ${tTextMain}`}>
+                  Sanctuary Onboarding
+                </span>
+                <span
+                  className="font-serif-eng text-[10px] uppercase tracking-[0.16em]"
+                  style={{ color: accentHex }}
+                >
+                  Guided Setup
+                </span>
+              </div>
+              <p className={`font-serif-eng text-xs leading-relaxed opacity-70 ${tTextSub}`}>
+                Run the setup guide again to update your goal, prayer chime, city, and daily habits.
+              </p>
+              <button
+                type="button"
+                data-testid="settings-replay-onboarding-btn"
+                onClick={() => {
+                  hapticNavigate();
+                  onClose?.();
+                  onReplayOnboarding();
+                }}
+                className={`min-h-[42px] px-4 py-2 rounded-xl border font-serif-eng text-xs uppercase tracking-[0.16em] transition-colors cursor-pointer ${
+                  isLightMode
+                    ? 'border-[#9c7533]/35 text-[#7c5a1e] hover:bg-[#9c7533]/10'
+                    : 'border-[#d2a24b]/35 text-[#e6c478] hover:bg-[#d2a24b]/12'
+                }`}
+              >
+                Replay Sanctuary Onboarding
+              </button>
+            </div>
+          )}
+
           {/* Sanctuary Backup & Restore Card */}
           <div
             className={`w-full p-5 rounded-3xl border flex flex-col gap-3 ${
@@ -537,7 +704,7 @@ export const SettingsModal = ({
             }`}
           >
             <span className={`font-serif-eng text-base font-medium ${tTextMain}`}>
-              Sanctuary Backup (Local JSON)
+              Sanctuary Backup
             </span>
             <p className={`font-serif-eng text-xs leading-relaxed opacity-70 ${tTextSub}`}>
               Export your prayers, streaks, Qada ledger, custom habits, and notes to a private file, or restore anytime.
@@ -552,7 +719,7 @@ export const SettingsModal = ({
                     : 'bg-[#d2a24b]/20 text-[#d2a24b] border-[#d2a24b]/40 hover:bg-[#d2a24b]/30'
                 }`}
               >
-                Export JSON
+                Export Backup
               </button>
               <button
                 type="button"
@@ -566,13 +733,13 @@ export const SettingsModal = ({
                     : 'border-white/15 text-[#e4dac8] hover:bg-white/5'
                 }`}
               >
-                Import JSON
+                Restore Backup
               </button>
               <input
                 ref={fileInputRef}
                 type="file"
                 accept=".json,application/json"
-                aria-label="Import Sanctuary JSON Backup"
+                aria-label="Restore Sanctuary Backup"
                 onChange={handleImportFile}
                 className="hidden"
               />

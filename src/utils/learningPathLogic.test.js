@@ -8,7 +8,6 @@ import {
   computeLessonOneProgress,
   evaluatePillarCheckAnswer,
   evaluateQuizQuestion,
-  getAdjacentLandmarkId,
   getAdjacentStepIndex,
   getStepProgress,
   groupLessonOnePillars,
@@ -138,13 +137,6 @@ test('markLandmarkDiscovered and computeLessonOneProgress track all 11 pillars c
   assert.equal(progress.totalCount, 11);
   assert.equal(progress.remainingCount, 0);
   assert.equal(progress.isComplete, true);
-});
-
-test('getAdjacentLandmarkId cycles seamlessly forward and backward', () => {
-  const next = getAdjacentLandmarkId(LESSON_ONE_LANDMARKS, 'shahadah', 1);
-  assert.equal(next, 'salah');
-  const prevWrap = getAdjacentLandmarkId(LESSON_ONE_LANDMARKS, 'shahadah', -1);
-  assert.equal(prevWrap, 'iman-qadr');
 });
 
 test('Lesson I dataset has exactly 5 Pillars of Islam + 6 Pillars of Iman and grouped quizzes', () => {

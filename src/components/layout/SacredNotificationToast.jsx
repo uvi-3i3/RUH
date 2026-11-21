@@ -100,6 +100,15 @@ export const SacredNotificationToast = ({
             <p className={`font-serif-eng italic text-[12px] leading-snug mt-0.5 ${tTextSub}`}>
               {toast.body}
             </p>
+            {toast.chimeProfileLabel && toast.chimeProfileId && toast.chimeProfileId !== 'silent' && (
+              <span
+                data-testid="toast-chime-label"
+                className="inline-block font-serif-eng text-[9.5px] uppercase tracking-[0.14em] mt-1 opacity-75"
+                style={{ color: accentHex }}
+              >
+                {toast.chimeProfileLabel}
+              </span>
+            )}
 
             {/* Quick Action Footer */}
             {toast.kind === 'prayer' && toast.prayerId && (

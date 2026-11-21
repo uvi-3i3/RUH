@@ -11,8 +11,11 @@ import {
   TrashIcon,
 } from '../icons/Icons';
 import { burhanData } from '../../data/burhanData';
+import { quranMiraclesData } from '../../data/quranMiraclesData';
 import { PRACTICE_SETS } from '../../data/adhkarData';
-import { getRecommendedAdhkarPeriod, selectActiveBurhan } from '../../utils/devotionLogic';
+import { selectActiveBurhan } from '../../utils/devotionLogic';
+import { resolveRecommendedAdhkarPeriod } from '../../utils/prayerWindowLogic';
+import { selectActiveMiracle } from '../../utils/miraclesLogic';
 import { isPointerDrag } from '../../utils/smoothInteractionLogic';
 import { HabitEditorSheet } from './HabitEditorSheet';
 import {
@@ -21,12 +24,13 @@ import {
   hapticDismiss,
   hapticHeavy,
   hapticNavigate,
-  hapticSuccess,
   hapticTapLight,
+  hapticTaskComplete,
   hapticToggle,
   hapticUndo,
   hapticWarning,
 } from '../../utils/haptics';
+import { playTaskTickOffCue } from '../../utils/tactileAudio';
 import { useOptionalHabits, useOptionalPreferences } from '../../context/sanctuaryStore';
 
 export const TasksView = memo(({
@@ -40,6 +44,8 @@ export const TasksView = memo(({
   markAdhkarSetRewarded,
   activeDays,
   onOpenBurhan,
+  onOpenMiracles,
+  exploredMiracleIds = [],
   onOpenMisbaha,
   habits: habitsProp,
   dailyHabitLogs: dailyHabitLogsProp,
@@ -52,6 +58,7 @@ export const TasksView = memo(({
   dailyIntention: dailyIntentionProp,
   onSetDailyIntention: onSetDailyIntentionProp,
   sunnahContext,
+  todaySchedule = null,
   qadaRemainingCount = 0,
   onOpenDuas,
   onOpenQada,
@@ -73,7 +80,8 @@ export const TasksView = memo(({
   const tTextSub = isLightMode ? 'text-[#2c2720]' : 'text-[rgba(228,218,200,0.68)]';
   const glowSub = isLightMode ? '0 1px 2px rgba(255,255,255,0.75)' : '0 1px 1px rgba(0,0,0,0.8)';
 
-  const recommendedPeriod = getRecommendedAdhkarPeriod();
+  const recommendedWindow = resolveRecommendedAdhkarPeriod(new Date(), todaySchedule);
+  const recommendedPeriod = recommendedWindow.setId;
   const [activeSetId, setActiveSetId] = useState('habits');
   const [isCustomizingHabits, setIsCustomizingHabits] = useState(false);
   const [habitEditor, setHabitEditor] = useState(null);
@@ -146,8 +154,12 @@ export const TasksView = memo(({
     const wasDragged = pressDraggedRef.current;
     cancelPress();
     if (hadPending && !wasDragged) {
-      if (current + 1 >= target) hapticSuccess();
-      else hapticTapLight();
+      if (current + 1 >= target) {
+        hapticTaskComplete();
+        playTaskTickOffCue({ kind: 'dhikr' });
+      } else {
+        hapticTapLight();
+      }
       incrementTask(id, 1);
     }
   };
@@ -162,6 +174,10 @@ export const TasksView = memo(({
   };
 
   const currentBurhan = selectActiveBurhan(burhanData, currentStation, activeDays);
+  const currentMiracle = selectActiveMiracle(quranMiraclesData, currentStation, activeDays);
+  const currentMiracleExplored = Boolean(
+    currentMiracle && exploredMiracleIds.includes(currentMiracle.id)
+  );
   const isTasksActive = currentView === 'tasks';
   const completedDhikrCount = activeItems.filter((t) => (dailyTasks[t.id] || 0) >= t.target).length;
   const completedHabitsCount = habits.filter((h) => (dailyHabitLogs[h.id] || 0) >= h.target).length;
@@ -170,6 +186,7 @@ export const TasksView = memo(({
 
   const accentHex = isLightMode ? '#7c5a1e' : '#d2a24b';
   const hikmahHex = isLightMode ? '#0d9488' : '#2dd4bf';
+  const miracleHex = isLightMode ? '#8e6623' : '#e4be70';
   const tabs = [
     { id: 'habits', label: 'Habits' },
     ...Object.values(PRACTICE_SETS).map((s) => ({ id: s.id, label: s.label })),
@@ -195,7 +212,7 @@ export const TasksView = memo(({
           : 'none',
       }}
     >
-      <div className="min-h-full flex flex-col items-center justify-between gap-2.5 w-full max-w-[360px] sm:max-w-[400px] md:max-w-[460px] px-1.5 sm:px-3 mx-auto">
+      <div className="min-h-full flex flex-col items-center justify-between gap-2.5 w-full max-w-[368px] sm:max-w-[430px] md:max-w-[500px] px-1.5 sm:px-3 mx-auto">
         {/* Top Zone: Crown, Sunnah Whisper & Segmented Practice Switcher */}
         <div className="w-full flex flex-col items-center shrink-0">
         {/* Compact Crown & Inline Sunnah Whisper */}
@@ -257,7 +274,7 @@ export const TasksView = memo(({
                     setActiveSetId(tab.id);
                   }
                 }}
-                className="min-h-[34px] rounded-xl font-serif-eng text-[9.5px] uppercase tracking-[0.1em] cursor-pointer flex items-center justify-center gap-1 whitespace-nowrap px-1 border"
+                className="min-h-[34px] rounded-xl font-serif-eng text-[9.5px] uppercase tracking-[0.1em] cursor-pointer flex items-center justify-center gap-1 whitespace-nowrap px-1 border transition-colors"
                 style={{
                   backgroundColor: isActive
                     ? isLightMode
@@ -268,7 +285,11 @@ export const TasksView = memo(({
                     ? isLightMode
                       ? 'rgba(156,117,51,0.28)'
                       : 'rgba(210,162,75,0.28)'
-                    : 'transparent',
+                    : isNowHint
+                      ? isLightMode
+                        ? 'rgba(156,117,51,0.22)'
+                        : 'rgba(210,162,75,0.22)'
+                      : 'transparent',
                   boxShadow: isActive
                     ? isLightMode
                       ? '0 2px 6px rgba(26,24,20,0.09)'
@@ -278,24 +299,46 @@ export const TasksView = memo(({
                     ? isLightMode
                       ? '#7c5a1e'
                       : '#e5c17b'
-                    : isLightMode
-                      ? 'rgba(44,39,32,0.72)'
-                      : 'rgba(228,218,200,0.68)',
-                  fontWeight: isActive ? 600 : 400,
+                    : isNowHint
+                      ? isLightMode
+                        ? '#7c5a1e'
+                        : '#d2a24b'
+                      : isLightMode
+                        ? 'rgba(44,39,32,0.72)'
+                        : 'rgba(228,218,200,0.68)',
+                  fontWeight: isActive ? 600 : isNowHint ? 500 : 400,
                 }}
               >
                 <span>{tab.label}</span>
-                {isNowHint && !isActive && (
-                  <span
-                    aria-hidden="true"
-                    className="w-1.5 h-1.5 rounded-full shrink-0"
-                    style={{ backgroundColor: accentHex }}
-                  />
-                )}
               </button>
             );
           })}
         </div>
+
+        {/* Time-Aware Morning / Evening Adhkar Window Cue (quiet unboxed invitation) */}
+        {recommendedWindow.shortTag === 'Now' &&
+          activeSetId !== recommendedPeriod &&
+          !PRACTICE_SETS[recommendedPeriod]?.items?.every(
+            (item) => (dailyTasks[item.id] || 0) >= item.target
+          ) && (
+            <button
+              type="button"
+              data-testid="adhkar-window-cue"
+              onClick={() => {
+                hapticDetent();
+                setActiveSetId(recommendedPeriod);
+              }}
+              className={`font-serif-eng italic text-[10.5px] leading-snug text-center mb-1.5 cursor-pointer transition-opacity opacity-85 hover:opacity-100 ${tTextSub}`}
+            >
+              <span>{recommendedWindow.label} open</span>
+              <span
+                className="not-italic uppercase text-[8.5px] tracking-[0.14em] ml-1.5"
+                style={{ color: accentHex }}
+              >
+                · Open {PRACTICE_SETS[recommendedPeriod]?.label} →
+              </span>
+            </button>
+          )}
 
         </div>
 
@@ -518,8 +561,12 @@ export const TasksView = memo(({
                           aria-label={`${habit.title} (${count} of ${target} ${habit.unit})`}
                           onClick={() => {
                             if (count < target) {
-                              if (count + 1 >= target) hapticSuccess();
-                              else hapticTapLight();
+                              if (count + 1 >= target) {
+                                hapticTaskComplete();
+                                playTaskTickOffCue({ kind: 'habit' });
+                              } else {
+                                hapticTapLight();
+                              }
                               onLogHabitStep?.(habit.id, 1);
                             }
                           }}
@@ -876,26 +923,30 @@ export const TasksView = memo(({
             </button>
           </div>
 
-          {/* Grounded Daily Burhan Invitation */}
-          {currentBurhan && (
-            <button
-              type="button"
-              onClick={() => {
-                hapticNavigate();
-                onOpenBurhan?.();
-              }}
-              className={`group relative w-full text-left px-4 py-3 rounded-[20px] overflow-hidden border transition-all duration-500 ease-out cursor-pointer active:scale-[0.985] flex flex-col gap-1.5 ${
-                isLightMode
-                  ? burhanCompleted
-                    ? 'bg-[#0d9488]/12 border-[#0d9488]/35 island-light'
-                    : 'bg-white/62 hover:bg-white/75 border-white/80 island-light'
-                  : burhanCompleted
-                    ? 'bg-[#14b8a6]/12 border-[#14b8a6]/35 island-dark'
-                    : 'bg-[#0b0e16]/68 hover:bg-[#0b0e16]/80 border-white/[0.09] island-dark'
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2.5 w-full">
-                <div className="flex items-center gap-1.5 min-w-0">
+          {/* Parallel Reflection Shelf: Burhan (Fitrah & Reason) alongside Miracles of the Qur'an */}
+          <div
+            data-testid="tasks-parallel-reflections"
+            className="w-full grid grid-cols-2 gap-2 sm:gap-2.5 items-stretch"
+          >
+            {currentBurhan && (
+              <button
+                type="button"
+                data-testid="burhan-card"
+                onClick={(e) => {
+                  hapticNavigate();
+                  onOpenBurhan?.(e);
+                }}
+                className={`group relative w-full text-left px-3 py-2.5 sm:px-3.5 sm:py-3 rounded-[20px] overflow-hidden border transition-all duration-500 ease-out cursor-pointer active:scale-[0.985] flex flex-col justify-between gap-1.5 ${
+                  isLightMode
+                    ? burhanCompleted
+                      ? 'bg-[#0d9488]/12 border-[#0d9488]/35 island-light'
+                      : 'bg-white/62 hover:bg-white/75 border-white/80 island-light'
+                    : burhanCompleted
+                      ? 'bg-[#14b8a6]/12 border-[#14b8a6]/35 island-dark'
+                      : 'bg-[#0b0e16]/68 hover:bg-[#0b0e16]/80 border-white/[0.09] island-dark'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-1.5 w-full">
                   <span
                     className="font-calligraphy text-[13px] leading-none shrink-0"
                     style={{ color: hikmahHex }}
@@ -903,41 +954,108 @@ export const TasksView = memo(({
                   >
                     بُرْهَان
                   </span>
-                  <span className="opacity-45 text-[9px]" style={{ color: hikmahHex }} aria-hidden="true">·</span>
                   <span
-                    className="font-serif-eng text-[8.5px] uppercase truncate opacity-90"
-                    style={{ color: hikmahHex, letterSpacing: '0.14em' }}
+                    className="flex items-center gap-0.5 font-serif-eng text-[8px] sm:text-[8.5px] uppercase tracking-[0.12em] shrink-0 opacity-90 group-hover:opacity-100"
+                    style={{ color: hikmahHex }}
                   >
-                    {currentBurhan.scholar}
+                    {burhanCompleted && <CheckCircleIcon size={11} />}
+                    <span>{burhanCompleted ? 'Reflected' : 'Read'}</span>
+                    <ChevronRightIcon
+                      size={11}
+                      className="group-hover:translate-x-0.5 transition-transform"
+                    />
                   </span>
                 </div>
 
-                <span
-                  className="flex items-center gap-1 font-serif-eng text-[8.5px] uppercase tracking-[0.14em] shrink-0 opacity-90 group-hover:opacity-100"
-                  style={{ color: hikmahHex }}
-                >
-                  {burhanCompleted && <CheckCircleIcon size={12} />}
-                  <span>{burhanCompleted ? 'Reflected' : 'Read'}</span>
-                  <ChevronRightIcon
-                    size={12}
-                    className="group-hover:translate-x-0.5 transition-transform"
-                  />
-                </span>
-              </div>
+                <div className="min-w-0">
+                  <h3
+                    className={`font-serif-eng text-[13px] sm:text-[14px] font-medium leading-snug line-clamp-2 ${tTextMain}`}
+                  >
+                    {currentBurhan.title}
+                  </h3>
+                  <p
+                    className="font-serif-eng text-[8.5px] sm:text-[9px] uppercase tracking-[0.11em] truncate mt-1 opacity-85"
+                    style={{ color: hikmahHex }}
+                  >
+                    {currentBurhan.scholar}
+                  </p>
+                </div>
 
-              <h3
-                className={`font-serif-eng text-[14px] font-medium tracking-wide truncate ${tTextMain}`}
+                {(prefsCtx?.isSimpleMode
+                  ? currentBurhan.simpleQuestion || currentBurhan.question
+                  : currentBurhan.question) && (
+                  <p
+                    className={`hidden sm:line-clamp-2 font-serif-eng italic text-[10.5px] leading-snug opacity-72 ${tTextSub}`}
+                  >
+                    {prefsCtx?.isSimpleMode
+                      ? currentBurhan.simpleQuestion || currentBurhan.question
+                      : currentBurhan.question}
+                  </p>
+                )}
+              </button>
+            )}
+
+            {currentMiracle && (
+              <button
+                type="button"
+                data-testid="miracles-card"
+                onClick={(e) => {
+                  hapticNavigate();
+                  onOpenMiracles?.(e);
+                }}
+                className={`group relative w-full text-left px-3 py-2.5 sm:px-3.5 sm:py-3 rounded-[20px] overflow-hidden border transition-all duration-500 ease-out cursor-pointer active:scale-[0.985] flex flex-col justify-between gap-1.5 ${
+                  isLightMode
+                    ? currentMiracleExplored
+                      ? 'bg-[#8e6623]/12 border-[#8e6623]/35 island-light'
+                      : 'bg-white/62 hover:bg-white/75 border-white/80 island-light'
+                    : currentMiracleExplored
+                      ? 'bg-[#e4be70]/12 border-[#e4be70]/35 island-dark'
+                      : 'bg-[#0b0e16]/68 hover:bg-[#0b0e16]/80 border-white/[0.09] island-dark'
+                }`}
               >
-                {currentBurhan.title}
-              </h3>
+                <div className="flex items-center justify-between gap-1.5 w-full">
+                  <span
+                    className="font-calligraphy text-[13px] leading-none shrink-0"
+                    style={{ color: miracleHex }}
+                    dir="rtl"
+                  >
+                    إِعْجَاز
+                  </span>
+                  <span
+                    className="flex items-center gap-0.5 font-serif-eng text-[8px] sm:text-[8.5px] uppercase tracking-[0.12em] shrink-0 opacity-90 group-hover:opacity-100"
+                    style={{ color: miracleHex }}
+                  >
+                    {currentMiracleExplored && <CheckCircleIcon size={11} />}
+                    <span>{currentMiracleExplored ? 'Explored' : 'Miracles'}</span>
+                    <ChevronRightIcon
+                      size={11}
+                      className="group-hover:translate-x-0.5 transition-transform"
+                    />
+                  </span>
+                </div>
 
-              {(prefsCtx?.isSimpleMode ? currentBurhan.simpleQuestion || currentBurhan.question : currentBurhan.question) && (
-                <p className={`font-serif-eng italic text-[11px] leading-snug line-clamp-2 opacity-72 ${tTextSub}`}>
-                  {prefsCtx?.isSimpleMode ? currentBurhan.simpleQuestion || currentBurhan.question : currentBurhan.question}
+                <div className="min-w-0">
+                  <h3
+                    className={`font-serif-eng text-[13px] sm:text-[14px] font-medium leading-snug line-clamp-2 ${tTextMain}`}
+                  >
+                    {currentMiracle.title}
+                  </h3>
+                  <p
+                    className="font-serif-eng text-[8.5px] sm:text-[9px] uppercase tracking-[0.11em] truncate mt-1 opacity-85"
+                    style={{ color: miracleHex }}
+                  >
+                    {currentMiracle.categoryLabel} · {quranMiraclesData.length} Signs
+                  </p>
+                </div>
+
+                <p
+                  className={`hidden sm:line-clamp-2 font-serif-eng italic text-[10.5px] leading-snug opacity-72 ${tTextSub}`}
+                >
+                  {currentMiracle.surahRef} — {currentMiracle.keyFact}
                 </p>
-              )}
-            </button>
-          )}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

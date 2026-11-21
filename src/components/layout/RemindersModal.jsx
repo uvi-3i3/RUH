@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { BellIcon, CheckCircleIcon, ChevronDownIcon, PlusIcon, SparklesIcon, TrashIcon } from '../icons/Icons';
 import { PRAYERS } from '../../data/constants';
 import { NOTIFICATION_LEAD_OPTIONS, PRAYER_REMINDER_MESSAGES } from '../../utils/notificationLogic';
+import { ADHAN_CHIME_PROFILES, normalizeAdhanChimeProfile } from '../../utils/adhanChimeLogic';
 import { useOptionalPreferences, useOptionalSanctuary } from '../../context/sanctuaryStore';
 import {
   hapticDestructive,
@@ -41,6 +42,7 @@ export const RemindersModal = ({
       notifications?.refreshPermission?.();
     } else {
       setStatusNotice('');
+      notifications?.stopAdhanChimePreview?.();
     }
   }, [isOpen]);
 
@@ -52,7 +54,12 @@ export const RemindersModal = ({
 
   const permission = notifications?.permission || 'default';
   const leadMinutes = devotionData.notificationLeadMinutes || 0;
-  const chimeEnabled = devotionData.notificationChime !== false;
+  const chimeProfile = normalizeAdhanChimeProfile(
+    devotionData.notificationChimeProfile,
+    devotionData.notificationChime !== false
+  );
+  const playingChimeProfileId = notifications?.playingChimeProfileId || null;
+  const autoSyncSolar = devotionData.autoSyncSolarReminders !== false;
   const enabledPrayerCount = PRAYERS.filter((p) => devotionData.prayers?.[p.id]?.enabled).length;
   const allPrayersEnabled = enabledPrayerCount === PRAYERS.length;
 
@@ -117,6 +124,7 @@ export const RemindersModal = ({
   };
 
   const handlePrayerTimeChange = async (prayerId, newTime, currentState) => {
+    devotionData.setAutoSyncSolarReminders?.(false);
     devotionData.updatePrayerTime(prayerId, newTime);
     const notifId = notifications?.prayerIdMap?.[prayerId];
     if (currentState && notifId) {
@@ -130,6 +138,28 @@ export const RemindersModal = ({
         leadMinutes
       );
       showFeedback(prayerId, 'saved');
+    }
+  };
+
+  const handleSelectChimeProfile = (profileId) => {
+    hapticDetent();
+    const isAlreadyPlayingThis = playingChimeProfileId === profileId;
+    devotionData.setNotificationChimeProfile?.(profileId);
+    if (profileId === 'silent' || isAlreadyPlayingThis) {
+      notifications?.stopAdhanChimePreview?.();
+    } else {
+      notifications?.previewAdhanChime?.(profileId);
+    }
+  };
+
+  const handleToggleChimePreview = () => {
+    if (chimeProfile === 'silent') return;
+    if (playingChimeProfileId) {
+      hapticDismiss();
+      notifications?.stopAdhanChimePreview?.();
+    } else {
+      hapticTapLight();
+      notifications?.previewAdhanChime?.(chimeProfile);
     }
   };
 
@@ -372,7 +402,7 @@ export const RemindersModal = ({
                 </div>
               </div>
 
-              {/* Lead Timing & Soft Chime */}
+              {/* Lead Timing */}
               <div
                 className={`pt-3 border-t flex flex-col gap-2.5 ${
                   isLightMode ? 'border-black/[0.06]' : 'border-white/[0.06]'
@@ -382,27 +412,9 @@ export const RemindersModal = ({
                   <span className={`font-serif-eng text-[10px] uppercase tracking-[0.16em] opacity-75 ${tTextSub}`}>
                     Lead Timing
                   </span>
-
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={chimeEnabled}
-                    onClick={() => {
-                      hapticToggle(!chimeEnabled);
-                      devotionData.toggleNotificationChime?.();
-                    }}
-                    className={`min-h-[28px] px-2.5 rounded-lg border font-serif-eng text-[10px] uppercase tracking-[0.12em] cursor-pointer transition-colors ${
-                      chimeEnabled
-                        ? isLightMode
-                          ? 'border-[#9c7533]/40 bg-[#9c7533]/10 text-[#7c5a1e]'
-                          : 'border-[#d2a24b]/40 bg-[#d2a24b]/12 text-[#e5c17b]'
-                        : isLightMode
-                          ? 'border-black/10 text-[#4a453d]/70'
-                          : 'border-white/10 text-[#e4dac8]/60'
-                    }`}
-                  >
-                    Chime: {chimeEnabled ? 'On' : 'Quiet'}
-                  </button>
+                  <span className={`font-serif-eng text-[10px] opacity-65 ${tTextSub}`}>
+                    {leadMinutes === 0 ? 'Chimes right at prayer time' : `Soft whisper ${leadMinutes}m early`}
+                  </span>
                 </div>
 
                 <div className="grid grid-cols-4 gap-1.5 w-full">
@@ -412,6 +424,7 @@ export const RemindersModal = ({
                       <button
                         key={mins}
                         type="button"
+                        data-testid={`lead-option-${mins}`}
                         aria-pressed={active}
                         onClick={() => handleLeadChange(mins)}
                         className={`min-h-[32px] px-1.5 rounded-lg border font-serif-eng text-[10px] tracking-[0.04em] whitespace-nowrap cursor-pointer transition-colors ${
@@ -437,24 +450,129 @@ export const RemindersModal = ({
                   })}
                 </div>
               </div>
+
+              {/* Gentle Adhan Chime Selector */}
+              <div
+                data-testid="adhan-chime-picker"
+                className={`pt-3 border-t flex flex-col gap-2.5 ${
+                  isLightMode ? 'border-black/[0.06]' : 'border-white/[0.06]'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`font-serif-eng text-[10px] uppercase tracking-[0.16em] opacity-75 ${tTextSub}`}>
+                    Gentle Adhan Chime
+                  </span>
+                  {chimeProfile !== 'silent' && (
+                    <button
+                      type="button"
+                      data-testid="adhan-chime-preview-btn"
+                      onClick={handleToggleChimePreview}
+                      className="min-h-[26px] px-2.5 rounded-lg border font-serif-eng text-[9.5px] uppercase tracking-[0.14em] cursor-pointer transition-colors"
+                      style={{
+                        borderColor: isLightMode
+                          ? 'rgba(156,117,51,0.35)'
+                          : 'rgba(210,162,75,0.38)',
+                        backgroundColor: playingChimeProfileId
+                          ? isLightMode
+                            ? 'rgba(156,117,51,0.14)'
+                            : 'rgba(210,162,75,0.2)'
+                          : 'transparent',
+                        color: accentHex,
+                      }}
+                    >
+                      {playingChimeProfileId ? 'Stop Chime' : 'Listen'}
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 w-full">
+                  {ADHAN_CHIME_PROFILES.map((profile) => {
+                    const isSelected = chimeProfile === profile.id;
+                    const isPlaying = playingChimeProfileId === profile.id;
+                    return (
+                      <button
+                        key={profile.id}
+                        type="button"
+                        data-testid={`chime-profile-${profile.id}`}
+                        aria-pressed={isSelected}
+                        onClick={() => handleSelectChimeProfile(profile.id)}
+                        className={`text-left px-3 py-2.5 rounded-2xl border transition-all cursor-pointer flex flex-col gap-0.5 ${
+                          isSelected
+                            ? ''
+                            : isLightMode
+                              ? 'border-black/10 hover:bg-black/[0.03]'
+                              : 'border-white/10 hover:bg-white/[0.04]'
+                        }`}
+                        style={{
+                          backgroundColor: isSelected
+                            ? isLightMode
+                              ? 'rgba(156,117,51,0.11)'
+                              : 'rgba(210,162,75,0.14)'
+                            : undefined,
+                          borderColor: isSelected ? accentHex : undefined,
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span
+                            className={`font-serif-eng text-[12.5px] font-medium leading-tight ${
+                              isSelected ? '' : tTextMain
+                            }`}
+                            style={{ color: isSelected ? accentHex : undefined }}
+                          >
+                            {profile.label}
+                          </span>
+                          <span
+                            className={`font-calligraphy text-[12.5px] leading-none shrink-0 ${
+                              isSelected || isPlaying ? 'opacity-95' : `opacity-75 ${tTextSub}`
+                            }`}
+                            style={{ color: isSelected || isPlaying ? accentHex : undefined }}
+                            dir="rtl"
+                          >
+                            {profile.arabic}
+                          </span>
+                        </div>
+                        <span className={`font-serif-eng text-[10.5px] leading-snug opacity-70 ${tTextSub}`}>
+                          {isPlaying ? 'Playing softly…' : profile.description}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
 
           {/* 02. THE 5 PRAYERS */}
           <div className="flex flex-col gap-2.5">
             <div className="flex items-center justify-between px-1 gap-2 flex-wrap">
-              <span className={`font-serif-eng uppercase tracking-[0.18em] text-[11px] opacity-70 whitespace-nowrap ${tTextSub}`}>
-                02. Five Prayers
-              </span>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className={`font-serif-eng uppercase tracking-[0.18em] text-[11px] opacity-70 whitespace-nowrap ${tTextSub}`}>
+                  02. Five Prayers
+                </span>
+                {prayerTimes?.hasLocation && autoSyncSolar && (
+                  <span
+                    data-testid="reminders-solar-sync-badge"
+                    className="font-serif-eng text-[9.5px] uppercase tracking-[0.12em] whitespace-nowrap opacity-85"
+                    style={{ color: accentHex }}
+                  >
+                    · Live Solar ({prayerTimes.cityLabel})
+                  </span>
+                )}
+              </div>
 
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
+                  data-testid="reminders-sync-solar-btn"
                   onClick={handleSyncSolar}
                   className="font-serif-eng text-[10px] uppercase tracking-[0.12em] whitespace-nowrap cursor-pointer hover:opacity-100 opacity-90 transition-opacity"
                   style={{ color: accentHex }}
                 >
-                  {prayerTimes?.hasLocation ? 'Sync Solar' : 'Set City'}
+                  {prayerTimes?.hasLocation
+                    ? autoSyncSolar
+                      ? 'Synced Solar'
+                      : 'Re-Sync Solar'
+                    : 'Set City'}
                 </button>
                 <span className={`opacity-30 text-xs ${tTextSub}`} aria-hidden="true">
                   ·

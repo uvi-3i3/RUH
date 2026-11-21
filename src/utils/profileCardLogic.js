@@ -163,11 +163,68 @@ export function computeGyroTilt(beta, gamma, maxDeg = 5, maxParallaxPx = 3) {
 }
 
 /**
- * Evaluates whether a horizontal pointer drag across the card qualifies as a tactile flip gesture.
+ * Computes live 1:1 physical Y-rotation degrees while the user drags horizontally across the card.
+ * Dragging right yields positive degrees (turns left-to-right); dragging left yields negative degrees.
  */
-export function evaluateCardSwipeFlip(dx, dy, thresholdPx = 58) {
+export function computeCardSwipeDragAngle(dx, cardWidth = 360, maxDragDeg = 148) {
+  if (!Number.isFinite(dx) || !Number.isFinite(cardWidth) || cardWidth <= 0) return 0;
+  const effectiveSpan = Math.max(180, cardWidth * 0.72);
+  const ratio = dx / effectiveSpan;
+  const rawDeg = ratio * 180;
+  return Number(Math.max(-maxDragDeg, Math.min(maxDragDeg, rawDeg)).toFixed(2));
+}
+
+/**
+ * Evaluates whether a horizontal pointer drag or quick flick across the card qualifies as a flip.
+ * Supports both legacy numeric thresholdPx and an options object with velocity / cardWidth awareness.
+ */
+export function evaluateCardSwipeFlip(dx, dy, thresholdOrOptions = 42) {
   if (!Number.isFinite(dx) || !Number.isFinite(dy)) return null;
-  if (Math.abs(dx) < thresholdPx) return null;
-  if (Math.abs(dx) <= Math.abs(dy) * 1.45) return null;
+
+  const opts =
+    typeof thresholdOrOptions === 'number'
+      ? { thresholdPx: thresholdOrOptions }
+      : thresholdOrOptions || {};
+
+  const absDx = Math.abs(dx);
+  const absDy = Math.abs(dy);
+  const cardWidth = Number.isFinite(opts.cardWidth) && opts.cardWidth > 0 ? opts.cardWidth : 360;
+  const durationMs =
+    Number.isFinite(opts.durationMs) && opts.durationMs > 0 ? opts.durationMs : 280;
+  const wasSwipeLocked = Boolean(opts.wasSwipeLocked);
+
+  const baseThreshold = Number.isFinite(opts.thresholdPx)
+    ? opts.thresholdPx
+    : Math.max(28, Math.min(46, Math.round(cardWidth * 0.11)));
+
+  // Horizontal intent must clearly beat vertical scroll drift (slightly more forgiving once horizontally locked)
+  const driftRatio = wasSwipeLocked ? 0.85 : 1.15;
+  if (absDx <= absDy * driftRatio) return null;
+
+  const velocityPxPerMs = absDx / durationMs;
+  const isFastFlick = absDx >= 20 && velocityPxPerMs >= 0.25;
+  const isDecisiveDrag = absDx >= baseThreshold;
+
+  if (!isFastFlick && !isDecisiveDrag) return null;
   return dx < 0 ? 'left' : 'right';
 }
+
+/**
+ * Advances continuous 180-degree flip turns in the exact direction of a swipe
+ * ('right' -> +1 turn / +180deg, 'left' -> -1 turn / -180deg) so the card never rewinds awkwardly.
+ */
+export function resolveNextFlipTurns(currentTurns = 0, direction = 'right') {
+  const safeTurns = Number.isFinite(Number(currentTurns)) ? Math.trunc(Number(currentTurns)) : 0;
+  if (direction === 'left') return safeTurns - 1;
+  if (direction === 'right') return safeTurns + 1;
+  return safeTurns;
+}
+
+/**
+ * Returns true when the continuous turn count currently displays the back face of the card.
+ */
+export function isCardBackVisible(flipTurns = 0) {
+  const safeTurns = Number.isFinite(Number(flipTurns)) ? Math.trunc(Number(flipTurns)) : 0;
+  return Math.abs(safeTurns) % 2 === 1;
+}
+

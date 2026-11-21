@@ -5,7 +5,12 @@
 
 export const TACTILE_AUDIO_CUES = {
   CARD_FLIP: 'card-flip',
-  CARD_RIPPLE: 'card-ripple',
+  PRAYER_TOGGLE: 'prayer-toggle',
+  PRAYER_TASK_TICKOFF: 'prayer-task-tickoff',
+  BADGE_BRONZE: 'badge-bronze',
+  BADGE_SILVER: 'badge-silver',
+  BADGE_GOLD: 'badge-gold',
+  BADGE_PLATINUM: 'badge-platinum',
 };
 
 export const MATERIAL_AUDIO_PROFILES = {
@@ -31,19 +36,27 @@ export const MATERIAL_AUDIO_PROFILES = {
 
 const CUE_COOLDOWN_MS = {
   [TACTILE_AUDIO_CUES.CARD_FLIP]: 140,
-  [TACTILE_AUDIO_CUES.CARD_RIPPLE]: 65,
+  [TACTILE_AUDIO_CUES.PRAYER_TOGGLE]: 45,
+  [TACTILE_AUDIO_CUES.PRAYER_TASK_TICKOFF]: 70,
+  [TACTILE_AUDIO_CUES.BADGE_BRONZE]: 220,
+  [TACTILE_AUDIO_CUES.BADGE_SILVER]: 220,
+  [TACTILE_AUDIO_CUES.BADGE_GOLD]: 220,
+  [TACTILE_AUDIO_CUES.BADGE_PLATINUM]: 220,
 };
-
-function clamp(val, min, max) {
-  if (typeof val !== 'number' || !Number.isFinite(val)) return min;
-  return Math.max(min, Math.min(max, val));
-}
 
 export function resolveMaterialAudioProfile(finish = 'obsidian') {
   if (finish && MATERIAL_AUDIO_PROFILES[finish]) {
     return MATERIAL_AUDIO_PROFILES[finish];
   }
   return MATERIAL_AUDIO_PROFILES.obsidian;
+}
+
+export function resolveBadgeAudioCue(tier = 'bronze') {
+  const normalized = String(tier || '').trim().toLowerCase();
+  if (normalized === 'platinum') return TACTILE_AUDIO_CUES.BADGE_PLATINUM;
+  if (normalized === 'gold') return TACTILE_AUDIO_CUES.BADGE_GOLD;
+  if (normalized === 'silver') return TACTILE_AUDIO_CUES.BADGE_SILVER;
+  return TACTILE_AUDIO_CUES.BADGE_BRONZE;
 }
 
 export function shouldThrottleAudioCue(cueType, lastFiredMs, nowMs) {
@@ -105,52 +118,6 @@ export function computeCardFlipAudioPlan({ toFlipped = true, finish = 'obsidian'
       durationSec: Number((0.14 * damp).toFixed(3)),
       peakGain: 0.017,
       overtoneGain: 0.0055,
-    },
-  };
-}
-
-/**
- * Compute spatial Web Audio synthesis parameters for the luminous press ripple on the card.
- * Maps pointer position (xPct, yPct) to subtle archival pentatonic resonance and gentle stereo pan.
- */
-export function computeCardRippleAudioPlan({ xPct = 50, yPct = 50, finish = 'obsidian' } = {}) {
-  const profile = resolveMaterialAudioProfile(finish);
-  const nx = clamp(typeof xPct === 'number' && Number.isFinite(xPct) ? xPct : 50, 0, 100) / 100;
-  const ny = clamp(typeof yPct === 'number' && Number.isFinite(yPct) ? yPct : 50, 0, 100) / 100;
-
-  // Higher taps and rightward taps gently brighten the glass/water droplet resonance
-  const spatialScalar = nx * 0.45 + (1 - ny) * 0.55;
-  const rawBaseHz = 415 + spatialScalar * 125;
-  const baseFreq = Math.round(rawBaseHz * profile.pitchMultiplier * 100) / 100;
-
-  // Subtle stereo positioning (-0.34 left to +0.34 right)
-  const pan = Number(((nx - 0.5) * 0.68).toFixed(3));
-
-  return {
-    cue: TACTILE_AUDIO_CUES.CARD_RIPPLE,
-    finish: profile.id,
-    pan,
-    baseFreq,
-    durationSec: Number((0.26 * profile.damping).toFixed(3)),
-    body: {
-      startHz: Math.round(baseFreq * 0.94 * 100) / 100,
-      endHz: Math.round(baseFreq * 1.05 * 100) / 100,
-      bendSec: 0.055,
-      attackSec: 0.006,
-      durationSec: Number((0.19 * profile.damping).toFixed(3)),
-      peakGain: 0.024,
-    },
-    shimmer: {
-      delaySec: 0.012,
-      freqHz: Math.round(baseFreq * 2.0 * 100) / 100,
-      lowpassHz: Math.round(2550 * profile.filterScale),
-      durationSec: Number((0.23 * profile.damping).toFixed(3)),
-      peakGain: 0.0075,
-    },
-    touchTap: {
-      filterHz: Math.round(920 * profile.filterScale),
-      durationSec: 0.02,
-      peakGain: 0.012,
     },
   };
 }

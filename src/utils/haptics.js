@@ -3,12 +3,14 @@ import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import {
   HAPTIC_TYPES,
   getHapticSpec,
+  resolveBadgeUnlockHapticType,
   resolveToggleHapticType,
   shouldThrottleHaptic,
 } from './hapticLogic';
 
 let hapticsEnabled = true;
 const lastFiredByType = new Map();
+const pendingStepTimers = new Set();
 
 function isNative() {
   try {
@@ -16,6 +18,13 @@ function isNative() {
   } catch {
     return false;
   }
+}
+
+function clearPendingSequenceTimers() {
+  for (const timerId of pendingStepTimers) {
+    clearTimeout(timerId);
+  }
+  pendingStepTimers.clear();
 }
 
 function webVibrate(pattern) {
@@ -30,8 +39,16 @@ function webVibrate(pattern) {
 
 function runNativeStep(step) {
   try {
-    if (step.kind === 'selection') {
+    if (step.kind === 'selectionStart') {
+      Haptics.selectionStart().catch(() => {});
+      return;
+    }
+    if (step.kind === 'selection' || step.kind === 'selectionChanged') {
       Haptics.selectionChanged().catch(() => {});
+      return;
+    }
+    if (step.kind === 'selectionEnd') {
+      Haptics.selectionEnd().catch(() => {});
       return;
     }
     if (step.kind === 'impact') {
@@ -42,33 +59,39 @@ function runNativeStep(step) {
     if (step.kind === 'notification') {
       const type = NotificationType[step.notificationType] || NotificationType.Success;
       Haptics.notification({ type }).catch(() => {});
+      return;
+    }
+    if (step.kind === 'vibrate') {
+      const duration = Math.max(15, Math.min(300, Number(step.durationMs) || 40));
+      Haptics.vibrate({ duration }).catch(() => {});
     }
   } catch {
     // Ignore on environments where Haptics plugin is unavailable
   }
 }
 
-function dispatchNativeSequence(steps) {
+function dispatchNativeSequence(steps, { force = false } = {}) {
   if (!Array.isArray(steps) || steps.length === 0) return;
   for (const step of steps) {
     if (!step.delayMs || step.delayMs <= 0) {
       runNativeStep(step);
     } else {
-      setTimeout(() => {
-        if (hapticsEnabled) {
+      const timerId = setTimeout(() => {
+        pendingStepTimers.delete(timerId);
+        if (hapticsEnabled || force) {
           runNativeStep(step);
         }
       }, step.delayMs);
+      pendingStepTimers.add(timerId);
     }
   }
 }
 
 export function setHapticsEnabled(enabled) {
   hapticsEnabled = enabled !== false;
-}
-
-export function getHapticsEnabled() {
-  return hapticsEnabled;
+  if (!hapticsEnabled) {
+    clearPendingSequenceTimers();
+  }
 }
 
 /**
@@ -94,7 +117,9 @@ export function triggerHaptic(type, options = {}) {
           detail: {
             type: spec.type,
             category: spec.category,
+            label: spec.label,
             nativeSteps: spec.nativeSteps,
+            webPattern: spec.webPattern,
           },
         })
       );
@@ -104,7 +129,7 @@ export function triggerHaptic(type, options = {}) {
   }
 
   if (isNative()) {
-    dispatchNativeSequence(spec.nativeSteps);
+    dispatchNativeSequence(spec.nativeSteps, { force });
     return true;
   }
 
@@ -117,13 +142,18 @@ export function hapticDetent() {
   return triggerHaptic(HAPTIC_TYPES.DETENT);
 }
 
-/** Feather-light glass tap: bead clicks, partial habit/prayer logs, share/copy, context inspect. */
+/** Feather-light glass tap: bead clicks, partial habit steps, share/copy, context inspect. */
 export function hapticTapLight() {
   return triggerHaptic(HAPTIC_TYPES.TAP);
 }
 
-/** Grounded spatial transition pulse: switching views, opening sheets/modals, Maqamat stations. */
+/** Smooth threshold glide: switching views, opening sheets/worlds, Maqamat stations, card flips. */
 export function hapticNavigate() {
+  return triggerHaptic(HAPTIC_TYPES.NAVIGATE);
+}
+
+/** Semantic alias for navigation transitions. */
+export function hapticNavigationTransition() {
   return triggerHaptic(HAPTIC_TYPES.NAVIGATE);
 }
 
@@ -132,9 +162,9 @@ export function hapticDismiss() {
   return triggerHaptic(HAPTIC_TYPES.DISMISS);
 }
 
-/** Distinct tactile detent for Qibla alignment lock and medium actions. */
+/** Distinct medium physical detent for Qibla alignment lock and focused triggers. */
 export function hapticTapMedium() {
-  return triggerHaptic(HAPTIC_TYPES.NAVIGATE);
+  return triggerHaptic(HAPTIC_TYPES.MEDIUM_TAP);
 }
 
 /** Deep physical thud: Qada long-press, Misbaha hold-launch, +1 Year bulk action. */
@@ -152,14 +182,24 @@ export function hapticUndo() {
   return triggerHaptic(HAPTIC_TYPES.UNDO);
 }
 
-/** Warm completion pulse: hitting a habit/dhikr goal, saving reflections, Qada made up. */
+/** Crisp check-off snap + warm settle: completing a prayer, habit, dhikr target, Qada, or daily intention. */
+export function hapticTaskComplete(options = {}) {
+  return triggerHaptic(HAPTIC_TYPES.TASK_COMPLETE, options);
+}
+
+/** Warm general confirmation pulse: saving reflections, setting city, exporting backup. */
 export function hapticSuccess() {
   return triggerHaptic(HAPTIC_TYPES.SUCCESS);
 }
 
-/** Choreographed ceremonial cadence: completing 5/5 prayers, badge unlocks, Kashf unveiling. */
+/** Choreographed milestone cadence: completing 5/5 prayers, all daily intentions, Kashf unveiling. */
 export function hapticCelebrate() {
   return triggerHaptic(HAPTIC_TYPES.CELEBRATE);
+}
+
+/** Ceremonial ascending medallion crescendo scaled by badge tier (silver / gold / platinum). */
+export function hapticBadgeUnlock(tier = 'silver', options = {}) {
+  return triggerHaptic(resolveBadgeUnlockHapticType(tier), options);
 }
 
 /** Caution double-pulse: arming destructive confirmations, Mute All, validation errors. */

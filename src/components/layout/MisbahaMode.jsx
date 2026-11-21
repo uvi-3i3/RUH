@@ -14,6 +14,7 @@ import {
   hapticDismiss,
   hapticNavigate,
   hapticTapLight,
+  hapticTaskComplete,
   hapticToggle,
   hapticUndo,
 } from '../../utils/haptics';
@@ -127,8 +128,12 @@ export const MisbahaMode = ({
     const reachedTarget = newCount >= target;
     playBeadTick(reachedTarget);
 
-    if (reachedTarget) hapticCelebrate();
-    else hapticTapLight();
+    if (reachedTarget) {
+      if (activeIndex >= tasks.length - 1) hapticCelebrate();
+      else hapticTaskComplete();
+    } else {
+      hapticTapLight();
+    }
 
     const id = rippleId.current++;
     setRipples((prev) => [...prev.slice(-3), id]);

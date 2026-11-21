@@ -16,6 +16,10 @@ import {
 } from '../utils/habitLogic';
 import { DEFAULT_HABITS } from '../data/duasData';
 import { hydrateMissingFromPreferences, mirroredRemove, mirroredSet } from '../utils/nativeStorage';
+import {
+  DEFAULT_ADHAN_CHIME_PROFILE,
+  normalizeAdhanChimeProfile,
+} from '../utils/adhanChimeLogic';
 
 const STORAGE_KEY = 'ruh_devotion_state';
 
@@ -47,6 +51,8 @@ const getDefaultSettings = () => ({
   isAmbientEnabled: false,
   notificationLeadMinutes: 0,
   notificationChime: true,
+  notificationChimeProfile: DEFAULT_ADHAN_CHIME_PROFILE,
+  autoSyncSolarReminders: true,
 });
 
 const getInitialState = () => {
@@ -183,6 +189,14 @@ const getInitialState = () => {
         }
         if (typeof parsed.settings.notificationChime !== 'boolean') {
           parsed.settings.notificationChime = true;
+        }
+        parsed.settings.notificationChimeProfile = normalizeAdhanChimeProfile(
+          parsed.settings.notificationChimeProfile,
+          parsed.settings.notificationChime
+        );
+        parsed.settings.notificationChime = parsed.settings.notificationChimeProfile !== 'silent';
+        if (typeof parsed.settings.autoSyncSolarReminders !== 'boolean') {
+          parsed.settings.autoSyncSolarReminders = true;
         }
       }
 
@@ -390,9 +404,15 @@ export function useDevotionData() {
       const completedList = baseDaily.completed || [];
       const statuses = { ...(baseDaily.statuses || {}) };
       const currentDayEntry = prev.history[dateStr] || { prayers: 0, verses: 0 };
+      const baseQada = prev.qada || {
+        prayers: { fajr: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0 },
+        fasts: 0,
+        completedTotal: 0,
+      };
 
       if (completedList.includes(prayerId)) {
-        // Undo logged prayer accurately
+        // Undo logged prayer accurately (and reverse Qada increment if it was logged as Qada)
+        const prevStatus = statuses[prayerId];
         const nextCompleted = completedList.filter((id) => id !== prayerId);
         delete statuses[prayerId];
         const nextDayPrayers = Math.max(0, (currentDayEntry.prayers || 0) - 1);
@@ -406,10 +426,22 @@ export function useDevotionData() {
         } else {
           nextHistory[dateStr] = { ...currentDayEntry, prayers: nextDayPrayers };
         }
+        const nextQada =
+          prevStatus === 'qada' && baseQada.prayers && prayerId in baseQada.prayers
+            ? {
+                ...baseQada,
+                prayers: {
+                  ...baseQada.prayers,
+                  [prayerId]: Math.max(0, (baseQada.prayers[prayerId] || 0) - 1),
+                },
+              }
+            : baseQada;
+
         return {
           ...prev,
           totalPrayers: Math.max(0, prev.totalPrayers - 1),
           history: nextHistory,
+          qada: nextQada,
           dailyPrayers: {
             ...baseDaily,
             completed: nextCompleted,
@@ -420,6 +452,17 @@ export function useDevotionData() {
 
       const nextCompleted = [...completedList, prayerId];
       statuses[prayerId] = preferredStatus;
+
+      const nextQada =
+        preferredStatus === 'qada' && baseQada.prayers && prayerId in baseQada.prayers
+          ? {
+              ...baseQada,
+              prayers: {
+                ...baseQada.prayers,
+                [prayerId]: (baseQada.prayers[prayerId] || 0) + 1,
+              },
+            }
+          : baseQada;
 
       let nextMaqamat = prev.maqamat;
       let nextRewardedFlag = baseDaily.allFiveRewarded;
@@ -439,6 +482,7 @@ export function useDevotionData() {
           ...prev.history,
           [dateStr]: { ...currentDayEntry, prayers: (currentDayEntry.prayers || 0) + 1 },
         },
+        qada: nextQada,
         dailyPrayers: {
           date: dateStr,
           completed: nextCompleted,
@@ -1026,11 +1070,51 @@ export function useDevotionData() {
   }, []);
 
   const toggleNotificationChime = useCallback(() => {
+    setData((prev) => {
+      const currentProfile = normalizeAdhanChimeProfile(
+        prev.settings?.notificationChimeProfile,
+        prev.settings?.notificationChime !== false
+      );
+      const nextProfile = currentProfile === 'silent' ? DEFAULT_ADHAN_CHIME_PROFILE : 'silent';
+      return {
+        ...prev,
+        settings: {
+          ...prev.settings,
+          notificationChime: nextProfile !== 'silent',
+          notificationChimeProfile: nextProfile,
+        },
+      };
+    });
+  }, []);
+
+  const setNotificationChimeProfile = useCallback((profileId) => {
+    const safeProfile = normalizeAdhanChimeProfile(profileId, true);
     setData((prev) => ({
       ...prev,
       settings: {
         ...prev.settings,
-        notificationChime: prev.settings?.notificationChime === false,
+        notificationChimeProfile: safeProfile,
+        notificationChime: safeProfile !== 'silent',
+      },
+    }));
+  }, []);
+
+  const setAutoSyncSolarReminders = useCallback((enabled) => {
+    setData((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        autoSyncSolarReminders: Boolean(enabled),
+      },
+    }));
+  }, []);
+
+  const toggleAutoSyncSolarReminders = useCallback(() => {
+    setData((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        autoSyncSolarReminders: prev.settings?.autoSyncSolarReminders === false,
       },
     }));
   }, []);
@@ -1245,6 +1329,11 @@ export function useDevotionData() {
       isAmbientEnabled: data.settings?.isAmbientEnabled || false,
       notificationLeadMinutes: data.settings?.notificationLeadMinutes || 0,
       notificationChime: data.settings?.notificationChime !== false,
+      notificationChimeProfile: normalizeAdhanChimeProfile(
+        data.settings?.notificationChimeProfile,
+        data.settings?.notificationChime !== false
+      ),
+      autoSyncSolarReminders: data.settings?.autoSyncSolarReminders !== false,
       prayers: data.settings?.prayers || {},
       customReminders: data.settings?.customReminders || [],
       profile: data.profile,
@@ -1304,6 +1393,9 @@ export function useDevotionData() {
       updatePrayerTime,
       setNotificationLeadMinutes,
       toggleNotificationChime,
+      setNotificationChimeProfile,
+      setAutoSyncSolarReminders,
+      toggleAutoSyncSolarReminders,
       setAllPrayerRemindersEnabled,
       syncPrayerReminderTimes,
       addCustomReminder,
@@ -1358,6 +1450,9 @@ export function useDevotionData() {
       updatePrayerTime,
       setNotificationLeadMinutes,
       toggleNotificationChime,
+      setNotificationChimeProfile,
+      setAutoSyncSolarReminders,
+      toggleAutoSyncSolarReminders,
       setAllPrayerRemindersEnabled,
       syncPrayerReminderTimes,
       addCustomReminder,

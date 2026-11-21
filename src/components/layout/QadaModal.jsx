@@ -6,7 +6,7 @@ import {
   hapticDetent,
   hapticDismiss,
   hapticHeavy,
-  hapticSuccess,
+  hapticTaskComplete,
   hapticToggle,
 } from '../../utils/haptics';
 
@@ -260,7 +260,7 @@ export const QadaModal = ({
                       type="button"
                       disabled={count <= 0}
                       onClick={() => {
-                        hapticSuccess();
+                        hapticTaskComplete();
                         onCompleteOne?.(row.id);
                       }}
                       className={`min-h-[40px] px-3.5 rounded-xl font-serif-eng text-[10px] uppercase tracking-[0.16em] flex items-center gap-1.5 transition-all shrink-0 ${

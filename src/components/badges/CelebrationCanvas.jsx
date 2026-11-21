@@ -3,17 +3,20 @@ import { getBadgeTierStyle } from '../../utils/badgeLogic';
 
 /**
  * 60fps celebratory Canvas particle, crescent/diamond confetti & metallic foil engine.
- * Features dedicated high-contrast Night & Daylight metallic foil palettes and
- * staggered dual-wave firework bursts on initial reveal, Replay, or medallion tap.
+ * Spans the full viewport in boxless reward reveals and erupts cleanly from the
+ * floating medallion's center coordinates.
  */
 export const CelebrationCanvas = ({
   tier = 'gold',
   isLightMode = false,
   burstKey = 1,
+  active = true,
+  originYRatio = 0.4,
 }) => {
   const canvasRef = useRef(null);
   const particlesRef = useRef([]);
   const paletteRef = useRef(null);
+  const sizeRef = useRef({ w: 368, h: 530 });
 
   const tierStyle = getBadgeTierStyle(tier, isLightMode);
   paletteRef.current = tierStyle.palette;
@@ -42,36 +45,37 @@ export const CelebrationCanvas = ({
     (width, height, wave = 1) => {
       if (!width || !height) return;
       const cx = width / 2;
-      const cy = height * 0.37;
+      const cy = height * originYRatio;
       const colors = getFoilColors();
+      const spreadScale = Math.min(1.55, Math.max(0.95, Math.min(width, height) / 480));
 
       const baseCount =
         wave === 1
           ? tier === 'platinum'
-            ? 74
+            ? 84
             : tier === 'gold'
-              ? 60
-              : 48
+              ? 68
+              : 54
           : tier === 'platinum'
-            ? 38
+            ? 44
             : tier === 'gold'
-              ? 30
-              : 24;
+              ? 34
+              : 26;
 
       for (let i = 0; i < baseCount; i++) {
         const angle = (Math.PI * 2 * i) / baseCount + (Math.random() - 0.5) * 0.42;
         const speed =
-          wave === 1
-            ? 2.6 + Math.random() * 5.2
-            : 1.8 + Math.random() * 4.4;
-        const radiusOffset = wave === 1 ? 12 : 42;
+          (wave === 1
+            ? 2.8 + Math.random() * 5.6
+            : 2.0 + Math.random() * 4.6) * spreadScale;
+        const radiusOffset = wave === 1 ? 16 : 48;
         const roll = Math.random();
         const kind =
-          roll > 0.65
+          roll > 0.64
             ? 'ribbon'
-            : roll > 0.4
+            : roll > 0.38
               ? 'diamond'
-              : roll > 0.16
+              : roll > 0.14
                 ? 'star'
                 : 'mote';
 
@@ -80,28 +84,28 @@ export const CelebrationCanvas = ({
           x: cx + Math.cos(angle) * radiusOffset,
           y: cy + Math.sin(angle) * radiusOffset,
           vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed - (wave === 1 ? 1.1 : 1.6),
+          vy: Math.sin(angle) * speed - (wave === 1 ? 1.25 : 1.7),
           size:
             kind === 'ribbon'
-              ? 5.8 + Math.random() * 4.2
+              ? 6 + Math.random() * 4.4
               : kind === 'diamond'
-                ? 4.2 + Math.random() * 3
+                ? 4.4 + Math.random() * 3.2
                 : kind === 'star'
-                  ? 3.8 + Math.random() * 3.4
-                  : 2 + Math.random() * 2,
+                  ? 4 + Math.random() * 3.6
+                  : 2.2 + Math.random() * 2.2,
           rot: Math.random() * Math.PI * 2,
           vRot: (Math.random() - 0.5) * 0.18,
           tumble: Math.random() * Math.PI * 2,
           vTumble: 0.12 + Math.random() * 0.15,
           life: 0,
-          maxLife: (wave === 1 ? 76 : 92) + Math.random() * 52,
+          maxLife: (wave === 1 ? 82 : 96) + Math.random() * 54,
           color: colors[i % colors.length],
-          gravity: kind === 'ribbon' || kind === 'diamond' ? 0.048 : 0.018,
-          drag: kind === 'ribbon' || kind === 'diamond' ? 0.964 : 0.955,
+          gravity: kind === 'ribbon' || kind === 'diamond' ? 0.044 : 0.016,
+          drag: kind === 'ribbon' || kind === 'diamond' ? 0.966 : 0.958,
         });
       }
     },
-    [tier, getFoilColors]
+    [tier, originYRatio, getFoilColors]
   );
 
   useEffect(() => {
@@ -113,25 +117,35 @@ export const CelebrationCanvas = ({
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (prefersReduced) return;
 
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const rect = canvas.getBoundingClientRect();
-    const w = Math.max(300, rect.width || 368);
-    const h = Math.max(400, rect.height || 530);
-    canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round(h * dpr);
+    let dpr = Math.min(2, window.devicePixelRatio || 1);
+    const syncCanvasSize = () => {
+      dpr = Math.min(2, window.devicePixelRatio || 1);
+      const rect = canvas.getBoundingClientRect();
+      const w = Math.max(300, rect.width || window.innerWidth || 368);
+      const h = Math.max(400, rect.height || window.innerHeight || 530);
+      sizeRef.current = { w, h };
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+    };
+
+    syncCanvasSize();
+    window.addEventListener('resize', syncCanvasSize);
 
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) {
+      window.removeEventListener('resize', syncCanvasSize);
+      return;
+    }
 
     const ambientColors = getFoilColors();
-    const ambient = Array.from({ length: 20 }).map((_, idx) => ({
-      x: Math.random() * w,
-      y: Math.random() * h,
+    const ambient = Array.from({ length: 28 }).map((_, idx) => ({
+      x: Math.random() * sizeRef.current.w,
+      y: Math.random() * sizeRef.current.h,
       vx: (Math.random() - 0.5) * 0.28,
-      vy: -0.2 - Math.random() * 0.3,
-      size: 1.2 + (idx % 3) * 0.7,
+      vy: -0.22 - Math.random() * 0.34,
+      size: 1.2 + (idx % 3) * 0.75,
       phase: Math.random() * Math.PI * 2,
-      speed: 0.025 + Math.random() * 0.025,
+      speed: 0.024 + Math.random() * 0.025,
       color: ambientColors[idx % ambientColors.length],
     }));
 
@@ -172,19 +186,22 @@ export const CelebrationCanvas = ({
     };
 
     const tick = () => {
+      const { w, h } = sizeRef.current;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
 
-      // 1. Ambient luminous stardust floating gently across the card
+      // 1. Ambient luminous stardust drifting softly across the full viewport
       for (const m of ambient) {
         m.x += m.vx;
         m.y += m.vy;
         m.phase += m.speed;
-        if (m.y < -10) {
-          m.y = h + 10;
+        if (m.y < -12) {
+          m.y = h + 12;
           m.x = Math.random() * w;
         }
-        const twinkle = (isLightMode ? 0.3 : 0.25) + (Math.sin(m.phase) * 0.5 + 0.5) * 0.45;
+        if (m.x < -12) m.x = w + 12;
+        if (m.x > w + 12) m.x = -12;
+        const twinkle = (isLightMode ? 0.3 : 0.24) + (Math.sin(m.phase) * 0.5 + 0.5) * 0.46;
         ctx.save();
         ctx.globalAlpha = twinkle;
         ctx.fillStyle = m.color;
@@ -195,12 +212,12 @@ export const CelebrationCanvas = ({
       }
 
       // 2. Active celebration burst particles
-      const active = particlesRef.current;
-      for (let i = active.length - 1; i >= 0; i--) {
-        const p = active[i];
+      const activeParticles = particlesRef.current;
+      for (let i = activeParticles.length - 1; i >= 0; i--) {
+        const p = activeParticles[i];
         p.life++;
         if (p.life >= p.maxLife) {
-          active.splice(i, 1);
+          activeParticles.splice(i, 1);
           continue;
         }
         p.vx *= p.drag;
@@ -221,7 +238,12 @@ export const CelebrationCanvas = ({
           ctx.rotate(p.rot);
           ctx.globalAlpha = alpha * 0.94;
           ctx.fillStyle = p.color;
-          ctx.fillRect(-p.size / 2, (-p.size * 0.46 * widthScale) / 2, p.size, p.size * 0.46 * widthScale);
+          ctx.fillRect(
+            -p.size / 2,
+            (-p.size * 0.46 * widthScale) / 2,
+            p.size,
+            p.size * 0.46 * widthScale
+          );
           ctx.restore();
         } else if (p.kind === 'diamond') {
           drawDiamond(p.x, p.y, p.size, p.rot, p.tumble, p.color, alpha);
@@ -243,12 +265,14 @@ export const CelebrationCanvas = ({
 
     rafId = requestAnimationFrame(tick);
     return () => {
+      window.removeEventListener('resize', syncCanvasSize);
       if (rafId) cancelAnimationFrame(rafId);
       particlesRef.current = [];
     };
   }, [tier, isLightMode, getFoilColors]);
 
   useEffect(() => {
+    if (!active) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const prefersReduced =
@@ -258,23 +282,24 @@ export const CelebrationCanvas = ({
     if (prefersReduced) return;
 
     const rect = canvas.getBoundingClientRect();
-    const w = Math.max(300, rect.width || 368);
-    const h = Math.max(400, rect.height || 530);
+    const w = Math.max(300, rect.width || window.innerWidth || 368);
+    const h = Math.max(400, rect.height || window.innerHeight || 530);
+    sizeRef.current = { w, h };
 
     spawnBurst(w, h, 1);
     const wave2Timer = setTimeout(() => {
-      spawnBurst(w, h, 2);
+      spawnBurst(sizeRef.current.w, sizeRef.current.h, 2);
     }, 220);
 
     return () => clearTimeout(wave2Timer);
-  }, [burstKey, spawnBurst]);
+  }, [active, burstKey, spawnBurst]);
 
   return (
     <canvas
       ref={canvasRef}
       aria-hidden="true"
       data-testid="celebration-canvas"
-      className="absolute inset-0 w-full h-full pointer-events-none z-20"
+      className="fixed inset-0 w-full h-full pointer-events-none z-20"
     />
   );
 };

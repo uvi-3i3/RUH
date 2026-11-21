@@ -270,29 +270,3 @@ export function computeTodaySummary({ dailyTodos = [] } = {}) {
     allCompleted,
   };
 }
-
-export function resolvePrayerDisplayTime(prayerId, prayerData, fallbackPrayers) {
-  if (!prayerId) return '';
-  const formattedVal = prayerData?.formatted?.[prayerId];
-  if (typeof formattedVal === 'string' && formattedVal.trim()) {
-    return formattedVal.replace(/\s*(AM|PM)/i, '').trim();
-  }
-  const rawTime = prayerData?.times?.[prayerId];
-  if (rawTime instanceof Date && !Number.isNaN(rawTime.getTime())) {
-    return rawTime
-      .toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })
-      .replace(/\s*(AM|PM)/i, '')
-      .trim();
-  }
-  if (typeof rawTime === 'string' && rawTime.trim()) {
-    return rawTime.replace(/\s*(AM|PM)/i, '').trim();
-  }
-  const fallbackVal = fallbackPrayers?.[prayerId]?.time;
-  if (typeof fallbackVal === 'string' && fallbackVal.trim()) {
-    return fallbackVal.replace(/\s*(AM|PM)/i, '').trim();
-  }
-  return '';
-}
-
-
-

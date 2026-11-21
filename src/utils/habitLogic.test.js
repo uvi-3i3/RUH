@@ -13,7 +13,6 @@ import {
   removeDailyTodoFromList,
   removeHabitFromList,
   reorderHabitInList,
-  resolvePrayerDisplayTime,
   toggleDailyTodoInList,
   updateHabitInList,
 } from './habitLogic';
@@ -140,28 +139,3 @@ test('computeTodaySummary tracks daily quest completion and percentage cleanly',
   assert.equal(summary.percentage, 67);
   assert.equal(summary.allCompleted, false);
 });
-
-test('resolvePrayerDisplayTime handles Date objects, formatted strings, and fallback times safely', () => {
-  const sampleDate = new Date(2026, 10, 17, 5, 18, 0);
-  const withFormatted = {
-    times: { fajr: sampleDate },
-    formatted: { fajr: '5:18 AM' },
-  };
-  assert.equal(resolvePrayerDisplayTime('fajr', withFormatted, {}), '5:18');
-
-  // Even if formatted is missing and times contains a raw Date object, it never throws
-  const withOnlyDate = {
-    times: { fajr: sampleDate },
-  };
-  const dateOut = resolvePrayerDisplayTime('fajr', withOnlyDate, {});
-  assert.equal(typeof dateOut, 'string');
-  assert.ok(dateOut.length > 0);
-
-  // Fallback when no city is set
-  assert.equal(
-    resolvePrayerDisplayTime('dhuhr', null, { dhuhr: { time: '12:45 PM' } }),
-    '12:45'
-  );
-});
-
-

@@ -1,6 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
-import { ChevronDownIcon, CheckCircleIcon, ShareIcon } from '../icons/Icons';
-import { resolveBurhanCopy, filterBurhansByCategory } from '../../utils/devotionLogic';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  CheckCircleIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ShareIcon,
+} from '../icons/Icons';
+import { filterBurhansByCategory, resolveBurhanCopy } from '../../utils/devotionLogic';
+import {
+  buildBurhanMovements,
+  formatReadMinutes,
+  formatRomanNumeral,
+  getBurhanCategoryCounts,
+  getCompendiumPosition,
+  planBurhanEditorialFlow,
+  resolveAdjacentBurhanId,
+} from '../../utils/worldReaderLogic';
 import { useOptionalPreferences } from '../../context/sanctuaryStore';
 import {
   hapticCelebrate,
@@ -11,15 +25,21 @@ import {
   hapticTapLight,
   hapticToggle,
 } from '../../utils/haptics';
+import { FullScreenWorldShell } from './FullScreenWorldShell';
+import { BookColophonDivider, BookInkIllustration } from './BookInkIllustration';
+import { resolveBurhanVisual } from '../../data/worldVisualsData';
+import fitraNightImg from '../../assets/images/fitra_wisdom_night_1795156409054.jpg';
+import fitraDayImg from '../../assets/images/fitra_wisdom_day_1795156408567.jpg';
 
-const ARCHIVE_FILTERS = [
-  { key: 'all', label: 'All' },
-  { key: 'islam', label: 'Why Islam' },
-  { key: 'theism', label: 'Theism & Heart' },
-];
+const FALLBACK_ORIGIN = {
+  rect: { left: 120, top: 640, width: 180, height: 110 },
+  point: { x: 210, y: 695 },
+};
 
 export const BurhanOverlay = ({
-  isOpen,
+  isOpen = false,
+  origin = null,
+  isClosing = false,
   burhan,
   allBurhans = [],
   burhanNotes = {},
@@ -28,84 +48,122 @@ export const BurhanOverlay = ({
   isSimpleMode: isSimpleModeProp,
   onSaveNote,
   onComplete,
+  onRequestClose,
+  onExited,
   onClose,
 }) => {
   const preferencesCtx = useOptionalPreferences();
   const isLightMode = isLightModeProp ?? preferencesCtx?.isLightMode ?? false;
   const isSimpleMode = isSimpleModeProp ?? preferencesCtx?.isSimpleMode ?? false;
-  const [showContent, setShowContent] = useState(false);
+
+  const effectiveOrigin = origin || (isOpen ? FALLBACK_ORIGIN : null);
+
   const [localSimple, setLocalSimple] = useState(isSimpleMode);
   const [selectedId, setSelectedId] = useState(null);
-  const [showLibrary, setShowLibrary] = useState(false);
-  const [archiveCategory, setArchiveCategory] = useState('all');
+  const [showMobileIndex, setShowMobileIndex] = useState(false);
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [activePremiseIdx, setActivePremiseIdx] = useState(null);
   const [noteDraft, setNoteDraft] = useState('');
-  const [noteSavedToast, setNoteSavedToast] = useState(false);
+  const [noteSavedFeedback, setNoteSavedFeedback] = useState(false);
   const [copiedFeedback, setCopiedFeedback] = useState(false);
 
-  const dragStartY = useRef(null);
-  const [dragOffsetY, setDragOffsetY] = useState(0);
+  const folioScrollRef = useRef(null);
 
   useEffect(() => {
     setLocalSimple(isSimpleMode);
   }, [isSimpleMode]);
 
   useEffect(() => {
-    if (isOpen) {
-      setSelectedId(burhan?.id || null);
-      setShowLibrary(false);
-      setArchiveCategory('all');
-      setDragOffsetY(0);
-      const t = setTimeout(() => setShowContent(true), 30);
-      return () => clearTimeout(t);
+    if (effectiveOrigin) {
+      setSelectedId(burhan?.id || allBurhans[0]?.id || null);
+      setShowMobileIndex(false);
+      setActiveCategory('all');
+      setActivePremiseIdx(null);
     }
-    setShowContent(false);
-  }, [isOpen, burhan?.id]);
+  }, [effectiveOrigin, burhan?.id, allBurhans]);
 
   const activeBurhan =
-    (allBurhans.length > 0 && allBurhans.find((item) => item.id === selectedId)) || burhan;
-  const isTodaysBurhan = !burhan || activeBurhan?.id === burhan.id;
+    allBurhans.find((b) => b.id === selectedId) || burhan || allBurhans[0] || null;
 
   useEffect(() => {
-    if (isOpen && activeBurhan) {
-      setNoteDraft(burhanNotes?.[activeBurhan.id] || '');
-    }
-  }, [isOpen, activeBurhan, burhanNotes]);
-
-  if (!isOpen || !activeBurhan) return null;
-
-  const tTextMain = isLightMode ? 'text-[#1a1814]' : 'text-[rgba(245,238,224,0.94)]';
-  const tTextSub = isLightMode ? 'text-[#3b362f]' : 'text-[rgba(228,218,200,0.68)]';
-  const glowSub = isLightMode ? '0 1px 1px rgba(255,255,255,0.6)' : '0 1px 2px rgba(0,0,0,0.85)';
-  const accentColor = isLightMode ? '#0d9488' : '#2dd4bf';
-
-  const { paragraphs, question, premises, conclusion } = resolveBurhanCopy(activeBurhan, localSimple);
-  const visibleArchiveItems = filterBurhansByCategory(allBurhans, archiveCategory);
-  const islamCount = filterBurhansByCategory(allBurhans, 'islam').length;
-
-  const handleSaveTakeaway = ({ silent = false } = {}) => {
-    if (onSaveNote && activeBurhan?.id) {
-      const existing = (burhanNotes?.[activeBurhan.id] || '').trim();
-      const next = noteDraft.trim();
-      onSaveNote(activeBurhan.id, noteDraft);
-      if (!silent && next !== existing) {
-        hapticSuccess();
+    if (activeBurhan) {
+      setNoteDraft(burhanNotes[activeBurhan.id] || '');
+      setNoteSavedFeedback(false);
+      setActivePremiseIdx(null);
+      if (folioScrollRef.current) {
+        folioScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
       }
-      setNoteSavedToast(true);
-      setTimeout(() => setNoteSavedToast(false), 1600);
+    }
+  }, [activeBurhan?.id, burhanNotes]);
+
+  const categoryCounts = useMemo(() => getBurhanCategoryCounts(allBurhans), [allBurhans]);
+  const visibleLibraryItems = useMemo(
+    () => filterBurhansByCategory(allBurhans, activeCategory),
+    [allBurhans, activeCategory]
+  );
+
+  if (!effectiveOrigin || !activeBurhan) return null;
+
+  const handleRequestClose = () => {
+    if (isClosing) return;
+    hapticDismiss();
+    if (onRequestClose) {
+      onRequestClose();
+    } else {
+      onClose?.();
     }
   };
 
-  const handleShare = () => {
+  const isViewingDaily = !burhan || activeBurhan.id === burhan.id;
+  const accentHex = isLightMode ? '#0f766e' : '#2dd4bf';
+  const accentSoft = isLightMode ? '#115e59' : '#5eead4';
+  const textMain = isLightMode ? 'text-[#18211f]' : 'text-[rgba(241,247,245,0.95)]';
+  const textSub = isLightMode ? 'text-[#3c4e4a]' : 'text-[rgba(209,226,222,0.74)]';
+  const textMuted = isLightMode ? 'text-[#556964]' : 'text-[rgba(191,212,207,0.58)]';
+  const hairline = isLightMode ? 'border-[#0f766e]/14' : 'border-white/[0.09]';
+
+  const { paragraphs, question, premises, conclusion } = resolveBurhanCopy(
+    activeBurhan,
+    localSimple
+  );
+  const movements = buildBurhanMovements(paragraphs);
+  const { leadMovements, closingMovements } = planBurhanEditorialFlow(movements);
+  const compendiumPos = getCompendiumPosition(allBurhans, activeBurhan.id);
+  const activeVisual = resolveBurhanVisual(activeBurhan);
+  const notedCount = Object.values(burhanNotes || {}).filter((v) => String(v || '').trim()).length;
+
+  const handleSaveNote = () => {
+    if (!onSaveNote) return;
+    hapticSuccess();
+    onSaveNote(activeBurhan.id, noteDraft.trim());
+    setNoteSavedFeedback(true);
+    setTimeout(() => setNoteSavedFeedback(false), 1800);
+  };
+
+  const handleStep = (delta) => {
+    const pool = visibleLibraryItems.length > 0 ? visibleLibraryItems : allBurhans;
+    const nextId = resolveAdjacentBurhanId(pool, activeBurhan.id, delta);
+    if (nextId) {
+      hapticDetent();
+      setSelectedId(nextId);
+    }
+  };
+
+  const handleShareBurhan = () => {
     hapticTapLight();
-    const body = paragraphs.join('\n\n');
-    const logicText =
+    const premiseBlock =
       premises.length > 0
-        ? `\n\nDeductive Proof:\n${premises.map((p, i) => `${i + 1}. ${p}`).join('\n')}${conclusion ? `\n∴ ${conclusion}` : ''}`
+        ? `\n\n${premises.map((p, idx) => `${idx + 1}. ${p}`).join('\n')}${
+            conclusion ? `\n∴ ${conclusion}` : ''
+          }`
         : '';
-    const text = `${activeBurhan.arabicAnchor ? `${activeBurhan.arabicAnchor}\n\n` : ''}${activeBurhan.title}\n\n${body}${logicText}\n\n— ${activeBurhan.scholar} (Ruh)`;
-    if (navigator.share) {
-      navigator.share({ title: activeBurhan.title, text }).catch(() => {});
-    } else if (navigator.clipboard) {
+    const text = `${activeBurhan.title} — ${activeBurhan.scholar}\n\n${paragraphs.join(
+      '\n\n'
+    )}${premiseBlock}${question ? `\n\nReflection: ${question}` : ''}\n\n— Shared from Ruh (رُوح)`;
+
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      navigator.share({ title: `Burhan: ${activeBurhan.title}`, text }).catch(() => {});
+    } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard
         .writeText(text)
         .then(() => {
@@ -117,93 +175,220 @@ export const BurhanOverlay = ({
     }
   };
 
-  const handleHeaderTouchStart = (e) => {
-    dragStartY.current = e.touches[0].clientY;
-  };
+  const categoryTabs = [
+    { key: 'all', label: 'All', count: categoryCounts.all },
+    { key: 'islam', label: 'Why Islam', count: categoryCounts.islam },
+    { key: 'theism', label: 'Theism', count: categoryCounts.theism },
+  ];
 
-  const handleHeaderTouchMove = (e) => {
-    if (dragStartY.current === null) return;
-    const dy = Math.max(0, e.touches[0].clientY - dragStartY.current);
-    setDragOffsetY(dy);
-  };
+  const renderCompendiumList = (onSelectExtra) => (
+    <div className="flex flex-col h-full min-h-0">
+      <div className={`px-4 pt-4 pb-3 border-b ${hairline} shrink-0`}>
+        <div className="flex items-baseline justify-between gap-2 mb-3">
+          <div>
+            <p className={`font-serif-eng text-[12px] font-semibold ${textMain}`}>
+              Compendium of Proofs
+            </p>
+            <p className={`font-serif-eng text-[11px] tabular-nums ${textMuted}`}>
+              {allBurhans.length} treatises · {notedCount} noted
+            </p>
+          </div>
+          <span
+            dir="rtl"
+            className="font-calligraphy text-[20px] leading-none"
+            style={{ color: accentHex }}
+          >
+            فِطْرَة
+          </span>
+        </div>
 
-  const handleHeaderTouchEnd = () => {
-    if (dragOffsetY > 90) {
-      hapticDismiss();
-      onClose();
-    } else {
-      setDragOffsetY(0);
-    }
-    dragStartY.current = null;
-  };
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Burhan Contemplation: ${activeBurhan.title}`}
-      className="fixed inset-0 z-[80] flex flex-col justify-end items-center pointer-events-auto"
-    >
-      {/* Translucent Scrim letting the painted Ghibli sky breathe behind */}
-      <div
-        onClick={() => {
-          hapticDismiss();
-          onClose?.();
-        }}
-        className="absolute inset-0 transition-opacity duration-300"
-        style={{
-          opacity: showContent ? 1 : 0,
-          background: isLightMode ? 'rgba(220,231,243,0.44)' : 'rgba(4,7,14,0.58)',
-        }}
-      />
-
-      {/* Frosted Liquid-Glass Sheet */}
-      <div
-        className={`relative z-10 w-full max-w-xl h-[92dvh] rounded-t-[28px] border-t border-x flex flex-col overflow-hidden transition-[transform,opacity] duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-          isLightMode
-            ? 'bg-[#f6f3ec]/90 border-white/80 shadow-[0_-16px_48px_rgba(26,24,20,0.14)]'
-            : 'bg-[#090d16]/88 border-white/[0.12] shadow-[0_-20px_60px_rgba(0,0,0,0.75)]'
-        }`}
-        style={{
-          backdropFilter: 'blur(12px) saturate(130%)',
-          WebkitBackdropFilter: 'blur(12px) saturate(130%)',
-          opacity: showContent ? 1 : 0,
-          transform: showContent ? `translateY(${dragOffsetY}px)` : 'translateY(32px)',
-          paddingBottom: 'env(safe-area-inset-bottom)',
-        }}
-      >
-        {/* Ambient Auric Teal Wash */}
+        {/* Category Filter Segmented Control */}
         <div
-          aria-hidden="true"
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: `radial-gradient(circle at 50% 14%, ${accentColor}1c 0%, transparent 58%)`,
-          }}
-        />
-
-        {/* Swipeable Header & Grabber */}
-        <div
-          onTouchStart={handleHeaderTouchStart}
-          onTouchMove={handleHeaderTouchMove}
-          onTouchEnd={handleHeaderTouchEnd}
-          className={`relative z-20 shrink-0 px-5 pt-2.5 pb-3 border-b ${
-            isLightMode ? 'border-black/[0.06]' : 'border-white/[0.07]'
+          role="tablist"
+          aria-label="Proof categories"
+          className={`grid grid-cols-3 gap-1 p-1 rounded-xl border ${
+            isLightMode ? 'bg-[#e6ece8]/80 border-[#0f766e]/12' : 'bg-white/[0.04] border-white/[0.08]'
           }`}
         >
-          {/* Sheet Grabber */}
-          <div className="flex justify-center mb-3">
-            <span
-              className={`w-9 h-1 rounded-full ${
-                isLightMode ? 'bg-black/15' : 'bg-white/20'
+          {categoryTabs.map((tab) => {
+            const isActive = activeCategory === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => {
+                  hapticDetent();
+                  setActiveCategory(tab.key);
+                }}
+                className={`min-h-[34px] px-2 rounded-lg font-serif-eng text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                  isActive
+                    ? isLightMode
+                      ? 'bg-white text-[#0f766e] font-semibold shadow-xs'
+                      : 'bg-[#2dd4bf]/18 text-[#5eead4] font-semibold'
+                    : `${textSub} hover:opacity-100 opacity-75`
+                }`}
+              >
+                {tab.label} ({tab.count})
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Scrollable Proofs List */}
+      <div className="flex-1 overflow-y-auto hide-scrollbar p-2.5 space-y-1">
+        {visibleLibraryItems.map((item) => {
+          const globalIndex = allBurhans.findIndex((b) => b.id === item.id) + 1;
+          const isSelected = item.id === activeBurhan.id;
+          const isTodayItem = burhan && item.id === burhan.id;
+          const hasNote = Boolean(burhanNotes[item.id]?.trim());
+
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => {
+                hapticNavigate();
+                setSelectedId(item.id);
+                onSelectExtra?.();
+              }}
+              className={`w-full min-h-[64px] px-3.5 py-3 rounded-2xl border text-left flex items-start justify-between gap-3 cursor-pointer transition-all duration-200 ${
+                isSelected
+                  ? isLightMode
+                    ? 'bg-white/95 border-[#0f766e]/40 shadow-xs'
+                    : 'bg-[#2dd4bf]/12 border-[#2dd4bf]/40'
+                  : isLightMode
+                    ? 'bg-transparent border-transparent hover:bg-white/55'
+                    : 'bg-transparent border-transparent hover:bg-white/[0.04]'
               }`}
-            />
+            >
+              <div className="flex items-start gap-3 min-w-0">
+                <span
+                  className="font-serif-eng text-[11px] font-semibold tabular-nums pt-0.5 w-6 shrink-0"
+                  style={{ color: isSelected ? accentHex : undefined }}
+                >
+                  {formatRomanNumeral(globalIndex)}
+                </span>
+                <div className="min-w-0">
+                  <p className={`font-serif-eng text-[14px] font-medium leading-snug line-clamp-2 ${textMain}`}>
+                    {item.title}
+                  </p>
+                  <p className={`font-serif-eng text-[11px] mt-1 truncate ${textMuted}`}>
+                    {item.scholar}
+                    {item.readMinutes ? ` · ${formatReadMinutes(item.readMinutes)}` : ''}
+                    {isTodayItem ? ' · Featured' : ''}
+                  </p>
+                </div>
+              </div>
+
+              <div className="shrink-0 pt-0.5">
+                {hasNote ? (
+                  <CheckCircleIcon size={15} style={{ color: accentHex }} />
+                ) : (
+                  <ChevronRightIcon size={14} className={`${textMuted} opacity-60`} />
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  return (
+    <FullScreenWorldShell
+      origin={effectiveOrigin}
+      isClosing={isClosing}
+      backgroundColor={isLightMode ? '#f3f1ea' : '#060e10'}
+      ariaLabelledBy="burhan-world-heading"
+      testId="burhan-overlay"
+      onExited={onExited}
+    >
+      <div className={`relative w-full h-full flex flex-col overflow-hidden ${textMain}`}>
+        {/* Bespoke House of Wisdom Atmospheric Backdrop */}
+        <div aria-hidden="true" className="absolute inset-0 pointer-events-none overflow-hidden">
+          <img
+            src={isLightMode ? fitraDayImg : fitraNightImg}
+            alt=""
+            referrerPolicy="no-referrer"
+            className={`w-full h-full object-cover scale-105 transition-opacity duration-500 ${
+              isLightMode ? 'opacity-[0.18]' : 'opacity-[0.20]'
+            }`}
+          />
+          <div
+            className="absolute inset-0"
+            style={{
+              background: isLightMode
+                ? 'radial-gradient(ellipse 82% 72% at 55% 28%, rgba(248,247,242,0.72) 0%, rgba(241,240,233,0.94) 76%)'
+                : 'radial-gradient(ellipse 80% 68% at 54% 24%, rgba(20,92,86,0.22) 0%, rgba(6,14,16,0.92) 74%)',
+            }}
+          />
+        </div>
+
+        {/* ================================================================
+            TOP SANCTUARY BAR (56px, clean 3-zone header matching Study tab)
+        ================================================================ */}
+        <header
+          className={`relative z-20 shrink-0 px-4 sm:px-7 pb-2.5 border-b ${hairline} flex items-center justify-between gap-3`}
+          style={{
+            paddingTop: 'calc(10px + var(--sat))',
+            backdropFilter: 'blur(14px)',
+            WebkitBackdropFilter: 'blur(14px)',
+            backgroundColor: isLightMode ? 'rgba(245,243,237,0.74)' : 'rgba(6,14,16,0.72)',
+          }}
+        >
+          {/* Left: Back Button */}
+          <button
+            type="button"
+            data-testid="burhan-back"
+            aria-label="Back to Sanctuary"
+            onClick={handleRequestClose}
+            className={`min-h-[40px] pl-2.5 pr-3.5 rounded-full border flex items-center gap-1 font-serif-eng text-[12px] tracking-[0.04em] whitespace-nowrap shrink-0 cursor-pointer transition active:scale-95 ${
+              isLightMode
+                ? 'bg-white/80 hover:bg-white border-[#0f766e]/22 text-[#18211f]'
+                : 'bg-white/[0.06] hover:bg-white/[0.11] border-white/[0.12] text-[#eff7f5]'
+            }`}
+          >
+            <ChevronLeftIcon size={15} style={{ color: accentHex }} />
+            <span>Back</span>
+          </button>
+
+          {/* Center: World Title + Thin Progress Hairline */}
+          <div className="min-w-0 flex-1 max-w-[300px] flex flex-col items-center">
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                dir="rtl"
+                className="font-calligraphy text-[18px] leading-none shrink-0"
+                style={{ color: accentHex }}
+              >
+                بُرْهَان
+              </span>
+              <span className={`hidden sm:inline font-serif-eng text-[12px] truncate ${textSub}`}>
+                House of Reason &amp; Fitrah
+              </span>
+            </div>
+            <div
+              className={`w-full max-w-[180px] h-[3px] rounded-full overflow-hidden mt-1.5 ${
+                isLightMode ? 'bg-[#0f766e]/14' : 'bg-white/[0.11]'
+              }`}
+            >
+              <div
+                className="h-full rounded-full transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] origin-left"
+                style={{
+                  backgroundColor: accentHex,
+                  transform: `scaleX(${compendiumPos.ratio})`,
+                }}
+              />
+            </div>
           </div>
 
-          <div className="flex items-center justify-between gap-2">
-            {/* Left: Classical / Simple Toggle */}
+          {/* Right: Classical/Simple (sm+) + Mobile Index Toggle + Share */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <div
-              className={`flex items-center gap-0.5 p-1 rounded-xl border ${
-                isLightMode ? 'bg-black/[0.04] border-black/10' : 'bg-white/[0.04] border-white/10'
+              className={`hidden sm:flex items-center p-0.5 rounded-xl border ${
+                isLightMode ? 'bg-black/[0.04] border-black/10' : 'bg-white/[0.05] border-white/10'
               }`}
             >
               <button
@@ -212,12 +397,12 @@ export const BurhanOverlay = ({
                   hapticDetent();
                   setLocalSimple(false);
                 }}
-                className={`min-h-[34px] px-2.5 rounded-lg font-serif-eng text-[10px] uppercase tracking-wider transition-colors cursor-pointer ${
+                className={`min-h-[34px] px-2.5 rounded-lg font-serif-eng text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
                   !localSimple
                     ? isLightMode
-                      ? 'bg-white text-[#1a1814] shadow-xs font-medium'
-                      : 'bg-white/15 text-white font-medium'
-                    : `${tTextSub} opacity-70`
+                      ? 'bg-white text-[#18211f] font-semibold shadow-xs'
+                      : 'bg-white/15 text-white font-semibold'
+                    : `${textSub} opacity-70`
                 }`}
               >
                 Classical
@@ -228,478 +413,515 @@ export const BurhanOverlay = ({
                   hapticDetent();
                   setLocalSimple(true);
                 }}
-                className={`min-h-[34px] px-2.5 rounded-lg font-serif-eng text-[10px] uppercase tracking-wider transition-colors cursor-pointer ${
+                className={`min-h-[34px] px-2.5 rounded-lg font-serif-eng text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
                   localSimple
                     ? isLightMode
-                      ? 'bg-white text-[#1a1814] shadow-xs font-medium'
-                      : 'bg-white/15 text-white font-medium'
-                    : `${tTextSub} opacity-70`
+                      ? 'bg-white text-[#18211f] font-semibold shadow-xs'
+                      : 'bg-white/15 text-white font-semibold'
+                    : `${textSub} opacity-70`
                 }`}
               >
                 Simple
               </button>
             </div>
 
-            {/* Right: Proof Library Switcher, Share, Close */}
-            <div className="flex items-center gap-1.5">
-              {allBurhans.length > 1 && (
+            <button
+              type="button"
+              aria-expanded={showMobileIndex}
+              onClick={() => {
+                hapticToggle(!showMobileIndex);
+                setShowMobileIndex((v) => !v);
+              }}
+              className={`lg:hidden min-h-[38px] px-3 rounded-xl border font-serif-eng text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                showMobileIndex
+                  ? isLightMode
+                    ? 'bg-[#0f766e] border-[#0f766e] text-white font-medium'
+                    : 'bg-[#2dd4bf]/20 border-[#2dd4bf]/50 text-[#5eead4] font-medium'
+                  : isLightMode
+                    ? 'bg-white/75 border-[#0f766e]/20 text-[#18211f]'
+                    : 'bg-white/[0.06] border-white/[0.12] text-[#eff7f5]'
+              }`}
+            >
+              {showMobileIndex ? 'Folio' : `Proofs (${allBurhans.length})`}
+            </button>
+
+            <button
+              type="button"
+              aria-label="Share Burhan reflection"
+              onClick={handleShareBurhan}
+              className={`w-10 h-10 rounded-full border flex items-center justify-center cursor-pointer transition-colors ${
+                isLightMode
+                  ? 'bg-white/75 hover:bg-white border-[#0f766e]/20 text-[#18211f]'
+                  : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.12] text-[#eff7f5]'
+              }`}
+            >
+              {copiedFeedback ? (
+                <CheckCircleIcon size={15} style={{ color: accentHex }} />
+              ) : (
+                <ShareIcon size={15} />
+              )}
+            </button>
+          </div>
+        </header>
+
+        {/* ================================================================
+            MAIN WORKSPACE: PERSISTENT DESKTOP COMPENDIUM RAIL + FOLIO STAGE
+        ================================================================ */}
+        <div className="relative z-10 flex-1 min-h-0 flex overflow-hidden">
+          {/* Desktop Persistent Left Compendium Rail */}
+          <aside
+            aria-label="Compendium of Rational Proofs"
+            className={`hidden lg:flex lg:w-[320px] xl:w-[348px] shrink-0 flex-col border-r ${hairline}`}
+            style={{
+              backgroundColor: isLightMode ? 'rgba(248,247,242,0.72)' : 'rgba(6,16,18,0.62)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+            }}
+          >
+            {renderCompendiumList()}
+          </aside>
+
+          {/* Mobile Compendium View OR Active Illuminated Monograph Folio */}
+          {showMobileIndex ? (
+            <div
+              className="flex-1 min-h-0 lg:hidden"
+              style={{
+                backgroundColor: isLightMode ? 'rgba(248,247,242,0.86)' : 'rgba(6,16,18,0.82)',
+              }}
+            >
+              {renderCompendiumList(() => setShowMobileIndex(false))}
+            </div>
+          ) : (
+            <main
+              ref={folioScrollRef}
+              data-testid="burhan-folio-stage"
+              className="flex-1 min-h-0 overflow-y-auto hide-scrollbar px-5 sm:px-10 lg:px-14 py-7 sm:py-10"
+            >
+              <article className="w-full max-w-[780px] mx-auto pb-8">
+                {/* Mobile-Only Clean Reading Mode Bar (keeps mobile top header uncluttered) */}
+                <div className="flex sm:hidden items-center justify-center mb-5">
+                  <div
+                    className={`inline-flex items-center p-0.5 rounded-xl border ${
+                      isLightMode ? 'bg-black/[0.04] border-[#0f766e]/15' : 'bg-white/[0.05] border-white/10'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        hapticDetent();
+                        setLocalSimple(false);
+                      }}
+                      className={`min-h-[34px] px-3.5 rounded-lg font-serif-eng text-[11.5px] whitespace-nowrap cursor-pointer transition-colors ${
+                        !localSimple
+                          ? isLightMode
+                            ? 'bg-white text-[#18211f] font-semibold shadow-xs'
+                            : 'bg-white/15 text-white font-semibold'
+                          : `${textSub} opacity-75`
+                      }`}
+                    >
+                      Classical
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        hapticDetent();
+                        setLocalSimple(true);
+                      }}
+                      className={`min-h-[34px] px-3.5 rounded-lg font-serif-eng text-[11.5px] whitespace-nowrap cursor-pointer transition-colors ${
+                        localSimple
+                          ? isLightMode
+                            ? 'bg-white text-[#18211f] font-semibold shadow-xs'
+                            : 'bg-white/15 text-white font-semibold'
+                          : `${textSub} opacity-75`
+                      }`}
+                    >
+                      Simple
+                    </button>
+                  </div>
+                </div>
+
+                {/* 1. UNBOXED MONOGRAPH MASTHEAD */}
+                <div className={`text-center pb-7 mb-8 border-b ${hairline}`}>
+                  {activeBurhan.arabicAnchor && (
+                    <p
+                      dir="rtl"
+                      className="font-calligraphy text-[26px] sm:text-[32px] leading-relaxed mb-3"
+                      style={{
+                        color: accentHex,
+                        textShadow: isLightMode ? 'none' : `0 0 32px ${accentHex}30`,
+                      }}
+                    >
+                      {activeBurhan.arabicAnchor}
+                    </p>
+                  )}
+
+                  {/* Unboxed Editorial Metadata (Zero Pills) */}
+                  <div
+                    className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 font-serif-eng text-[12px] tracking-[0.04em] mb-3"
+                    style={{ color: accentSoft }}
+                  >
+                    <span>
+                      Treatise {formatRomanNumeral(compendiumPos.position)} of {compendiumPos.total}
+                    </span>
+                    <span className="opacity-45" aria-hidden="true">·</span>
+                    <span>{activeBurhan.category === 'islam' ? 'Why Islam' : 'Theism & Fitrah'}</span>
+                    {activeBurhan.theme && (
+                      <>
+                        <span className="opacity-45" aria-hidden="true">·</span>
+                        <span>{activeBurhan.theme}</span>
+                      </>
+                    )}
+                  </div>
+
+                  <h1
+                    id="burhan-world-heading"
+                    className={`font-serif-eng text-[28px] sm:text-[38px] lg:text-[42px] font-semibold leading-[1.15] tracking-[-0.01em] mb-3 ${textMain}`}
+                    style={{ textWrap: 'balance' }}
+                  >
+                    {activeBurhan.title}
+                  </h1>
+
+                  <p className={`font-serif-eng italic text-[14px] sm:text-[15.5px] ${textSub}`}>
+                    {activeBurhan.scholar}
+                    {activeBurhan.readMinutes
+                      ? ` · ${formatReadMinutes(activeBurhan.readMinutes)} contemplation`
+                      : ''}
+                  </p>
+                </div>
+
+                {/* 2. OPENING PROSE WITH TRUE-ALPHA INK ENGRAVING WOVEN DIRECTLY IN */}
+                <section aria-label="Treatise Opening" className="flow-root mb-9">
+                  {activeVisual && (
+                    <BookInkIllustration
+                      visual={activeVisual}
+                      plateNumber={compendiumPos.position}
+                      theme="burhan"
+                      isLightMode={isLightMode}
+                      align="right"
+                    />
+                  )}
+
+                  {leadMovements.map((mv, idx) => (
+                    <p
+                      key={mv.index}
+                      className={`font-serif-eng text-[16.5px] sm:text-[18px] leading-[1.86] ${
+                        idx > 0 ? 'mt-5' : ''
+                      } ${
+                        isLightMode ? 'text-[#1c2624]' : 'text-[rgba(241,247,245,0.92)] tracking-[0.008em]'
+                      } ${
+                        mv.isOpening
+                          ? `first-letter:text-[3.25rem] first-letter:font-serif-eng first-letter:font-semibold first-letter:float-left first-letter:mr-3 first-letter:mt-1 first-letter:leading-[0.84] ${
+                              isLightMode
+                                ? 'first-letter:text-[#0f766e]'
+                                : 'first-letter:text-[#2dd4bf]'
+                            }`
+                          : ''
+                      }`}
+                    >
+                      {mv.text}
+                    </p>
+                  ))}
+                </section>
+
+                {/* 3. UNBOXED ARCHITECTURAL DEDUCTIVE PROOF SPINE (HAIRLINE BOUNDED) */}
+                {premises.length > 0 && (
+                  <section
+                    aria-label="Deductive Proof Structure"
+                    className={`border-y ${hairline} py-7 my-9`}
+                  >
+                    <div className="flex items-baseline justify-between gap-2 mb-5">
+                      <h2
+                        className="font-serif-eng text-[13px] font-semibold tracking-[0.04em]"
+                        style={{ color: accentHex }}
+                      >
+                        Structure of the Proof
+                      </h2>
+                      <span className={`font-serif-eng text-[11.5px] ${textMuted}`}>
+                        Tap a premise to focus
+                      </span>
+                    </div>
+
+                    <ol className="relative space-y-2.5">
+                      {premises.map((premise, idx) => {
+                        const isFocused = activePremiseIdx === idx;
+                        const isLast = idx === premises.length - 1;
+                        return (
+                          <li key={idx} className="relative">
+                            {!isLast && (
+                              <span
+                                aria-hidden="true"
+                                className="absolute left-[22px] top-[40px] bottom-[-14px] w-[1px]"
+                                style={{
+                                  backgroundColor: isLightMode
+                                    ? 'rgba(15,118,110,0.22)'
+                                    : 'rgba(45,212,191,0.25)',
+                                }}
+                              />
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                hapticTapLight();
+                                setActivePremiseIdx((prev) => (prev === idx ? null : idx));
+                              }}
+                              className={`w-full text-left flex items-start gap-3.5 py-2.5 px-2 rounded-2xl transition-colors duration-200 cursor-pointer ${
+                                isFocused
+                                  ? isLightMode
+                                    ? 'bg-[#0f766e]/[0.07]'
+                                    : 'bg-[#2dd4bf]/[0.10]'
+                                  : 'bg-transparent hover:bg-current/[0.03]'
+                              }`}
+                            >
+                              <span
+                                className={`w-[28px] h-[28px] rounded-full border flex items-center justify-center font-serif-eng text-[11px] font-semibold tabular-nums shrink-0 transition-colors ${
+                                  isFocused
+                                    ? isLightMode
+                                      ? 'bg-[#0f766e] border-[#0f766e] text-white'
+                                      : 'bg-[#2dd4bf] border-[#2dd4bf] text-[#041416]'
+                                    : isLightMode
+                                      ? 'bg-transparent border-[#0f766e]/35 text-[#0f766e]'
+                                      : 'bg-transparent border-[#2dd4bf]/35 text-[#5eead4]'
+                                }`}
+                              >
+                                {formatRomanNumeral(idx + 1)}
+                              </span>
+                              <div className="min-w-0 pt-0.5">
+                                <span className={`block font-serif-eng text-[11px] mb-0.5 ${textMuted}`}>
+                                  Premise {idx + 1}
+                                </span>
+                                <p className={`font-serif-eng text-[15px] sm:text-[16px] leading-[1.62] ${textMain}`}>
+                                  {premise}
+                                </p>
+                              </div>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ol>
+
+                    {conclusion && (
+                      <div className={`mt-5 pt-4 border-t ${hairline} flex items-start gap-3.5 px-2`}>
+                        <span
+                          className={`w-[28px] h-[28px] rounded-full flex items-center justify-center font-serif-eng text-[15px] font-semibold shrink-0 ${
+                            isLightMode
+                              ? 'bg-[#0f766e]/12 text-[#0f766e]'
+                              : 'bg-[#2dd4bf]/16 text-[#5eead4]'
+                          }`}
+                          aria-hidden="true"
+                        >
+                          ∴
+                        </span>
+                        <div className="min-w-0">
+                          <span
+                            className="block font-serif-eng text-[11px] font-semibold mb-0.5"
+                            style={{ color: accentHex }}
+                          >
+                            Therefore · Logical Conclusion
+                          </span>
+                          <p className={`font-serif-eng text-[15.5px] sm:text-[17px] font-medium leading-[1.6] ${textMain}`}>
+                            {conclusion}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {/* 4. CONTINUING MONOGRAPH SYNTHESIS PROSE */}
+                {closingMovements.length > 0 && (
+                  <div className="space-y-6 mb-10">
+                    {closingMovements.map((mv) => (
+                      <div key={mv.index} className="relative">
+                        <div className="flex items-center gap-3 mb-2.5">
+                          <span
+                            className="font-serif-eng text-[11px] font-semibold tabular-nums"
+                            style={{ color: accentHex }}
+                          >
+                            {mv.roman}.
+                          </span>
+                          <span className={`flex-1 h-[1px] ${isLightMode ? 'bg-[#0f766e]/12' : 'bg-white/[0.08]'}`} />
+                        </div>
+                        <p
+                          className={`font-serif-eng text-[16.5px] sm:text-[18px] leading-[1.86] ${
+                            isLightMode ? 'text-[#1c2624]' : 'text-[rgba(241,247,245,0.92)] tracking-[0.008em]'
+                          }`}
+                        >
+                          {mv.text}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 5. UNBOXED CONTEMPLATION COLOPHON & PERSONAL TAKEAWAY */}
+                {(question || onSaveNote) && (
+                  <section
+                    aria-label="Personal Fitrah Reflection"
+                    className="pt-2 mt-8"
+                  >
+                    <BookColophonDivider theme="burhan" isLightMode={isLightMode} className="mb-7" />
+                    {question && (
+                      <blockquote className="text-center max-w-[640px] mx-auto pb-7 mb-7 border-b border-current/10">
+                        <span
+                          className="block font-serif-eng text-[12px] font-semibold mb-2"
+                          style={{ color: accentHex }}
+                        >
+                          Question for the Heart
+                        </span>
+                        <p className={`font-serif-eng italic text-[17.5px] sm:text-[20px] leading-relaxed ${textMain}`}>
+                          “{question}”
+                        </p>
+                      </blockquote>
+                    )}
+
+                    {onSaveNote && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label
+                            htmlFor="burhan-world-note"
+                            className={`font-serif-eng text-[12px] font-medium ${textSub}`}
+                          >
+                            Your Personal Takeaway
+                          </label>
+                          {noteSavedFeedback && (
+                            <span
+                              className="font-serif-eng text-[12px] font-medium"
+                              style={{ color: accentHex }}
+                            >
+                              Saved
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                          <input
+                            id="burhan-world-note"
+                            type="text"
+                            maxLength={220}
+                            value={noteDraft}
+                            onChange={(e) => setNoteDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveNote();
+                            }}
+                            placeholder="Write one quiet thought to remember from this proof..."
+                            className={`flex-1 min-w-0 min-h-[44px] px-4 rounded-xl border font-serif-eng text-[14px] outline-none transition-colors ${
+                              isLightMode
+                                ? 'bg-white/75 border-[#0f766e]/20 text-[#18211f] placeholder:text-[#556964]/60 focus:border-[#0f766e]/55'
+                                : 'bg-white/[0.04] border-white/12 text-white placeholder:text-white/40 focus:border-[#2dd4bf]/55'
+                            }`}
+                          />
+                          <button
+                            type="button"
+                            onClick={handleSaveNote}
+                            className={`min-h-[44px] px-5 rounded-xl border font-serif-eng text-[13px] font-medium whitespace-nowrap cursor-pointer transition-colors ${
+                              isLightMode
+                                ? 'bg-[#0f766e] border-[#0f766e] text-white hover:bg-[#0d625b]'
+                                : 'bg-[#2dd4bf]/18 border-[#2dd4bf]/45 text-[#5eead4] hover:bg-[#2dd4bf]/26'
+                            }`}
+                          >
+                            Save Note
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                )}
+              </article>
+            </main>
+          )}
+        </div>
+
+        {/* ================================================================
+            COMPACT BOTTOM ACTION DOCK (58px — preserves <= 15% mobile sticky cap)
+        ================================================================ */}
+        {!showMobileIndex && (
+          <footer
+            className={`relative z-20 shrink-0 px-4 sm:px-7 py-2.5 border-t ${hairline}`}
+            style={{
+              paddingBottom: 'calc(10px + var(--sab))',
+              backdropFilter: 'blur(14px)',
+              WebkitBackdropFilter: 'blur(14px)',
+              backgroundColor: isLightMode ? 'rgba(245,243,237,0.82)' : 'rgba(6,14,16,0.82)',
+            }}
+          >
+            <div className="w-full max-w-[920px] mx-auto flex items-center justify-between gap-2.5">
+              <button
+                type="button"
+                aria-label="Previous proof"
+                onClick={() => handleStep(-1)}
+                className={`min-h-[42px] px-3.5 rounded-xl border flex items-center gap-1.5 font-serif-eng text-[12px] whitespace-nowrap cursor-pointer transition-colors ${
+                  isLightMode
+                    ? 'bg-white/80 border-[#0f766e]/20 text-[#18211f] hover:bg-white'
+                    : 'bg-white/[0.05] border-white/[0.12] text-[#eff7f5] hover:bg-white/[0.1]'
+                }`}
+              >
+                <ChevronLeftIcon size={14} />
+                <span className="hidden sm:inline">Previous</span>
+              </button>
+
+              {isViewingDaily ? (
                 <button
                   type="button"
-                  aria-expanded={showLibrary}
+                  data-testid="burhan-reflect-btn"
                   onClick={() => {
-                    hapticToggle(!showLibrary);
-                    setShowLibrary((v) => !v);
+                    if (!isCompleted) {
+                      hapticCelebrate();
+                      onComplete?.();
+                    }
+                    handleRequestClose();
                   }}
-                  className={`min-h-[38px] px-3 rounded-xl border font-serif-eng text-[10px] uppercase tracking-[0.16em] transition-all cursor-pointer ${
-                    showLibrary
+                  className={`flex-1 max-w-[360px] min-h-[44px] px-5 rounded-xl border flex items-center justify-center gap-2 font-serif-eng text-[13px] font-semibold whitespace-nowrap cursor-pointer transition-all active:scale-[0.985] ${
+                    isCompleted
                       ? isLightMode
-                        ? 'bg-[#0d9488]/12 border-[#0d9488]/40 text-[#0d9488] font-medium'
-                        : 'bg-[#2dd4bf]/15 border-[#2dd4bf]/40 text-[#2dd4bf] font-medium'
+                        ? 'bg-[#0f766e]/14 border-[#0f766e]/35 text-[#0f766e]'
+                        : 'bg-[#2dd4bf]/16 border-[#2dd4bf]/45 text-[#5eead4]'
                       : isLightMode
-                        ? 'bg-white/55 border-black/10 text-[#3b362f]'
-                        : 'bg-white/[0.05] border-white/10 text-[#e4dac8]/85'
+                        ? 'bg-[#0f766e] border-[#0f766e] text-white hover:bg-[#0d625b]'
+                        : 'bg-[#1a8a7e] border-[#5eead4]/40 text-[#f3fbf9] hover:bg-[#20a092]'
                   }`}
                 >
-                  {showLibrary ? 'Reading' : `Proofs (${allBurhans.length})`}
+                  {isCompleted ? (
+                    <>
+                      <CheckCircleIcon size={16} />
+                      <span>Reflected Today</span>
+                    </>
+                  ) : (
+                    <span>I Have Reflected · +5% Yaqeen</span>
+                  )}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    hapticDetent();
+                    setSelectedId(burhan?.id || allBurhans[0]?.id || null);
+                  }}
+                  className={`flex-1 max-w-[320px] min-h-[44px] px-5 rounded-xl border font-serif-eng text-[13px] font-medium whitespace-nowrap cursor-pointer transition-colors ${
+                    isLightMode
+                      ? 'bg-white/85 border-[#0f766e]/30 text-[#0f766e] hover:bg-white'
+                      : 'bg-[#2dd4bf]/14 border-[#2dd4bf]/40 text-[#5eead4] hover:bg-[#2dd4bf]/22'
+                  }`}
+                >
+                  Return to Today’s Proof
                 </button>
               )}
 
               <button
                 type="button"
-                aria-label="Share Burhan"
-                onClick={handleShare}
-                className={`w-10 h-10 rounded-full border flex items-center justify-center transition-colors cursor-pointer ${
+                aria-label="Next proof"
+                onClick={() => handleStep(1)}
+                className={`min-h-[42px] px-3.5 rounded-xl border flex items-center gap-1.5 font-serif-eng text-[12px] whitespace-nowrap cursor-pointer transition-colors ${
                   isLightMode
-                    ? 'bg-white/55 border-black/10 text-[#3b362f]'
-                    : 'bg-white/[0.05] border-white/10 text-[#e4dac8]/85'
+                    ? 'bg-white/80 border-[#0f766e]/20 text-[#18211f] hover:bg-white'
+                    : 'bg-white/[0.05] border-white/[0.12] text-[#eff7f5] hover:bg-white/[0.1]'
                 }`}
               >
-                {copiedFeedback ? (
-                  <CheckCircleIcon size={15} style={{ color: accentColor }} />
-                ) : (
-                  <ShareIcon size={15} />
-                )}
-              </button>
-
-              <button
-                type="button"
-                aria-label="Close contemplation"
-                onClick={() => {
-                  hapticDismiss();
-                  onClose?.();
-                }}
-                className={`w-10 h-10 rounded-full border flex items-center justify-center transition-colors cursor-pointer ${
-                  isLightMode
-                    ? 'bg-white/55 border-black/10 text-[#1a1814]'
-                    : 'bg-white/[0.05] border-white/10 text-white'
-                }`}
-              >
-                <ChevronDownIcon size={18} />
+                <span className="hidden sm:inline">Next</span>
+                <ChevronRightIcon size={14} />
               </button>
             </div>
-          </div>
-        </div>
-
-        {/* Body: Either Proofs Archive Index OR Active Reading View */}
-        {showLibrary ? (
-          <div className="relative z-10 flex-1 overflow-y-auto hide-scrollbar px-5 py-5">
-            <div className="flex items-center justify-between mb-3 px-1">
-              <span
-                className={`font-serif-eng text-[9px] uppercase tracking-[0.22em] ${tTextSub}`}
-              >
-                Demonstrative Proofs & Reflections
-              </span>
-              <span className="font-calligraphy text-base" style={{ color: accentColor }} dir="rtl">
-                البراهين
-              </span>
-            </div>
-
-            {/* Category Tabs: All | Why Islam | Theism & Heart */}
-            <div className="flex items-center gap-2 mb-4 overflow-x-auto hide-scrollbar" role="tablist" aria-label="Proof categories">
-              {ARCHIVE_FILTERS.map((cat) => {
-                const active = archiveCategory === cat.key;
-                const count =
-                  cat.key === 'all'
-                    ? allBurhans.length
-                    : cat.key === 'islam'
-                      ? islamCount
-                      : allBurhans.length - islamCount;
-                return (
-                  <button
-                    key={cat.key}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => {
-                      hapticDetent();
-                      setArchiveCategory(cat.key);
-                    }}
-                    className={`min-h-[36px] px-3 rounded-xl border font-serif-eng text-[9.5px] uppercase tracking-[0.14em] transition-all cursor-pointer whitespace-nowrap ${
-                      active
-                        ? isLightMode
-                          ? 'bg-[#0d9488]/14 border-[#0d9488]/45 text-[#0f766e] font-medium'
-                          : 'bg-[#2dd4bf]/15 border-[#2dd4bf]/45 text-[#2dd4bf] font-medium'
-                        : isLightMode
-                          ? 'bg-white/45 border-black/10 text-[#3b362f]/80'
-                          : 'bg-white/[0.03] border-white/10 text-[#e4dac8]/70'
-                    }`}
-                  >
-                    {cat.label} ({count})
-                  </button>
-                );
-              })}
-            </div>
-
-            <div
-              className={`rounded-[22px] border overflow-hidden divide-y ${
-                isLightMode
-                  ? 'bg-white/55 border-black/[0.08] divide-black/[0.06]'
-                  : 'bg-white/[0.03] border-white/[0.08] divide-white/[0.06]'
-              }`}
-            >
-              {visibleArchiveItems.map((item) => {
-                const isSelected = item.id === activeBurhan.id;
-                const isDaily = burhan && item.id === burhan.id;
-                const hasNote = !!(burhanNotes?.[item.id] || '').trim();
-                const isIslamProof = item.category === 'islam';
-
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => {
-                      hapticNavigate();
-                      setSelectedId(item.id);
-                      setShowLibrary(false);
-                    }}
-                    className={`w-full min-h-[60px] px-4 py-3 text-left flex items-center justify-between gap-3 transition-colors cursor-pointer ${
-                      isSelected
-                        ? isLightMode
-                          ? 'bg-[#0d9488]/10'
-                          : 'bg-[#2dd4bf]/10'
-                        : isLightMode
-                          ? 'hover:bg-white/70 active:bg-white'
-                          : 'hover:bg-white/[0.04] active:bg-white/[0.07]'
-                    }`}
-                  >
-                    <div className="flex flex-col min-w-0">
-                      <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
-                        <span
-                          className="font-serif-eng text-[8px] uppercase tracking-[0.15em]"
-                          style={{ color: accentColor }}
-                        >
-                          {item.scholar}
-                        </span>
-                        {isIslamProof && (
-                          <span
-                            className={`font-serif-eng text-[7.5px] uppercase tracking-[0.12em] px-1.5 py-0.5 rounded-full ${
-                              isLightMode
-                                ? 'bg-[#9c7533]/12 text-[#7c5a1e]'
-                                : 'bg-[#d2a24b]/14 text-[#e5c17b]'
-                            }`}
-                          >
-                            Islam Proof
-                          </span>
-                        )}
-                        {isDaily && (
-                          <span
-                            className={`font-serif-eng text-[7.5px] uppercase tracking-[0.12em] px-1.5 py-0.5 rounded-full ${
-                              isLightMode
-                                ? 'bg-[#0d9488]/15 text-[#0f766e]'
-                                : 'bg-[#2dd4bf]/15 text-[#2dd4bf]'
-                            }`}
-                          >
-                            Today
-                          </span>
-                        )}
-                        {hasNote && (
-                          <span className={`font-serif-eng text-[7.5px] uppercase tracking-[0.12em] opacity-60 ${tTextSub}`}>
-                            · Noted
-                          </span>
-                        )}
-                      </div>
-                      <span className={`font-serif-eng text-[15px] font-medium truncate ${tTextMain}`}>
-                        {item.title}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-col items-end shrink-0">
-                      <span className={`font-serif-eng text-[9px] uppercase tracking-[0.14em] opacity-65 ${tTextSub}`}>
-                        {item.theme}
-                      </span>
-                      <span className={`font-serif-eng text-[8.5px] opacity-45 mt-0.5 ${tTextSub}`}>
-                        {item.readMinutes}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ) : (
-          <div
-            className="relative z-10 flex-1 overflow-y-auto hide-scrollbar px-6 pt-5 pb-8 flex flex-col items-center"
-            style={{
-              maskImage:
-                'linear-gradient(to bottom, transparent 0px, black 16px, black calc(100% - 16px), transparent 100%)',
-              WebkitMaskImage:
-                'linear-gradient(to bottom, transparent 0px, black 16px, black calc(100% - 16px), transparent 100%)',
-            }}
-          >
-            <div className="w-full max-w-[480px] mx-auto flex flex-col items-center pb-2">
-              {/* Calligraphic Anchor */}
-              {activeBurhan.arabicAnchor && (
-                <p
-                  className="font-calligraphy text-[22px] sm:text-[26px] leading-[1.7] text-center mb-4 opacity-95"
-                  style={{
-                    color: accentColor,
-                    textShadow: isLightMode ? 'none' : `0 0 28px ${accentColor}30`,
-                  }}
-                  dir="rtl"
-                >
-                  {activeBurhan.arabicAnchor}
-                </p>
-              )}
-
-              {/* Eyebrow Metadata */}
-              <div
-                className="flex flex-wrap items-center justify-center gap-2 font-serif-eng text-[10px] uppercase tracking-[0.22em] mb-2.5 text-center"
-                style={{ color: accentColor }}
-              >
-                <span>
-                  {activeBurhan.category === 'islam'
-                    ? 'Proof of Islam'
-                    : isTodaysBurhan
-                      ? 'Daily Burhan'
-                      : 'Foundation'}
-                </span>
-                {activeBurhan.theme && (
-                  <>
-                    <span aria-hidden="true">·</span>
-                    <span>{activeBurhan.theme}</span>
-                  </>
-                )}
-                <span aria-hidden="true">·</span>
-                <span>{activeBurhan.scholar}</span>
-              </div>
-
-              <h2
-                className={`font-serif-eng text-[26px] sm:text-[32px] text-center font-medium leading-[1.2] mb-5 ${tTextMain}`}
-                style={{ textShadow: glowSub, textWrap: 'balance' }}
-              >
-                {activeBurhan.title}
-              </h2>
-
-              <div className="w-12 h-[1px] opacity-35 mb-6" style={{ backgroundColor: accentColor }} />
-
-              {/* Essay Paragraphs */}
-              <div className="flex flex-col gap-5 w-full mb-7">
-                {paragraphs.map((text, idx) => (
-                  <p
-                    key={idx}
-                    className={`font-serif-eng text-[16.5px] sm:text-[18px] leading-[1.82] text-center font-light ${tTextMain}`}
-                    style={{ textShadow: glowSub }}
-                  >
-                    {text}
-                  </p>
-                ))}
-              </div>
-
-              {/* Structured Deductive Logic Chain (Premises -> Conclusion) */}
-              {premises.length > 0 && (
-                <div
-                  className={`w-full rounded-[20px] border p-4 mb-5 transition-colors ${
-                    isLightMode
-                      ? 'bg-[#0d9488]/[0.06] border-[#0d9488]/20'
-                      : 'bg-[#2dd4bf]/[0.05] border-[#2dd4bf]/20'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <span
-                      className="font-serif-eng text-[8.5px] uppercase tracking-[0.2em]"
-                      style={{ color: accentColor }}
-                    >
-                      Logical Structure
-                    </span>
-                    <span
-                      className="font-calligraphy text-[13px] leading-none opacity-85"
-                      style={{ color: accentColor }}
-                      dir="rtl"
-                    >
-                      البرهان المنطقي
-                    </span>
-                  </div>
-
-                  <ol className="flex flex-col gap-2.5 mb-3">
-                    {premises.map((premise, idx) => (
-                      <li key={idx} className="flex items-start gap-2.5">
-                        <span
-                          className="font-serif-eng text-[9px] uppercase tracking-[0.12em] tabular-nums mt-1 shrink-0 opacity-80"
-                          style={{ color: accentColor }}
-                        >
-                          P{idx + 1}
-                        </span>
-                        <p className={`font-serif-eng text-[13.5px] leading-[1.6] ${tTextMain}`}>
-                          {premise}
-                        </p>
-                      </li>
-                    ))}
-                  </ol>
-
-                  {conclusion && (
-                    <div
-                      className={`pt-2.5 border-t flex items-start gap-2.5 ${
-                        isLightMode ? 'border-[#0d9488]/18' : 'border-[#2dd4bf]/18'
-                      }`}
-                    >
-                      <span
-                        className="font-serif-eng text-[12px] font-semibold mt-0.5 shrink-0"
-                        style={{ color: accentColor }}
-                        aria-label="Therefore"
-                      >
-                        ∴
-                      </span>
-                      <p className={`font-serif-eng text-[14px] font-medium leading-[1.6] ${tTextMain}`}>
-                        {conclusion}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Contemplative Prompt & Personal Takeaway Card */}
-              {question && (
-                <div
-                  className={`w-full rounded-[20px] border p-4 mb-2 transition-colors ${
-                    isLightMode
-                      ? 'bg-white/55 border-black/[0.08]'
-                      : 'bg-white/[0.035] border-white/[0.08]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2 mb-1.5">
-                    <span
-                      className="font-serif-eng text-[8.5px] uppercase tracking-[0.2em]"
-                      style={{ color: accentColor }}
-                    >
-                      For Quiet Thought
-                    </span>
-                    {noteSavedToast && (
-                      <span
-                        className="font-serif-eng text-[8.5px] uppercase tracking-[0.16em]"
-                        style={{ color: accentColor }}
-                      >
-                        Saved
-                      </span>
-                    )}
-                  </div>
-                  <p className={`font-serif-eng italic text-[14px] leading-relaxed mb-3 ${tTextMain}`}>
-                    {question}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={noteDraft}
-                      onChange={(e) => setNoteDraft(e.target.value)}
-                      onBlur={() => handleSaveTakeaway({ silent: true })}
-                      placeholder="Write a quiet takeaway for yourself..."
-                      aria-label="Personal contemplation takeaway"
-                      className={`flex-1 min-w-0 bg-transparent border rounded-xl px-3 py-2 font-serif-eng text-[13px] outline-none transition-colors ${
-                        isLightMode
-                          ? 'border-black/12 text-[#1a1814] placeholder:text-black/35 focus:border-[#0d9488]'
-                          : 'border-white/12 text-white placeholder:text-white/35 focus:border-[#2dd4bf]'
-                      }`}
-                    />
-                    {noteDraft.trim() !== (burhanNotes?.[activeBurhan.id] || '').trim() && (
-                      <button
-                        type="button"
-                        onClick={() => handleSaveTakeaway()}
-                        className="min-h-[36px] px-3 rounded-xl font-serif-eng text-[9px] uppercase tracking-[0.16em] border shrink-0 cursor-pointer"
-                        style={{
-                          color: accentColor,
-                          borderColor: `${accentColor}55`,
-                        }}
-                      >
-                        Save
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Footer Primary Action */}
-        {!showLibrary && (
-          <div
-            className={`relative z-20 px-6 py-4 flex items-center justify-center gap-3 shrink-0 border-t ${
-              isLightMode ? 'border-black/[0.06]' : 'border-white/[0.07]'
-            }`}
-          >
-            {!isTodaysBurhan ? (
-              <button
-                type="button"
-                onClick={() => {
-                  hapticNavigate();
-                  handleSaveTakeaway({ silent: true });
-                  if (burhan?.id) setSelectedId(burhan.id);
-                }}
-                className={`flex items-center justify-center gap-2 w-full max-w-[320px] h-12 rounded-2xl border font-serif-eng text-xs uppercase tracking-[0.2em] font-medium transition-all cursor-pointer ${
-                  isLightMode
-                    ? 'bg-white/75 border-black/12 text-[#1a1814] hover:bg-white'
-                    : 'bg-white/[0.07] border-white/15 text-white hover:bg-white/[0.12]'
-                }`}
-              >
-                Return to Today’s Burhan
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  hapticCelebrate();
-                  handleSaveTakeaway({ silent: true });
-                  onComplete();
-                  setTimeout(onClose, 500);
-                }}
-                disabled={isCompleted}
-                className={`relative overflow-hidden group flex items-center justify-center gap-2.5 w-full max-w-[320px] h-12 rounded-2xl transition-all duration-300 border cursor-pointer ${
-                  isCompleted
-                    ? isLightMode
-                      ? 'bg-[#0d9488]/12 border-[#0d9488]/35'
-                      : 'bg-[#2dd4bf]/12 border-[#2dd4bf]/35'
-                    : isLightMode
-                      ? 'bg-[#0d9488] text-white border-[#0d9488] hover:bg-[#0f766e] shadow-xs'
-                      : 'bg-[#2dd4bf]/20 border-[#2dd4bf]/50 hover:bg-[#2dd4bf]/30'
-                }`}
-              >
-                {isCompleted ? (
-                  <>
-                    <CheckCircleIcon
-                      size={17}
-                      className="animate-[checkmarkPop_0.4s_cubic-bezier(0.34,1.56,0.64,1)_forwards]"
-                      style={{ color: accentColor }}
-                    />
-                    <span
-                      className="font-serif-eng text-xs uppercase tracking-[0.2em] font-medium"
-                      style={{ color: accentColor }}
-                    >
-                      Reflected Today
-                    </span>
-                  </>
-                ) : (
-                  <span
-                    className={`font-serif-eng text-xs uppercase tracking-[0.2em] font-medium ${
-                      isLightMode ? 'text-white' : tTextMain
-                    }`}
-                  >
-                    I Have Reflected · +5% Yaqeen
-                  </span>
-                )}
-              </button>
-            )}
-          </div>
+          </footer>
         )}
       </div>
-    </div>
+    </FullScreenWorldShell>
   );
 };

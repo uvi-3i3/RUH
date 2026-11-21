@@ -232,6 +232,89 @@ export function getBadgeTierStyle(tier, isLightMode = false) {
 }
 
 /**
+ * Pure visual framing and warm keepsake metadata for each cozy painted badge illustration.
+ * Image binary imports live strictly in client-side components so Node tests stay asset-free.
+ */
+export const COZY_BADGE_CONFIG = {
+  crescent_dawn: {
+    motif: 'crescent_dawn',
+    cropScale: 1.16,
+    objectPosition: '50% 50%',
+    warmGlow: 'rgba(244, 196, 134, 0.38)',
+    sceneLabel: 'Silver Crescent & Dawn Tea Crest',
+    alt: 'Cozy cloisonne enamel badge featuring a brushed-silver crescent moon cradling a warm steaming teacup and golden morning star',
+  },
+  tasbih_chaplet: {
+    motif: 'tasbih_chaplet',
+    cropScale: 1.32,
+    objectPosition: '50% 50%',
+    warmGlow: 'rgba(242, 186, 118, 0.38)',
+    sceneLabel: 'Amber Tasbih Enamel Crest',
+    alt: 'Cozy cloisonne enamel badge featuring looped honey-amber and pearl tasbih prayer beads with a cream silk tassel on indigo enamel',
+  },
+  triple_flame: {
+    motif: 'triple_flame',
+    cropScale: 1.35,
+    objectPosition: '50% 50%',
+    warmGlow: 'rgba(248, 198, 120, 0.40)',
+    sceneLabel: 'Three Honey Candles Crest',
+    alt: 'Cozy cloisonne enamel badge featuring three glowing honey-beeswax candles and lilac lavender sprigs on deep plum-indigo enamel',
+  },
+  mihrab_lamp: {
+    motif: 'mihrab_lamp',
+    cropScale: 1.24,
+    objectPosition: '50% 50%',
+    warmGlow: 'rgba(246, 188, 102, 0.44)',
+    sceneLabel: 'Sanctuary Lantern Enamel Crest',
+    alt: 'Cloisonne enamel badge featuring an ornate Moroccan pierced-brass lantern glowing warmly inside a scalloped golden arch on teal enamel',
+  },
+  qalam_scroll: {
+    motif: 'qalam_scroll',
+    cropScale: 1.35,
+    objectPosition: '50% 50%',
+    warmGlow: 'rgba(238, 178, 98, 0.42)',
+    sceneLabel: 'Illuminated Folio & Qalam Crest',
+    alt: 'Cloisonne enamel badge featuring an open glowing parchment book crossed by a carved reed qalam pen beneath a golden star on burgundy enamel',
+  },
+  lunar_crown: {
+    motif: 'lunar_crown',
+    cropScale: 1.46,
+    objectPosition: '50% 50%',
+    warmGlow: 'rgba(244, 196, 112, 0.44)',
+    sceneLabel: 'Sleeping Moon-Cat Enamel Crest',
+    alt: 'Cozy cloisonne enamel badge featuring an adorable curled sleeping black cat nestled inside a glowing golden crescent moon with twinkling gold stars',
+  },
+  kaaba_compass: {
+    motif: 'kaaba_compass',
+    cropScale: 1.29,
+    objectPosition: '50% 50%',
+    warmGlow: 'rgba(156, 224, 236, 0.44)',
+    sceneLabel: 'Jasmine Compass Enamel Crest',
+    alt: 'Cloisonne enamel badge featuring an ornate celestial compass rose with a luminous aquamarine center gem and white jasmine blossoms',
+  },
+  astrolabe_star: {
+    motif: 'astrolabe_star',
+    cropScale: 1.29,
+    objectPosition: '50% 50%',
+    warmGlow: 'rgba(164, 226, 224, 0.44)',
+    sceneLabel: 'Celestial Astrolabe Enamel Crest',
+    alt: 'Cloisonne enamel badge featuring a pearl-and-brass astrolabe cradling a glowing golden-aquamarine lotus star and tiny firefly motes',
+  },
+  celestial_prism: {
+    motif: 'celestial_prism',
+    cropScale: 1.31,
+    objectPosition: '50% 50%',
+    warmGlow: 'rgba(196, 226, 255, 0.46)',
+    sceneLabel: 'Pearlescent Full Moon Crest',
+    alt: 'Cloisonne enamel badge featuring a luminous pearlescent full moon embraced by curving silver-green olive branches on deep sapphire enamel',
+  },
+};
+
+export function getCozyBadgeConfig(motif) {
+  return COZY_BADGE_CONFIG[motif] || COZY_BADGE_CONFIG.crescent_dawn;
+}
+
+/**
  * Derive aggregate badge evaluation metrics cleanly from persisted devotion state.
  */
 export function extractBadgeMetrics(data = {}, referenceDate = new Date()) {

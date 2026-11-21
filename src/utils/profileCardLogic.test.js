@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  computeCardSwipeDragAngle,
   computeCardTilt,
   computeGyroTilt,
   computeSeekerRingProgress,
@@ -9,9 +10,11 @@ import {
   formatJoinedYear,
   formatSeekerPassId,
   formatStationNumeral,
+  isCardBackVisible,
   parseCardFinishPreference,
   resolveCardFinish,
   resolveInitials,
+  resolveNextFlipTurns,
 } from './profileCardLogic';
 
 test('formatSeekerPassId produces deterministic archival pass reference', () => {
@@ -118,10 +121,49 @@ test('computeGyroTilt normalizes handheld angles and guards non-finite readings'
   assert.equal(extremeRight.px, 3);
 });
 
-test('evaluateCardSwipeFlip detects decisive horizontal swipes while ignoring taps and vertical scrolls', () => {
+test('computeCardSwipeDragAngle maps horizontal drags to clamped signed Y-rotation degrees', () => {
+  assert.equal(computeCardSwipeDragAngle(0, 400), 0);
+  assert.ok(computeCardSwipeDragAngle(120, 400) > 60);
+  assert.ok(computeCardSwipeDragAngle(-120, 400) < -60);
+  assert.equal(computeCardSwipeDragAngle(900, 400, 148), 148);
+  assert.equal(computeCardSwipeDragAngle(-900, 400, 148), -148);
+  assert.equal(computeCardSwipeDragAngle(Number.NaN, 400), 0);
+});
+
+test('evaluateCardSwipeFlip detects decisive drags and quick flicks both left and right while ignoring taps and vertical scrolls', () => {
   assert.equal(evaluateCardSwipeFlip(-75, 10), 'left');
   assert.equal(evaluateCardSwipeFlip(82, -14), 'right');
-  assert.equal(evaluateCardSwipeFlip(30, 2), null);
+  // Quick flick (short distance, fast duration)
+  assert.equal(evaluateCardSwipeFlip(28, 4, { durationMs: 65, cardWidth: 340 }), 'right');
+  assert.equal(evaluateCardSwipeFlip(-26, -3, { durationMs: 60, cardWidth: 340 }), 'left');
+  // Slow short tap/nudge ignored
+  assert.equal(evaluateCardSwipeFlip(18, 2, { durationMs: 260, cardWidth: 340 }), null);
+  // Locked horizontal swipe tolerates slight end-of-thumb arc
+  assert.equal(
+    evaluateCardSwipeFlip(-46, 44, { durationMs: 140, cardWidth: 340, wasSwipeLocked: true }),
+    'left'
+  );
+  // Vertical scroll ignored when not swipe-locked
   assert.equal(evaluateCardSwipeFlip(70, 65), null);
   assert.equal(evaluateCardSwipeFlip(Number.NaN, 0), null);
 });
+
+test('resolveNextFlipTurns and isCardBackVisible track continuous bidirectional turns accurately', () => {
+  assert.equal(isCardBackVisible(0), false);
+  const turnedRight = resolveNextFlipTurns(0, 'right');
+  assert.equal(turnedRight, 1);
+  assert.equal(isCardBackVisible(turnedRight), true);
+
+  const turnedRightAgain = resolveNextFlipTurns(turnedRight, 'right');
+  assert.equal(turnedRightAgain, 2);
+  assert.equal(isCardBackVisible(turnedRightAgain), false);
+
+  const turnedLeftFromFront = resolveNextFlipTurns(0, 'left');
+  assert.equal(turnedLeftFromFront, -1);
+  assert.equal(isCardBackVisible(turnedLeftFromFront), true);
+
+  const turnedLeftAgain = resolveNextFlipTurns(turnedLeftFromFront, 'left');
+  assert.equal(turnedLeftAgain, -2);
+  assert.equal(isCardBackVisible(turnedLeftAgain), false);
+});
+

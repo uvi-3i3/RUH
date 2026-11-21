@@ -7,9 +7,11 @@ export const PREFERENCE_STORAGE_KEYS = {
   ATMOSPHERE_PHASE: 'ruh_atmosphere_phase_v1',
   HAPTICS_ENABLED: 'ruh_haptics_enabled_v1',
   TACTILE_AUDIO_ENABLED: 'ruh_tactile_audio_enabled_v1',
+  TRAVEL_MODE: 'ruh_travel_mode_v1',
   DEVOTION_STATE: 'ruh_devotion_state',
   LOCATION: 'ruh_location_v1',
   PRAYER_METHOD: 'ruh_prayer_method_v1',
+  ONBOARDING: 'ruh_onboarding_v1',
 };
 
 export function parseThemeMode(raw) {
@@ -36,6 +38,14 @@ export function parseTactileAudioEnabled(raw) {
 
 export function serializeTactileAudioEnabled(enabled) {
   return enabled === false ? 'false' : 'true';
+}
+
+export function parseTravelMode(raw) {
+  return raw === 'true' || raw === true;
+}
+
+export function serializeTravelMode(enabled) {
+  return enabled === true ? 'true' : 'false';
 }
 
 export function parseAtmospherePhase(raw) {

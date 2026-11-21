@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { evaluateQuizQuestion } from '../../utils/learningPathLogic';
 import {
   hapticCelebrate,
   hapticDetent,
   hapticTapLight,
 } from '../../utils/haptics';
+import { playBadgeRevealCue } from '../../utils/tactileAudio';
 
 const CheckCircleIcon = ({ size = 17, style, className = '' }) => (
   <svg
@@ -281,6 +282,10 @@ export const LessonCompleteStage = ({
   onRestart,
   onExit,
 }) => {
+  useEffect(() => {
+    playBadgeRevealCue('bronze');
+  }, []);
+
   return (
     <div
       data-testid="lesson-complete-stage"
