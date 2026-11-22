@@ -6,10 +6,16 @@ import {
   buildAdhanChimeSequence,
   computeSolarReminderSyncPatch,
   getAdhanChimeProfileMeta,
+  isVocalAdhanProfile,
   normalizeAdhanChimeProfile,
+  resolveAdhanAudioTrack,
 } from './adhanChimeLogic';
 
-test('normalizeAdhanChimeProfile validates profiles and preserves legacy boolean compatibility', () => {
+test('normalizeAdhanChimeProfile validates vocal Adhan and chime profiles with legacy compatibility', () => {
+  assert.equal(DEFAULT_ADHAN_CHIME_PROFILE, 'adhan_makkah');
+  assert.equal(normalizeAdhanChimeProfile('adhan_makkah', true), 'adhan_makkah');
+  assert.equal(normalizeAdhanChimeProfile('adhan_madinah', true), 'adhan_madinah');
+  assert.equal(normalizeAdhanChimeProfile('adhan_mishary', true), 'adhan_mishary');
   assert.equal(normalizeAdhanChimeProfile('hijaz_whisper', true), 'hijaz_whisper');
   assert.equal(normalizeAdhanChimeProfile('fajr_ney', false), 'fajr_ney');
   assert.equal(normalizeAdhanChimeProfile('sanctuary_bell', true), 'sanctuary_bell');
@@ -19,8 +25,45 @@ test('normalizeAdhanChimeProfile validates profiles and preserves legacy boolean
   assert.equal(normalizeAdhanChimeProfile(undefined, false), 'silent');
   assert.equal(normalizeAdhanChimeProfile(undefined, true), DEFAULT_ADHAN_CHIME_PROFILE);
   assert.equal(normalizeAdhanChimeProfile('unknown_tone', true), DEFAULT_ADHAN_CHIME_PROFILE);
-  assert.equal(ADHAN_CHIME_PROFILES.length, 4);
+  assert.equal(ADHAN_CHIME_PROFILES.length, 6);
+  assert.equal(getAdhanChimeProfileMeta('adhan_makkah').label, 'Makkah Adhan');
   assert.equal(getAdhanChimeProfileMeta('fajr_ney').label, 'Dawn Ney');
+  assert.equal(isVocalAdhanProfile('adhan_madinah'), true);
+  assert.equal(isVocalAdhanProfile('hijaz_whisper'), false);
+});
+
+test('resolveAdhanAudioTrack selects vocal MP3 tracks and uses authentic Fajr Adhan at live dawn', () => {
+  const makkahDhuhr = resolveAdhanAudioTrack('adhan_makkah', {
+    prayerId: 'dhuhr',
+    isPreview: false,
+  });
+  assert.equal(makkahDhuhr.mode, 'audio');
+  assert.equal(makkahDhuhr.audioUrl, '/audio/adhan-makkah.mp3');
+  assert.equal(makkahDhuhr.isFajrVariant, false);
+
+  const liveFajr = resolveAdhanAudioTrack('adhan_makkah', {
+    prayerId: 'fajr',
+    isPreview: false,
+  });
+  assert.equal(liveFajr.mode, 'audio');
+  assert.equal(liveFajr.audioUrl, '/audio/adhan-fajr.mp3');
+  assert.equal(liveFajr.isFajrVariant, true);
+  assert.ok(liveFajr.volume < makkahDhuhr.volume);
+
+  // Previewing Makkah during Fajr hour still plays the Makkah voice the user tapped
+  const previewMakkah = resolveAdhanAudioTrack('adhan_makkah', {
+    prayerId: 'fajr',
+    isPreview: true,
+  });
+  assert.equal(previewMakkah.audioUrl, '/audio/adhan-makkah.mp3');
+  assert.equal(previewMakkah.isFajrVariant, false);
+
+  const chime = resolveAdhanAudioTrack('hijaz_whisper', { prayerId: 'asr' });
+  assert.equal(chime.mode, 'chime');
+  assert.equal(chime.audioUrl, null);
+
+  const silent = resolveAdhanAudioTrack('silent', { prayerId: 'maghrib' });
+  assert.equal(silent.mode, 'silent');
 });
 
 test('buildAdhanChimeSequence differentiates full Adhan cadence vs pre-prayer whisper vs silent', () => {

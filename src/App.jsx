@@ -2475,6 +2475,10 @@ export default function App() {
           atmosphere={palette}
           onClose={() => setShowSettings(false)}
           onOpenCityPicker={() => setShowCityPicker(true)}
+          onOpenReminders={() => {
+            setShowSettings(false);
+            setShowReminders(true);
+          }}
           onReplayOnboarding={handleReplayOnboarding}
         />
       )}
@@ -2636,6 +2640,8 @@ export default function App() {
             notifications.activeToast?.prayerId &&
               devotionData.dailyCompletedPrayers?.includes(notifications.activeToast.prayerId)
           )}
+          isPlayingAdhan={Boolean(notifications.playingChimeProfileId)}
+          onStopAdhan={notifications.stopAdhanChimePreview}
           onMarkPrayed={(prayerId) => {
             devotionData.logPrayer(prayerId, 'ontime');
             notifications.dismissToast();

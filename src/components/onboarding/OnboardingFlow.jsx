@@ -13,18 +13,24 @@ import {
 } from '../icons/Icons';
 import { CITY_PRESETS } from '../../data/cities';
 import { filterCities } from '../../utils/devotionLogic';
-import { ADHAN_CHIME_PROFILES } from '../../utils/adhanChimeLogic';
+import {
+  ADHAN_CHIME_PROFILES,
+  DEFAULT_ADHAN_CHIME_PROFILE,
+} from '../../utils/adhanChimeLogic';
 import {
   CURATED_POPULAR_CITY_IDS,
+  DEMO_ANCHOR_CATEGORIES,
   ONBOARDING_GOALS,
   ONBOARDING_STEPS,
-  ONBOARDING_STRUGGLES,
   REMINDER_LEAD_OPTIONS,
   buildOnboardingDemoContent,
   buildPersonalizedSolutions,
   buildSanctuaryCharter,
+  getAnchorsByCategory,
   getGoalById,
   getOnboardingProgress,
+  getStrugglesForGoal,
+  sanitizeStruggleIdsForGoal,
 } from '../../utils/onboardingLogic';
 import {
   hapticCelebrate,
@@ -43,7 +49,7 @@ import planCrestImg from '../../assets/images/onboarding_plan_crest_179526155867
 
 const PROCESSING_MESSAGES = [
   'Setting your prayer times…',
-  'Saving your prayer chime…',
+  'Saving your Adhan sound…',
   'Building your daily plan…',
 ];
 
@@ -81,7 +87,7 @@ export const OnboardingFlow = ({
     return existing && existing.toLowerCase() !== 'seeker' ? existing : '';
   });
   const [chimeProfileId, setChimeProfileId] = useState(
-    () => devotionData?.notificationChimeProfile || 'hijaz_whisper'
+    () => devotionData?.notificationChimeProfile || DEFAULT_ADHAN_CHIME_PROFILE
   );
   const [cityQuery, setCityQuery] = useState('');
   const [gpsStatus, setGpsStatus] = useState(null);
@@ -91,6 +97,7 @@ export const OnboardingFlow = ({
   const [selectedAnchorIds, setSelectedAnchorIds] = useState(
     () => (Array.isArray(initialRecord?.selectedAnchorIds) ? initialRecord.selectedAnchorIds : [])
   );
+  const [anchorCategory, setAnchorCategory] = useState('recommended');
   const [leadMinutes, setLeadMinutes] = useState(
     () => devotionData?.notificationLeadMinutes ?? 10
   );
@@ -101,6 +108,10 @@ export const OnboardingFlow = ({
   const progressPct = getOnboardingProgress(stepIndex);
 
   const activeGoal = useMemo(() => getGoalById(selectedGoalId), [selectedGoalId]);
+  const activeGoalStruggles = useMemo(
+    () => getStrugglesForGoal(selectedGoalId),
+    [selectedGoalId]
+  );
   const personalizedSolutions = useMemo(
     () => buildPersonalizedSolutions(selectedStruggleIds, selectedGoalId),
     [selectedStruggleIds, selectedGoalId]
@@ -108,6 +119,10 @@ export const OnboardingFlow = ({
   const demoContent = useMemo(
     () => buildOnboardingDemoContent(selectedGoalId, stations),
     [selectedGoalId, stations]
+  );
+  const visibleAnchors = useMemo(
+    () => getAnchorsByCategory(anchorCategory, selectedGoalId),
+    [anchorCategory, selectedGoalId]
   );
 
   const activeDemoVerse = useMemo(() => {
@@ -222,20 +237,26 @@ export const OnboardingFlow = ({
 
   if (!isOpen) return null;
 
-  const tMain = isLightMode ? 'text-[#1a1814]' : 'text-[rgba(245,238,224,0.96)]';
-  const tSub = isLightMode ? 'text-[#3c352b]' : 'text-[rgba(226,216,198,0.82)]';
-  const tMuted = isLightMode ? 'text-[#5b5245]' : 'text-[rgba(218,208,188,0.66)]';
+  const tMain = isLightMode ? 'text-[#181510]' : 'text-[#f8f3e8]';
+  const tSub = isLightMode ? 'text-[#3c3429]' : 'text-[rgba(235,226,208,0.88)]';
+  const tMuted = isLightMode ? 'text-[#5b5143]' : 'text-[rgba(218,208,188,0.72)]';
 
   const cardBase = isLightMode
-    ? 'bg-white/82 border-[#1a1814]/12 hover:border-[#9c7533]/42'
-    : 'bg-[#0e1320]/76 border-white/12 hover:border-[#d2a24b]/44';
+    ? 'bg-white/94 border-[#1a1814]/14 shadow-[0_8px_22px_-14px_rgba(28,22,14,0.14)] hover:bg-white hover:border-[#9c7533]/50 backdrop-blur-md'
+    : 'bg-[#111728]/86 border-white/16 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_10px_28px_-16px_rgba(0,0,0,0.65)] hover:bg-[#161e33]/92 hover:border-[#d2a24b]/50 backdrop-blur-md';
   const cardSelected = isLightMode
-    ? 'bg-[#fbf4e4]/96 border-[#9c7533] shadow-[0_8px_24px_-12px_rgba(156,117,51,0.34)]'
-    : 'bg-[#1a1610]/90 border-[#d2a24b] shadow-[0_10px_28px_-12px_rgba(210,162,75,0.32)]';
+    ? 'bg-[#fdf7e8] border-[#9c7533] shadow-[0_12px_28px_-12px_rgba(156,117,51,0.34)] ring-1 ring-[#9c7533]/35 backdrop-blur-md'
+    : 'bg-[#211b11]/94 border-[#e0b35a] shadow-[inset_0_1px_0_rgba(240,208,136,0.22),0_14px_34px_-12px_rgba(210,162,75,0.42)] ring-1 ring-[#e0b35a]/45 backdrop-blur-md';
 
   const primaryBtnClass = isLightMode
-    ? 'bg-[#8f6722] text-[#fdfbf7] hover:bg-[#7d581b] shadow-[0_10px_26px_-10px_rgba(125,88,27,0.46)]'
-    : 'bg-[#d2a24b] text-[#141008] hover:bg-[#dfb35d] shadow-[0_12px_30px_-10px_rgba(210,162,75,0.36)]';
+    ? 'bg-[#8f6722] text-[#fdfbf7] hover:bg-[#7b5619] active:scale-[0.985] shadow-[0_12px_28px_-10px_rgba(125,88,27,0.52)]'
+    : 'bg-[#dfb155] text-[#141008] hover:bg-[#eac068] active:scale-[0.985] shadow-[0_14px_34px_-10px_rgba(223,177,85,0.44)]';
+
+  const handleSelectGoal = (goalId) => {
+    hapticDetent();
+    setSelectedGoalId(goalId);
+    setSelectedStruggleIds((prev) => sanitizeStruggleIdsForGoal(prev, goalId));
+  };
 
   const toggleStruggle = (id) => {
     hapticDetent();
@@ -271,7 +292,11 @@ export const OnboardingFlow = ({
     hapticNavigate();
     setGpsStatus('detecting');
     try {
-      await prayerTimes?.requestLocation?.();
+      const res = await prayerTimes?.requestLocation?.();
+      if (res && res.ok === false) {
+        setGpsStatus('error');
+        return;
+      }
       setGpsStatus(null);
       hapticSuccess();
     } catch {
@@ -341,7 +366,7 @@ export const OnboardingFlow = ({
 
       {/* Compact Top Bar */}
       <div
-        className="relative z-10 w-full max-w-xl mx-auto px-5 sm:px-8 shrink-0"
+        className="relative z-10 w-full max-w-2xl mx-auto px-5 sm:px-8 shrink-0"
         style={{ paddingTop: 'calc(10px + var(--sat))' }}
       >
         <div className="flex items-center justify-between gap-3 h-[44px]">
@@ -355,7 +380,7 @@ export const OnboardingFlow = ({
                 className={`w-11 h-11 -ml-2 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
                   isLightMode
                     ? 'text-[#2c2720] hover:bg-black/6'
-                    : 'text-[#f5eee0]/85 hover:bg-white/8'
+                    : 'text-[#f5eee0]/90 hover:bg-white/10'
                 }`}
               >
                 <ChevronLeftIcon size={20} />
@@ -371,8 +396,8 @@ export const OnboardingFlow = ({
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={progressPct}
-            className={`flex-1 max-w-[240px] h-[3px] rounded-full overflow-hidden ${
-              isLightMode ? 'bg-black/10' : 'bg-white/14'
+            className={`flex-1 max-w-[260px] h-[4px] rounded-full overflow-hidden ${
+              isLightMode ? 'bg-black/12' : 'bg-white/16'
             }`}
           >
             <div
@@ -393,7 +418,7 @@ export const OnboardingFlow = ({
                   hapticDismiss();
                   onSkip?.();
                 }}
-                className={`min-h-[44px] px-1.5 font-serif-eng text-xs uppercase tracking-[0.16em] transition-opacity opacity-70 hover:opacity-100 cursor-pointer ${tSub}`}
+                className={`min-h-[44px] px-1.5 font-serif-eng text-xs uppercase tracking-[0.16em] transition-opacity opacity-75 hover:opacity-100 cursor-pointer ${tSub}`}
               >
                 {isReplay ? 'Close' : 'Skip'}
               </button>
@@ -409,15 +434,15 @@ export const OnboardingFlow = ({
       >
         <div
           key={stepId}
-          className={`w-full max-w-xl mx-auto px-5 sm:px-8 py-2 flex flex-col justify-center ${animClass}`}
+          className={`w-full max-w-2xl mx-auto px-5 sm:px-8 py-2 flex flex-col justify-center ${animClass}`}
         >
           {/* SCREEN 1: WELCOME */}
           {stepId === 'welcome' && (
             <div className="flex flex-col items-center text-center gap-4 sm:gap-5">
               {/* High-craft Architectural Courtyard Artwork */}
               <div
-                className={`w-full max-w-[460px] h-[188px] sm:h-[246px] rounded-[22px] overflow-hidden border shadow-[0_20px_50px_-14px_rgba(0,0,0,0.45)] relative ${
-                  isLightMode ? 'border-[#9c7533]/28' : 'border-[#d2a24b]/28'
+                className={`w-full max-w-[520px] h-[196px] sm:h-[264px] rounded-[24px] overflow-hidden border shadow-[0_24px_56px_-14px_rgba(0,0,0,0.52)] relative ${
+                  isLightMode ? 'border-[#9c7533]/32' : 'border-[#d2a24b]/34'
                 }`}
               >
                 <img
@@ -429,12 +454,12 @@ export const OnboardingFlow = ({
                   className="absolute inset-0 pointer-events-none"
                   style={{
                     background:
-                      'linear-gradient(180deg, rgba(8,11,20,0.06) 0%, rgba(8,11,20,0.28) 100%)',
+                      'linear-gradient(180deg, rgba(8,11,20,0.05) 0%, rgba(8,11,20,0.28) 100%)',
                   }}
                 />
               </div>
 
-              <div className="flex flex-col items-center gap-2 max-w-md">
+              <div className="flex flex-col items-center gap-2 max-w-lg">
                 <span
                   className="font-calligraphy text-4xl sm:text-5xl leading-none"
                   style={{ color: accentHex }}
@@ -442,10 +467,10 @@ export const OnboardingFlow = ({
                 >
                   رُوح
                 </span>
-                <h1 className={`font-serif-eng text-3xl sm:text-[38px] font-medium leading-[1.12] ${tMain}`}>
+                <h1 className={`font-serif-eng text-[30px] sm:text-[42px] font-semibold leading-[1.12] tracking-[-0.015em] [text-wrap:balance] ${tMain}`}>
                   Pray on time. Feel calm every day.
                 </h1>
-                <p className={`font-serif-eng text-base sm:text-[17px] leading-snug ${tSub}`}>
+                <p className={`font-serif-eng text-base sm:text-[18px] leading-relaxed ${tSub}`}>
                   Accurate prayer times, soft chimes, and one short verse a day. Private and
                   ad-free.
                 </p>
@@ -453,25 +478,25 @@ export const OnboardingFlow = ({
             </div>
           )}
 
-          {/* SCREEN 2: GOAL */}
+          {/* SCREEN 2: GOAL (STEP 1) */}
           {stepId === 'goal' && (
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-4 sm:gap-5">
+              <div className="flex flex-col gap-1.5">
                 <p
-                  className="font-serif-eng text-[10.5px] uppercase tracking-[0.22em]"
+                  className="font-serif-eng text-xs font-medium tracking-[0.14em]"
                   style={{ color: accentHex }}
                 >
-                  Step 1 · Your Goal
+                  Step 1 · Your Main Goal
                 </p>
-                <h1 className={`font-serif-eng text-2xl sm:text-[34px] font-medium leading-tight ${tMain}`}>
+                <h1 className={`font-serif-eng text-[26px] sm:text-[36px] font-semibold leading-[1.14] tracking-[-0.015em] [text-wrap:balance] ${tMain}`}>
                   What do you want help with most?
                 </h1>
-                <p className={`font-serif-eng text-sm sm:text-base ${tSub}`}>
-                  Pick one focus. We will set up Ruh around it.
+                <p className={`font-serif-eng text-[15px] sm:text-[17px] leading-snug ${tSub}`}>
+                  Pick one focus. The next steps will adapt to it.
                 </p>
               </div>
 
-              <div className="flex flex-col gap-2.5" role="radiogroup" aria-label="Main goal">
+              <div className="flex flex-col gap-2.5 sm:gap-3" role="radiogroup" aria-label="Main goal">
                 {ONBOARDING_GOALS.map((goal) => {
                   const selected = selectedGoalId === goal.id;
                   return (
@@ -481,24 +506,47 @@ export const OnboardingFlow = ({
                       role="radio"
                       aria-checked={selected}
                       data-testid={`onboarding-goal-${goal.id}`}
-                      onClick={() => {
-                        hapticDetent();
-                        setSelectedGoalId(goal.id);
-                      }}
-                      className={`w-full min-h-[62px] text-left px-4 py-3 sm:px-5 sm:py-3.5 rounded-2xl border transition-all duration-200 flex items-center justify-between gap-3 cursor-pointer ${
+                      onClick={() => handleSelectGoal(goal.id)}
+                      className={`w-full min-h-[68px] sm:min-h-[76px] text-left px-4 py-3 sm:px-5 sm:py-4 rounded-2xl border transition-all duration-200 flex items-center justify-between gap-3.5 cursor-pointer ${
                         selected ? cardSelected : cardBase
                       }`}
                     >
+                      <span
+                        className={`w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center shrink-0 transition-all duration-200 ${
+                          selected
+                            ? isLightMode
+                              ? 'bg-[#8f6722] border-[#8f6722] text-white'
+                              : 'bg-[#dfb155] border-[#dfb155] text-[#141008]'
+                            : isLightMode
+                              ? 'border-[#1a1814]/26'
+                              : 'border-white/28'
+                        }`}
+                        aria-hidden="true"
+                      >
+                        {selected && (
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                            <path
+                              d="M2.4 6.2L4.9 8.7L9.6 3.5"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        )}
+                      </span>
                       <div className="min-w-0 flex-1">
-                        <span className={`font-serif-eng text-base sm:text-[17px] font-medium block leading-snug ${tMain}`}>
+                        <span className={`font-serif-eng text-[16px] sm:text-[18px] font-semibold block leading-snug ${tMain}`}>
                           {goal.title}
                         </span>
-                        <span className={`font-serif-eng text-xs sm:text-sm block mt-0.5 leading-snug ${tMuted}`}>
+                        <span className={`font-serif-eng text-[13px] sm:text-[14px] block mt-0.5 leading-snug ${tMuted}`}>
                           {goal.subtitle}
                         </span>
                       </div>
                       <span
-                        className="font-calligraphy text-lg sm:text-xl shrink-0 opacity-85"
+                        className={`font-calligraphy text-xl sm:text-2xl shrink-0 transition-all duration-200 ${
+                          selected ? 'opacity-100' : `${tSub} opacity-80`
+                        }`}
                         style={{ color: selected ? accentHex : undefined }}
                         dir="rtl"
                       >
@@ -511,26 +559,28 @@ export const OnboardingFlow = ({
             </div>
           )}
 
-          {/* SCREEN 3: DAILY STRUGGLES */}
+          {/* SCREEN 3: GOAL-TAILORED DAILY CHALLENGES (STEP 2) */}
           {stepId === 'struggles' && (
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-4 sm:gap-5">
+              <div className="flex flex-col gap-1.5">
                 <p
-                  className="font-serif-eng text-[10.5px] uppercase tracking-[0.22em]"
+                  className="font-serif-eng text-xs font-medium tracking-[0.12em] flex items-center gap-2 flex-wrap"
                   style={{ color: accentHex }}
                 >
-                  Step 2 · Daily Challenges
+                  <span>Step 2 · Tailored to your goal</span>
+                  <span aria-hidden="true" className="opacity-55">·</span>
+                  <span className="opacity-90">{activeGoal.title}</span>
                 </p>
-                <h1 className={`font-serif-eng text-2xl sm:text-[34px] font-medium leading-tight ${tMain}`}>
+                <h1 className={`font-serif-eng text-[26px] sm:text-[36px] font-semibold leading-[1.14] tracking-[-0.015em] [text-wrap:balance] ${tMain}`}>
                   What makes {activeGoal.strugglePrompt} hard right now?
                 </h1>
-                <p className={`font-serif-eng text-sm sm:text-base ${tSub}`}>
-                  Pick all that apply.
+                <p className={`font-serif-eng text-[15px] sm:text-[17px] leading-snug ${tSub}`}>
+                  Pick all that feel true for you.
                 </p>
               </div>
 
-              <div className="flex flex-col gap-2.5">
-                {ONBOARDING_STRUGGLES.map((item) => {
+              <div className="flex flex-col gap-2.5 sm:gap-3" data-testid="onboarding-struggles-list">
+                {activeGoalStruggles.map((item) => {
                   const selected = selectedStruggleIds.includes(item.id);
                   return (
                     <button
@@ -539,37 +589,44 @@ export const OnboardingFlow = ({
                       aria-pressed={selected}
                       data-testid={`onboarding-struggle-${item.id}`}
                       onClick={() => toggleStruggle(item.id)}
-                      className={`w-full min-h-[58px] text-left px-4 py-3 sm:px-5 sm:py-3.5 rounded-2xl border transition-all duration-200 flex items-center gap-3.5 cursor-pointer ${
+                      className={`w-full min-h-[66px] sm:min-h-[74px] text-left px-4 py-3 sm:px-5 sm:py-3.5 rounded-2xl border transition-all duration-200 flex items-center gap-3.5 cursor-pointer ${
                         selected ? cardSelected : cardBase
                       }`}
                     >
                       <span
-                        className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+                        className={`w-[22px] h-[22px] rounded-lg border-2 flex items-center justify-center shrink-0 transition-all duration-200 ${
                           selected
                             ? isLightMode
                               ? 'bg-[#8f6722] border-[#8f6722] text-white'
-                              : 'bg-[#d2a24b] border-[#d2a24b] text-[#141008]'
+                              : 'bg-[#dfb155] border-[#dfb155] text-[#141008]'
                             : isLightMode
-                              ? 'border-black/25'
-                              : 'border-white/25'
+                              ? 'border-[#1a1814]/26'
+                              : 'border-white/28'
                         }`}
                         aria-hidden="true"
                       >
                         {selected && (
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                          <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
                             <path
                               d="M2.2 6.2L4.9 8.9L9.8 3.4"
                               stroke="currentColor"
-                              strokeWidth="1.8"
+                              strokeWidth="2"
                               strokeLinecap="round"
                               strokeLinejoin="round"
                             />
                           </svg>
                         )}
                       </span>
-                      <span className={`font-serif-eng text-sm sm:text-base leading-snug ${tMain}`}>
-                        {item.label}
-                      </span>
+                      <div className="min-w-0 flex-1">
+                        <span className={`font-serif-eng text-[15px] sm:text-[17px] font-semibold block leading-snug ${tMain}`}>
+                          {item.label}
+                        </span>
+                        {item.hint && (
+                          <span className={`font-serif-eng text-[12.5px] sm:text-[13.5px] block mt-0.5 leading-snug ${tMuted}`}>
+                            {item.hint}
+                          </span>
+                        )}
+                      </div>
                     </button>
                   );
                 })}
@@ -579,43 +636,53 @@ export const OnboardingFlow = ({
 
           {/* SCREEN 4: SOLUTION BRIDGE */}
           {stepId === 'solution' && (
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-4 sm:gap-5">
+              <div className="flex flex-col gap-1.5">
                 <p
-                  className="font-serif-eng text-[10.5px] uppercase tracking-[0.22em]"
+                  className="font-serif-eng text-xs font-medium tracking-[0.12em] flex items-center gap-2 flex-wrap"
                   style={{ color: accentHex }}
                 >
-                  How Ruh Helps
+                  <span>How Ruh Helps</span>
+                  <span aria-hidden="true" className="opacity-55">·</span>
+                  <span className="opacity-90">{activeGoal.title}</span>
                 </p>
-                <h1 className={`font-serif-eng text-2xl sm:text-[34px] font-medium leading-tight ${tMain}`}>
+                <h1 className={`font-serif-eng text-[26px] sm:text-[36px] font-semibold leading-[1.14] tracking-[-0.015em] [text-wrap:balance] ${tMain}`}>
                   Simple tools built for your day
                 </h1>
-                <p className={`font-serif-eng text-sm sm:text-base ${tSub}`}>
+                <p className={`font-serif-eng text-[15px] sm:text-[17px] leading-snug ${tSub}`}>
                   Here is how Ruh solves what you just shared.
                 </p>
               </div>
 
-              <div className="flex flex-col gap-2.5" data-testid="onboarding-solution-list">
-                {personalizedSolutions.map((item) => (
+              <div className="flex flex-col gap-2.5 sm:gap-3" data-testid="onboarding-solution-list">
+                {personalizedSolutions.map((item, idx) => (
                   <div
                     key={item.id}
                     data-testid={`onboarding-solution-${item.id}`}
-                    className={`w-full rounded-2xl border px-4 py-3.5 sm:px-5 sm:py-4 flex flex-col gap-1 backdrop-blur-sm ${cardBase}`}
+                    className={`w-full rounded-2xl border px-4 py-3.5 sm:px-5 sm:py-4 flex items-start gap-3.5 ${cardBase}`}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <h2 className={`font-serif-eng text-base sm:text-lg font-medium leading-snug ${tMain}`}>
-                        {item.solutionTitle}
-                      </h2>
-                      <span
-                        className="font-serif-eng text-[9.5px] uppercase tracking-[0.16em] shrink-0"
-                        style={{ color: accentHex }}
-                      >
-                        {item.ruhFeature}
-                      </span>
+                    <span
+                      className="font-serif-eng text-sm sm:text-base font-semibold tabular-nums pt-0.5 shrink-0"
+                      style={{ color: accentHex }}
+                    >
+                      0{idx + 1}
+                    </span>
+                    <div className="min-w-0 flex-1 flex flex-col gap-1">
+                      <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                        <h2 className={`font-serif-eng text-[16px] sm:text-[18px] font-semibold leading-snug ${tMain}`}>
+                          {item.solutionTitle}
+                        </h2>
+                        <span
+                          className="font-serif-eng text-[11px] font-medium tracking-[0.12em] shrink-0"
+                          style={{ color: accentHex }}
+                        >
+                          {item.ruhFeature}
+                        </span>
+                      </div>
+                      <p className={`font-serif-eng text-[13.5px] sm:text-[15px] leading-snug ${tSub}`}>
+                        {item.solutionDetail}
+                      </p>
                     </div>
-                    <p className={`font-serif-eng text-xs sm:text-sm leading-snug ${tSub}`}>
-                      {item.solutionDetail}
-                    </p>
                   </div>
                 ))}
               </div>
@@ -700,17 +767,20 @@ export const OnboardingFlow = ({
                 </div>
               </div>
 
-              {/* Gentle Prayer Chime Grid */}
+              {/* Adhan Voice & Sound Grid */}
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <span className={`font-serif-eng text-[11px] uppercase tracking-[0.18em] ${tSub}`}>
-                    Prayer Chime
+                    Adhan Sound
                   </span>
-                  <span className={`font-serif-eng text-xs ${tMuted}`}>Tap to hear</span>
+                  <span className={`font-serif-eng text-xs ${tMuted}`}>
+                    {notifications?.playingChimeProfileId ? 'Tap again to stop' : 'Tap to hear'}
+                  </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {ADHAN_CHIME_PROFILES.map((profile) => {
                     const selected = chimeProfileId === profile.id;
+                    const isPlaying = notifications?.playingChimeProfileId === profile.id;
                     return (
                       <button
                         key={profile.id}
@@ -720,11 +790,13 @@ export const OnboardingFlow = ({
                         onClick={() => {
                           hapticDetent();
                           setChimeProfileId(profile.id);
-                          if (profile.id !== 'silent') {
+                          if (profile.id === 'silent' || isPlaying) {
+                            notifications?.stopAdhanChimePreview?.();
+                          } else {
                             notifications?.previewAdhanChime?.(profile.id, { prayerId: 'maghrib' });
                           }
                         }}
-                        className={`min-h-[60px] rounded-xl border px-3.5 py-2.5 text-left flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                        className={`min-h-[54px] rounded-xl border px-3 py-2 text-left flex items-center justify-between gap-2 transition-all cursor-pointer ${
                           selected ? cardSelected : cardBase
                         }`}
                       >
@@ -733,14 +805,18 @@ export const OnboardingFlow = ({
                             {profile.label}
                           </span>
                           <span className={`font-serif-eng text-[11px] block truncate ${tMuted}`}>
-                            {profile.id === 'silent' ? 'Visual only' : profile.arabic}
+                            {isPlaying
+                              ? 'Playing…'
+                              : profile.id === 'silent'
+                                ? 'Visual only'
+                                : profile.arabic}
                           </span>
                         </div>
                         {profile.id !== 'silent' ? (
                           <VolumeOnIcon
                             size={15}
-                            className="shrink-0"
-                            style={{ color: selected ? accentHex : undefined, opacity: selected ? 1 : 0.6 }}
+                            className={`shrink-0 ${selected || isPlaying ? '' : tMuted}`}
+                            style={{ color: selected || isPlaying ? accentHex : undefined, opacity: selected || isPlaying ? 1 : 0.72 }}
                           />
                         ) : (
                           <VolumeOffIcon size={15} className={`shrink-0 opacity-60 ${tMuted}`} />
@@ -778,7 +854,7 @@ export const OnboardingFlow = ({
                 </p>
               </div>
 
-              {/* Compact Confirmed Live Times Bar OR GPS Button */}
+              {/* Compact Confirmed Live Times Bar OR Current Location Button */}
               {prayerTimes?.hasLocation ? (
                 <div
                   data-testid="onboarding-location-confirmed"
@@ -787,16 +863,29 @@ export const OnboardingFlow = ({
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <CompassIcon size={15} style={{ color: accentHex }} className="shrink-0" />
-                      <span className={`font-serif-eng text-sm font-medium truncate ${tMain}`}>
-                        {prayerTimes.cityLabel}
-                      </span>
+                      <div className="min-w-0">
+                        <span className={`font-serif-eng text-sm font-medium block truncate ${tMain}`}>
+                          {prayerTimes.localityLabel || prayerTimes.cityLabel}
+                        </span>
+                        {prayerTimes.locationSubtitle && (
+                          <span className={`font-serif-eng text-[11px] block truncate ${tMuted}`}>
+                            {prayerTimes.locationSubtitle}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <span
-                      className="font-serif-eng text-[10px] uppercase tracking-[0.16em] shrink-0"
+                    <button
+                      type="button"
+                      data-testid="onboarding-gps-btn"
+                      onClick={handleUseGps}
+                      disabled={gpsStatus === 'detecting' || prayerTimes?.localityResolving}
+                      className="font-serif-eng text-[10px] uppercase tracking-[0.14em] shrink-0 cursor-pointer hover:opacity-100 opacity-90"
                       style={{ color: accentHex }}
                     >
-                      Synced
-                    </span>
+                      {gpsStatus === 'detecting' || prayerTimes?.localityResolving
+                        ? 'Locating…'
+                        : 'Use GPS'}
+                    </button>
                   </div>
                   {solarTimes && (
                     <div className="grid grid-cols-5 gap-1 text-center">
@@ -818,7 +907,7 @@ export const OnboardingFlow = ({
                   type="button"
                   data-testid="onboarding-gps-btn"
                   onClick={handleUseGps}
-                  disabled={gpsStatus === 'detecting'}
+                  disabled={gpsStatus === 'detecting' || prayerTimes?.localityResolving}
                   className={`w-full min-h-[44px] px-4 py-2 rounded-xl border flex items-center justify-center gap-2 font-serif-eng text-xs uppercase tracking-[0.14em] transition-colors cursor-pointer ${
                     isLightMode
                       ? 'bg-white/85 border-[#9c7533]/35 text-[#7c5a1e] hover:bg-[#fbf4e4]'
@@ -827,7 +916,11 @@ export const OnboardingFlow = ({
                 >
                   <MapPinIcon size={15} />
                   <span>
-                    {gpsStatus === 'detecting' ? 'Finding your location…' : 'Use My Location (GPS)'}
+                    {gpsStatus === 'detecting'
+                      ? 'Getting GPS location…'
+                      : prayerTimes?.localityResolving
+                        ? 'Finding your locality…'
+                        : 'Use My Current Location'}
                   </span>
                 </button>
               )}
@@ -962,7 +1055,9 @@ export const OnboardingFlow = ({
                           &ldquo;{verse.simpleText}&rdquo;
                         </p>
                         <span
-                          className="font-serif-eng text-[10px] uppercase tracking-[0.14em] shrink-0"
+                          className={`font-serif-eng text-[10.5px] uppercase tracking-[0.14em] shrink-0 ${
+                            selected ? '' : tMuted
+                          }`}
                           style={{ color: selected ? accentHex : undefined }}
                         >
                           {verse.s}
@@ -977,24 +1072,75 @@ export const OnboardingFlow = ({
 
           {/* SCREEN 7B: INTERACTIVE DEMO PART 2 — PICK 2 DAILY HABITS */}
           {stepId === 'demo_anchors' && (
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3 sm:gap-3.5">
               <div className="flex flex-col gap-1">
                 <p
-                  className="font-serif-eng text-[10.5px] uppercase tracking-[0.22em]"
+                  className="font-serif-eng text-xs font-medium tracking-[0.14em]"
                   style={{ color: accentHex }}
                 >
                   Try Ruh · 2 of 2
                 </p>
-                <h1 className={`font-serif-eng text-2xl sm:text-[34px] font-medium leading-tight ${tMain}`}>
+                <h1 className={`font-serif-eng text-[26px] sm:text-[34px] font-semibold leading-[1.14] tracking-[-0.015em] [text-wrap:balance] ${tMain}`}>
                   Pick 2 simple daily habits
                 </h1>
-                <p className={`font-serif-eng text-sm sm:text-base ${tSub}`}>
-                  We will add these to your Today checklist.
-                </p>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <p className={`font-serif-eng text-[14px] sm:text-[16px] leading-snug ${tSub}`}>
+                    We will add these to your Today checklist.
+                  </p>
+                  <span
+                    data-testid="onboarding-anchors-count"
+                    className="font-serif-eng text-xs sm:text-sm font-medium tabular-nums shrink-0"
+                    style={{ color: accentHex }}
+                  >
+                    {selectedAnchorIds.length} of 2 picked
+                  </span>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {demoContent.anchors.map((anchor) => {
+              {/* Clean Segmented Category Tabs */}
+              <div
+                role="tablist"
+                aria-label="Daily habit categories"
+                className={`grid grid-cols-5 gap-1 p-1 rounded-xl border ${
+                  isLightMode
+                    ? 'bg-black/[0.04] border-[#1a1814]/10'
+                    : 'bg-[#0b101d]/75 border-white/12'
+                }`}
+              >
+                {DEMO_ANCHOR_CATEGORIES.map((cat) => {
+                  const active = anchorCategory === cat.id;
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      data-testid={`onboarding-anchor-tab-${cat.id}`}
+                      onClick={() => {
+                        hapticDetent();
+                        setAnchorCategory(cat.id);
+                      }}
+                      className={`min-h-[36px] px-1.5 py-1 rounded-lg font-serif-eng text-[12px] sm:text-[13px] font-medium whitespace-nowrap transition-all cursor-pointer ${
+                        active
+                          ? isLightMode
+                            ? 'bg-white text-[#181510] shadow-sm'
+                            : 'bg-[#211b11] text-[#f8f3e8] ring-1 ring-[#e0b35a]/45'
+                          : isLightMode
+                            ? 'text-[#5b5143] hover:text-[#181510]'
+                            : 'text-[rgba(218,208,188,0.72)] hover:text-[#f8f3e8]'
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div
+                data-testid="onboarding-anchors-grid"
+                className="grid grid-cols-2 gap-2 sm:gap-2.5"
+              >
+                {visibleAnchors.map((anchor) => {
                   const selected = selectedAnchorIds.includes(anchor.id);
                   return (
                     <button
@@ -1003,23 +1149,23 @@ export const OnboardingFlow = ({
                       aria-pressed={selected}
                       data-testid={`onboarding-demo-anchor-${anchor.id}`}
                       onClick={() => handleToggleDemoAnchor(anchor.id)}
-                      className={`min-h-[66px] text-left rounded-2xl border px-4 py-3 flex items-center gap-3 transition-all cursor-pointer ${
+                      className={`min-h-[68px] sm:min-h-[72px] text-left rounded-2xl border px-3 py-2.5 sm:px-4 sm:py-3 flex items-start gap-2.5 transition-all cursor-pointer ${
                         selected ? cardSelected : cardBase
                       }`}
                     >
                       <CheckCircleIcon
-                        size={18}
-                        className="shrink-0 transition-opacity"
+                        size={17}
+                        className={`shrink-0 mt-0.5 transition-opacity ${selected ? '' : tMuted}`}
                         style={{
                           color: selected ? accentHex : undefined,
-                          opacity: selected ? 1 : 0.35,
+                          opacity: selected ? 1 : 0.55,
                         }}
                       />
-                      <div className="min-w-0">
-                        <span className={`font-serif-eng text-base font-medium block leading-snug ${tMain}`}>
+                      <div className="min-w-0 flex-1">
+                        <span className={`font-serif-eng text-[13.5px] sm:text-[15.5px] font-semibold block leading-snug ${tMain}`}>
                           {anchor.label}
                         </span>
-                        <span className={`font-serif-eng text-xs block mt-0.5 leading-snug ${tMuted}`}>
+                        <span className={`font-serif-eng text-[11px] sm:text-[12.5px] block mt-0.5 leading-snug line-clamp-1 ${tMuted}`}>
                           {anchor.detail}
                         </span>
                       </div>
@@ -1189,7 +1335,7 @@ export const OnboardingFlow = ({
       {/* Compact Thumb-Zone Footer */}
       {stepId !== 'processing' && (
         <div
-          className="relative z-10 w-full max-w-xl mx-auto px-5 sm:px-8 pt-2 shrink-0"
+          className="relative z-10 w-full max-w-2xl mx-auto px-5 sm:px-8 pt-2 shrink-0"
           style={{ paddingBottom: 'calc(14px + var(--sab))' }}
         >
           {stepId === 'welcome' && (
@@ -1198,7 +1344,7 @@ export const OnboardingFlow = ({
                 type="button"
                 data-testid="onboarding-cta"
                 onClick={handleNext}
-                className={`w-full min-h-[50px] px-6 py-3 rounded-2xl font-serif-eng text-base font-medium tracking-[0.03em] transition-all cursor-pointer ${primaryBtnClass}`}
+                className={`w-full min-h-[54px] px-6 py-3.5 rounded-2xl font-serif-eng text-[16px] sm:text-[17px] font-semibold tracking-[0.02em] transition-all cursor-pointer ${primaryBtnClass}`}
               >
                 Get Started
               </button>
@@ -1220,7 +1366,7 @@ export const OnboardingFlow = ({
               type="button"
               data-testid="onboarding-cta"
               onClick={handleNext}
-              className={`w-full min-h-[50px] px-6 py-3 rounded-2xl font-serif-eng text-base font-medium tracking-[0.03em] transition-all cursor-pointer ${primaryBtnClass}`}
+              className={`w-full min-h-[54px] px-6 py-3.5 rounded-2xl font-serif-eng text-[16px] sm:text-[17px] font-semibold tracking-[0.02em] transition-all cursor-pointer ${primaryBtnClass}`}
             >
               Continue
             </button>
@@ -1231,7 +1377,7 @@ export const OnboardingFlow = ({
               type="button"
               data-testid="onboarding-cta"
               onClick={handleNext}
-              className={`w-full min-h-[50px] px-6 py-3 rounded-2xl font-serif-eng text-base font-medium tracking-[0.03em] transition-all cursor-pointer ${primaryBtnClass}`}
+              className={`w-full min-h-[54px] px-6 py-3.5 rounded-2xl font-serif-eng text-[16px] sm:text-[17px] font-semibold tracking-[0.02em] transition-all cursor-pointer ${primaryBtnClass}`}
             >
               {selectedStruggleIds.length > 0
                 ? `See How Ruh Helps (${selectedStruggleIds.length})`
@@ -1244,7 +1390,7 @@ export const OnboardingFlow = ({
               type="button"
               data-testid="onboarding-cta"
               onClick={handleNext}
-              className={`w-full min-h-[50px] px-6 py-3 rounded-2xl font-serif-eng text-base font-medium tracking-[0.03em] transition-all cursor-pointer ${primaryBtnClass}`}
+              className={`w-full min-h-[54px] px-6 py-3.5 rounded-2xl font-serif-eng text-[16px] sm:text-[17px] font-semibold tracking-[0.02em] transition-all cursor-pointer ${primaryBtnClass}`}
             >
               Customize My App
             </button>
@@ -1255,7 +1401,7 @@ export const OnboardingFlow = ({
               type="button"
               data-testid="onboarding-cta"
               onClick={handleNext}
-              className={`w-full min-h-[50px] px-6 py-3 rounded-2xl font-serif-eng text-base font-medium tracking-[0.03em] transition-all cursor-pointer ${primaryBtnClass}`}
+              className={`w-full min-h-[54px] px-6 py-3.5 rounded-2xl font-serif-eng text-[16px] sm:text-[17px] font-semibold tracking-[0.02em] transition-all cursor-pointer ${primaryBtnClass}`}
             >
               Set My City
             </button>
@@ -1266,7 +1412,7 @@ export const OnboardingFlow = ({
               type="button"
               data-testid="onboarding-cta"
               onClick={handleNext}
-              className={`w-full min-h-[50px] px-6 py-3 rounded-2xl font-serif-eng text-base font-medium tracking-[0.03em] transition-all cursor-pointer ${primaryBtnClass}`}
+              className={`w-full min-h-[54px] px-6 py-3.5 rounded-2xl font-serif-eng text-[16px] sm:text-[17px] font-semibold tracking-[0.02em] transition-all cursor-pointer ${primaryBtnClass}`}
             >
               {prayerTimes?.hasLocation
                 ? `Continue With ${prayerTimes.cityLabel}`
@@ -1280,7 +1426,7 @@ export const OnboardingFlow = ({
               data-testid="onboarding-cta"
               disabled={!isVerseReady}
               onClick={handleNext}
-              className={`w-full min-h-[50px] px-6 py-3 rounded-2xl font-serif-eng text-base font-medium tracking-[0.03em] transition-all ${
+              className={`w-full min-h-[54px] px-6 py-3.5 rounded-2xl font-serif-eng text-[16px] sm:text-[17px] font-semibold tracking-[0.02em] transition-all ${
                 isVerseReady
                   ? `${primaryBtnClass} cursor-pointer`
                   : isLightMode
@@ -1298,7 +1444,7 @@ export const OnboardingFlow = ({
               data-testid="onboarding-cta"
               disabled={!isAnchorsReady}
               onClick={handleNext}
-              className={`w-full min-h-[50px] px-6 py-3 rounded-2xl font-serif-eng text-base font-medium tracking-[0.03em] transition-all ${
+              className={`w-full min-h-[54px] px-6 py-3.5 rounded-2xl font-serif-eng text-[16px] sm:text-[17px] font-semibold tracking-[0.02em] transition-all ${
                 isAnchorsReady
                   ? `${primaryBtnClass} cursor-pointer`
                   : isLightMode
@@ -1317,7 +1463,7 @@ export const OnboardingFlow = ({
               type="button"
               data-testid="onboarding-cta"
               onClick={handleNext}
-              className={`w-full min-h-[50px] px-6 py-3 rounded-2xl font-serif-eng text-base font-medium tracking-[0.03em] transition-all cursor-pointer ${primaryBtnClass}`}
+              className={`w-full min-h-[54px] px-6 py-3.5 rounded-2xl font-serif-eng text-[16px] sm:text-[17px] font-semibold tracking-[0.02em] transition-all cursor-pointer ${primaryBtnClass}`}
             >
               Set Prayer Reminders
             </button>
@@ -1330,7 +1476,7 @@ export const OnboardingFlow = ({
                 data-testid="onboarding-finish-enable"
                 disabled={isFinishing}
                 onClick={() => handleFinish(true)}
-                className={`w-full min-h-[50px] px-6 py-3 rounded-2xl font-serif-eng text-base font-medium tracking-[0.03em] transition-all cursor-pointer ${primaryBtnClass}`}
+                className={`w-full min-h-[54px] px-6 py-3.5 rounded-2xl font-serif-eng text-[16px] sm:text-[17px] font-semibold tracking-[0.02em] transition-all cursor-pointer ${primaryBtnClass}`}
               >
                 Enable Reminders &amp; Start
               </button>

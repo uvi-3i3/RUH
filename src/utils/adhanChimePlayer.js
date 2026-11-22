@@ -1,15 +1,17 @@
 /**
- * Web Audio Gentle Adhan Chime Player for Ruh.
+ * Authentic Adhan Audio & Gentle Chime Player for Ruh (رُوح).
  *
- * Synthesizes warm, contemplative sanctuary chimes (Hijaz Adhan, Dawn Ney, Sanctuary Bell)
- * with low-pass warmth, gentle envelopes, zero external audio file fetches, and clean
- * cancellation for instant non-overlapping previewing.
+ * - Plays bundled offline-ready vocal Adhan MP3 recordings (Makkah, Madinah, Mishary Al-Afasy,
+ *   plus dedicated Fajr Adhan) via HTMLAudioElement with smooth fade-out and instant cancellation.
+ * - Falls back gracefully to Web Audio contemplative chimes (Hijaz Chime, Dawn Ney, Sanctuary Bell)
+ *   for chime profiles or if audio decoding is unavailable.
  */
-import { buildAdhanChimeSequence } from './adhanChimeLogic';
+import { buildAdhanChimeSequence, resolveAdhanAudioTrack } from './adhanChimeLogic';
 
 let chimeCtx = null;
 let breathBuffer = null;
 let activeSession = null;
+let sessionSeq = 0;
 
 function getChimeAudioContext() {
   if (typeof window === 'undefined') return null;
@@ -51,13 +53,58 @@ function emitChimeEvent(detail) {
   }
 }
 
-export function stopAdhanChime() {
+function fadeOutAndStopHtmlAudio(audioEl) {
+  if (!audioEl) return;
+  try {
+    const startVol = Math.max(0, Math.min(1, Number(audioEl.volume) || 0.8));
+    if (audioEl.paused || startVol <= 0.02) {
+      audioEl.pause();
+      audioEl.currentTime = 0;
+      return;
+    }
+    const steps = 6;
+    let step = 0;
+    const timer = setInterval(() => {
+      step += 1;
+      try {
+        if (step >= steps) {
+          clearInterval(timer);
+          audioEl.volume = 0;
+          audioEl.pause();
+          audioEl.currentTime = 0;
+        } else {
+          audioEl.volume = Math.max(0, startVol * (1 - step / steps));
+        }
+      } catch {
+        clearInterval(timer);
+      }
+    }, 28);
+  } catch {
+    try {
+      audioEl.pause();
+      audioEl.currentTime = 0;
+    } catch {}
+  }
+}
+
+export function stopAdhanChime({ invokeOnEnd = true } = {}) {
+  sessionSeq += 1;
   if (!activeSession) return;
   const session = activeSession;
   activeSession = null;
+
   if (session.endTimer) {
     clearTimeout(session.endTimer);
   }
+
+  if (session.kind === 'audio' && session.audioEl) {
+    session.audioEl.onended = null;
+    session.audioEl.onerror = null;
+    fadeOutAndStopHtmlAudio(session.audioEl);
+    if (invokeOnEnd) session.onEnd?.();
+    return;
+  }
+
   try {
     const { ctx, sessionGain, nodes } = session;
     if (ctx && ctx.state === 'running' && sessionGain) {
@@ -73,7 +120,7 @@ export function stopAdhanChime() {
           } catch {}
         });
       }, 120);
-    } else {
+    } else if (Array.isArray(nodes)) {
       nodes.forEach((n) => {
         try {
           n.stop?.();
@@ -84,39 +131,22 @@ export function stopAdhanChime() {
   } catch {
     // Ignore audio stop errors
   }
-  session.onEnd?.();
+  if (invokeOnEnd) session.onEnd?.();
 }
 
 export function isAdhanChimePlaying() {
   return Boolean(activeSession);
 }
 
-/**
- * Play a gentle synthesized Adhan chime for the selected profile.
- * Always stops any previously playing chime first so previews never collide.
- */
-export function playAdhanChime(
-  profileId,
-  { prayerId = 'maghrib', leadMinutes = 0, isPreview = false, onEnd } = {}
-) {
-  stopAdhanChime();
-
+function playSynthesizedChime(profileId, { prayerId, leadMinutes, isPreview, onEnd, token }) {
   const plan = buildAdhanChimeSequence(profileId, { prayerId, leadMinutes, isPreview });
   if (plan.profileId === 'silent' || plan.notes.length === 0) {
-    emitChimeEvent({
-      profileId: 'silent',
-      prayerId,
-      leadMinutes: plan.leadMinutes,
-      noteCount: 0,
-      durationSec: 0,
-      isPreview: Boolean(isPreview),
-      muted: true,
-    });
     onEnd?.();
-    return { played: false, plan };
+    return { played: false, mode: 'silent', plan };
   }
 
   emitChimeEvent({
+    mode: 'chime',
     profileId: plan.profileId,
     prayerId: plan.prayerId,
     leadMinutes: plan.leadMinutes,
@@ -129,10 +159,11 @@ export function playAdhanChime(
   const engine = getChimeAudioContext();
   if (!engine) {
     onEnd?.();
-    return { played: true, plan };
+    return { played: true, mode: 'chime', plan };
   }
 
   const scheduleNotes = () => {
+    if (token !== sessionSeq) return;
     try {
       const { ctx, breathBuffer: noiseBuf } = engine;
       const now = ctx.currentTime + 0.02;
@@ -154,7 +185,6 @@ export function playAdhanChime(
         const startAt = now + note.startSec;
         const endAt = startAt + note.durationSec;
 
-        // Primary warm voice
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = note.waveform || 'sine';
@@ -170,7 +200,6 @@ export function playAdhanChime(
         osc.stop(endAt + 0.04);
         nodes.push(osc);
 
-        // Subtle warm harmonic overtone shimmer
         if (note.overtoneRatio && note.overtoneGain > 0) {
           const overOsc = ctx.createOscillator();
           const overGain = ctx.createGain();
@@ -189,7 +218,6 @@ export function playAdhanChime(
           nodes.push(overOsc);
         }
 
-        // Delicate airy reed breath texture for Dawn Ney
         if (note.breathGain > 0 && noiseBuf) {
           const src = ctx.createBufferSource();
           src.buffer = noiseBuf;
@@ -222,6 +250,7 @@ export function playAdhanChime(
       }, Math.ceil((plan.totalDurationSec + 0.12) * 1000));
 
       activeSession = {
+        kind: 'chime',
         ctx,
         sessionGain,
         nodes,
@@ -239,7 +268,7 @@ export function playAdhanChime(
     engine.ctx
       .resume()
       .then(() => {
-        if (engine.ctx.state === 'running') {
+        if (token === sessionSeq && engine.ctx.state === 'running') {
           scheduleNotes();
         } else {
           onEnd?.();
@@ -252,5 +281,116 @@ export function playAdhanChime(
     onEnd?.();
   }
 
-  return { played: true, plan };
+  return { played: true, mode: 'chime', plan };
+}
+
+/**
+ * Play the selected Adhan voice recording or gentle chime.
+ * Always stops any previously playing Adhan first so previews never overlap.
+ */
+export function playAdhanChime(
+  profileId,
+  { prayerId = 'maghrib', leadMinutes = 0, isPreview = false, onEnd } = {}
+) {
+  stopAdhanChime({ invokeOnEnd: false });
+  const token = sessionSeq;
+
+  const track = resolveAdhanAudioTrack(profileId, { prayerId, leadMinutes, isPreview });
+  if (track.mode === 'silent') {
+    emitChimeEvent({
+      mode: 'silent',
+      profileId: 'silent',
+      prayerId,
+      leadMinutes: Number(leadMinutes) || 0,
+      isPreview: Boolean(isPreview),
+      muted: true,
+    });
+    onEnd?.();
+    return { played: false, mode: 'silent', track };
+  }
+
+  if (track.mode === 'audio' && track.audioUrl && typeof Audio !== 'undefined') {
+    try {
+      const audioEl = new Audio(track.audioUrl);
+      audioEl.preload = 'auto';
+      audioEl.volume = track.volume;
+
+      const finish = () => {
+        if (activeSession?.audioEl === audioEl) {
+          activeSession = null;
+          onEnd?.();
+        }
+      };
+
+      audioEl.onended = finish;
+      audioEl.onerror = () => {
+        if (token !== sessionSeq) return;
+        if (activeSession?.audioEl === audioEl) {
+          activeSession = null;
+        }
+        // Fallback smoothly to warm Maqam Hijaz chime if audio asset fails to decode
+        if (track.fallbackChimeProfileId) {
+          playSynthesizedChime(track.fallbackChimeProfileId, {
+            prayerId,
+            leadMinutes,
+            isPreview,
+            onEnd,
+            token,
+          });
+        } else {
+          onEnd?.();
+        }
+      };
+
+      activeSession = {
+        kind: 'audio',
+        audioEl,
+        onEnd,
+      };
+
+      emitChimeEvent({
+        mode: 'audio',
+        profileId: track.profileId,
+        audioUrl: track.audioUrl,
+        isFajrVariant: track.isFajrVariant,
+        prayerId,
+        leadMinutes: track.leadMinutes,
+        isPreview: Boolean(isPreview),
+        muted: false,
+      });
+
+      const playPromise = audioEl.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {
+          if (token !== sessionSeq) return;
+          if (activeSession?.audioEl === audioEl) {
+            activeSession = null;
+          }
+          if (track.fallbackChimeProfileId) {
+            playSynthesizedChime(track.fallbackChimeProfileId, {
+              prayerId,
+              leadMinutes,
+              isPreview,
+              onEnd,
+              token,
+            });
+          } else {
+            onEnd?.();
+          }
+        });
+      }
+
+      return { played: true, mode: 'audio', track };
+    } catch {
+      // Fall through cleanly to synthesized chime
+    }
+  }
+
+  return playSynthesizedChime(track.fallbackChimeProfileId || profileId, {
+    prayerId,
+    leadMinutes,
+    isPreview,
+    onEnd,
+    token,
+  });
 }

@@ -413,7 +413,7 @@ export const RemindersModal = ({
                     Lead Timing
                   </span>
                   <span className={`font-serif-eng text-[10px] opacity-65 ${tTextSub}`}>
-                    {leadMinutes === 0 ? 'Chimes right at prayer time' : `Soft whisper ${leadMinutes}m early`}
+                    {leadMinutes === 0 ? 'Calls right at prayer time' : `Gentle alert ${leadMinutes}m early`}
                   </span>
                 </div>
 
@@ -460,7 +460,7 @@ export const RemindersModal = ({
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className={`font-serif-eng text-[10px] uppercase tracking-[0.16em] opacity-75 ${tTextSub}`}>
-                    Gentle Adhan Chime
+                    Adhan Voice &amp; Sound
                   </span>
                   {chimeProfile !== 'silent' && (
                     <button
@@ -480,7 +480,7 @@ export const RemindersModal = ({
                         color: accentHex,
                       }}
                     >
-                      {playingChimeProfileId ? 'Stop Chime' : 'Listen'}
+                      {playingChimeProfileId ? 'Stop Adhan' : 'Listen'}
                     </button>
                   )}
                 </div>
@@ -532,7 +532,11 @@ export const RemindersModal = ({
                           </span>
                         </div>
                         <span className={`font-serif-eng text-[10.5px] leading-snug opacity-70 ${tTextSub}`}>
-                          {isPlaying ? 'Playing softly…' : profile.description}
+                          {isPlaying
+                            ? profile.kind === 'adhan'
+                              ? 'Playing Adhan… (tap to stop)'
+                              : 'Playing softly…'
+                            : profile.description}
                         </span>
                       </button>
                     );

@@ -1,40 +1,77 @@
 /**
- * Pure Gentle Adhan Chime profile synthesis plans & solar reminder sync helpers for Ruh.
+ * Pure Adhan Voice & Gentle Chime profiles, audio track resolution, synthesis plans,
+ * and solar reminder sync helpers for Ruh (رُوح).
  *
  * Zero browser/DOM globals — fully testable under node:test.
  */
 import { formatDateToHHMM, NATIVE_PRAYER_IDS } from './notificationLogic';
 
-export const DEFAULT_ADHAN_CHIME_PROFILE = 'hijaz_whisper';
+export const DEFAULT_ADHAN_CHIME_PROFILE = 'adhan_makkah';
 
 export const ADHAN_CHIME_PROFILES = [
   {
+    id: 'adhan_makkah',
+    label: 'Makkah Adhan',
+    arabic: 'أذان مكة',
+    kind: 'adhan',
+    audioUrl: '/audio/adhan-makkah.mp3',
+    fajrAudioUrl: '/audio/adhan-fajr.mp3',
+    description: 'Masjid al-Haram vocal Adhan',
+  },
+  {
+    id: 'adhan_madinah',
+    label: 'Madinah Adhan',
+    arabic: 'أذان المدينة',
+    kind: 'adhan',
+    audioUrl: '/audio/adhan-madinah.mp3',
+    fajrAudioUrl: '/audio/adhan-fajr.mp3',
+    description: 'Masjid an-Nabawi vocal Adhan',
+  },
+  {
+    id: 'adhan_mishary',
+    label: 'Mishary Al-Afasy',
+    arabic: 'مشاري العفاسي',
+    kind: 'adhan',
+    audioUrl: '/audio/adhan-mishary.mp3',
+    fajrAudioUrl: '/audio/adhan-fajr.mp3',
+    description: 'Melodic vocal Adhan · Fajr call',
+  },
+  {
     id: 'hijaz_whisper',
-    label: 'Hijaz Adhan',
+    label: 'Hijaz Chime',
     arabic: 'حجازي',
-    description: 'Soft Maqam Hijaz contemplative call',
+    kind: 'chime',
+    description: 'Soft Maqam Hijaz instrumental',
   },
   {
     id: 'fajr_ney',
     label: 'Dawn Ney',
     arabic: 'ناي الفجر',
+    kind: 'chime',
     description: 'Airy reed flute breath motif',
-  },
-  {
-    id: 'sanctuary_bell',
-    label: 'Sanctuary Bell',
-    arabic: 'رنين هادئ',
-    description: 'Warm harmonic singing-bowl fifths',
   },
   {
     id: 'silent',
     label: 'Silent',
     arabic: 'صامت',
+    kind: 'silent',
     description: 'Visual banner & haptic only',
   },
 ];
 
-const VALID_PROFILE_IDS = new Set(ADHAN_CHIME_PROFILES.map((p) => p.id));
+// Backward-compatible legacy profile preserved for users with saved Sanctuary Bell settings
+const LEGACY_PROFILES = [
+  {
+    id: 'sanctuary_bell',
+    label: 'Sanctuary Bell',
+    arabic: 'رنين هادئ',
+    kind: 'chime',
+    description: 'Warm harmonic singing-bowl fifths',
+  },
+];
+
+const ALL_PROFILES = [...ADHAN_CHIME_PROFILES, ...LEGACY_PROFILES];
+const VALID_PROFILE_IDS = new Set(ALL_PROFILES.map((p) => p.id));
 
 export function isValidAdhanChimeProfile(profileId) {
   return typeof profileId === 'string' && VALID_PROFILE_IDS.has(profileId);
@@ -51,11 +88,69 @@ export function normalizeAdhanChimeProfile(profileId, legacyChimeEnabled = true)
 
 export function getAdhanChimeProfileMeta(profileId) {
   const safeId = normalizeAdhanChimeProfile(profileId);
-  return ADHAN_CHIME_PROFILES.find((p) => p.id === safeId) || ADHAN_CHIME_PROFILES[0];
+  return ALL_PROFILES.find((p) => p.id === safeId) || ADHAN_CHIME_PROFILES[0];
+}
+
+export function isVocalAdhanProfile(profileId) {
+  return getAdhanChimeProfileMeta(profileId).kind === 'adhan';
 }
 
 /**
- * Build a deterministic, serene Web Audio note plan for the selected gentle Adhan chime profile.
+ * Resolve how the selected profile should be played for a given prayer & preview context.
+ * - Vocal Adhan profiles return `{ mode: 'audio', audioUrl, ... }`.
+ * - At live Fajr (`!isPreview && prayerId === 'fajr'`), vocal Adhan uses the authentic Fajr Adhan.
+ * - Instrumental chimes return `{ mode: 'chime', ... }`.
+ * - Silent returns `{ mode: 'silent', ... }`.
+ */
+export function resolveAdhanAudioTrack(
+  profileId,
+  { prayerId = 'maghrib', leadMinutes = 0, isPreview = false } = {}
+) {
+  const meta = getAdhanChimeProfileMeta(profileId);
+  const safeLead = Math.max(0, Number(leadMinutes) || 0);
+
+  if (meta.kind === 'silent') {
+    return {
+      mode: 'silent',
+      profileId: 'silent',
+      label: meta.label,
+      audioUrl: null,
+      isFajrVariant: false,
+      volume: 0,
+      fallbackChimeProfileId: null,
+    };
+  }
+
+  if (meta.kind === 'adhan' && meta.audioUrl) {
+    const useFajrVariant = Boolean(!isPreview && prayerId === 'fajr' && meta.fajrAudioUrl);
+    const isQuietHour = prayerId === 'fajr' || prayerId === 'isha';
+    return {
+      mode: 'audio',
+      profileId: meta.id,
+      label: useFajrVariant ? `${meta.label} · Fajr` : meta.label,
+      audioUrl: useFajrVariant ? meta.fajrAudioUrl : meta.audioUrl,
+      isFajrVariant: useFajrVariant,
+      leadMinutes: safeLead,
+      volume: isQuietHour ? 0.78 : 0.92,
+      fallbackChimeProfileId: 'hijaz_whisper',
+    };
+  }
+
+  return {
+    mode: 'chime',
+    profileId: meta.id,
+    label: meta.label,
+    audioUrl: null,
+    isFajrVariant: false,
+    leadMinutes: safeLead,
+    volume: 1,
+    fallbackChimeProfileId: meta.id,
+  };
+}
+
+/**
+ * Build a deterministic, serene Web Audio note plan for instrumental chime profiles
+ * (and graceful fallback if a vocal Adhan file cannot decode).
  * - Adapts softly for Fajr & Isha (warmer low-pass filter, ~18% lower peak gain).
  * - Uses a shorter, lighter preparatory whisper when `leadMinutes > 0`.
  * - Uses the full contemplative phrase when `leadMinutes === 0` (at Adhan).
@@ -65,6 +160,8 @@ export function buildAdhanChimeSequence(
   { prayerId = 'maghrib', leadMinutes = 0, isPreview = false } = {}
 ) {
   const safeProfile = normalizeAdhanChimeProfile(profileId);
+  const meta = getAdhanChimeProfileMeta(safeProfile);
+
   if (safeProfile === 'silent') {
     return {
       profileId: 'silent',
@@ -77,6 +174,9 @@ export function buildAdhanChimeSequence(
     };
   }
 
+  // If a vocal Adhan profile falls back to Web Audio synthesis, use warm Maqam Hijaz
+  const synthProfile = meta.kind === 'adhan' ? 'hijaz_whisper' : safeProfile;
+
   const safeLead = Math.max(0, Number(leadMinutes) || 0);
   const isQuietHour = prayerId === 'fajr' || prayerId === 'isha';
   const gainScale = isQuietHour ? 0.82 : 1.0;
@@ -85,7 +185,7 @@ export function buildAdhanChimeSequence(
   let notes = [];
   let baseFilterCutoffHz = 1650;
 
-  if (safeProfile === 'hijaz_whisper') {
+  if (synthProfile === 'hijaz_whisper') {
     // Maqam Hijaz rooted on D4 (293.66 Hz): D4 - Eb4 - F#4 - G4 - F#4 - Eb4 - D4
     baseFilterCutoffHz = 1550;
     const rawPhrase =
@@ -114,7 +214,7 @@ export function buildAdhanChimeSequence(
       overtoneGain: 0.24,
       breathGain: 0,
     }));
-  } else if (safeProfile === 'fajr_ney') {
+  } else if (synthProfile === 'fajr_ney') {
     // Airy contemplative Ney reed motif (A4 -> Bb4 -> C5 -> A4 -> G4 -> A4)
     baseFilterCutoffHz = 1350;
     const rawPhrase =

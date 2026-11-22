@@ -5,7 +5,11 @@
  * Zero DOM/React/binary imports — 100% unit-testable via node:test.
  */
 
-import { getAdhanChimeProfileMeta, normalizeAdhanChimeProfile } from './adhanChimeLogic';
+import {
+  DEFAULT_ADHAN_CHIME_PROFILE,
+  getAdhanChimeProfileMeta,
+  normalizeAdhanChimeProfile,
+} from './adhanChimeLogic';
 
 export const ONBOARDING_STORAGE_KEY = 'ruh_onboarding_v1';
 
@@ -62,77 +66,283 @@ export const ONBOARDING_GOALS = [
   },
 ];
 
-export const ONBOARDING_STRUGGLES = [
-  {
-    id: 'lose_track_time',
-    label: 'My day gets busy and I lose track of prayer times.',
-    solutionTitle: 'Accurate live prayer times',
-    solutionDetail:
-      'Ruh follows your city’s exact prayer schedule and sends a gentle chime before time runs out.',
-    ruhFeature: 'Live Solar Times & Soft Chimes',
-  },
-  {
-    id: 'noisy_apps',
-    label: 'Other prayer apps feel cluttered and full of ads.',
-    solutionTitle: 'Calm, private, and ad-free',
-    solutionDetail:
-      'No banner ads, no pop-ups, and no social feeds. Just your prayers, daily verse, and quiet space.',
-    ruhFeature: 'Clean Sanctuary Design',
-  },
-  {
-    id: 'lost_momentum',
-    label: 'I miss one day and lose motivation.',
-    solutionTitle: 'Consistency without guilt',
-    solutionDetail:
-      'Log prayers on time or as Qada, track missed prayers privately, and pause streaks on rest days.',
-    ruhFeature: 'Honest Qada & Rest Days',
-  },
-  {
-    id: 'rushed_reading',
-    label: 'I rush through verses without time to think.',
-    solutionTitle: 'One short verse at a time',
-    solutionDetail:
-      'Read clear everyday English, tap to see the short meaning, and save quick personal notes.',
-    ruhFeature: 'Daily Verse & Notes',
-  },
+export const ONBOARDING_STRUGGLES_BY_GOAL = {
+  guard_prayers: [
+    {
+      id: 'prayer_busy_day',
+      label: 'I get busy and miss the prayer window.',
+      hint: 'Work or errands run long before I notice the time.',
+      solutionTitle: 'Timely local prayer alerts',
+      solutionDetail:
+        'Ruh follows your city’s exact schedule and plays a soft chime before time runs out.',
+      ruhFeature: 'Live Prayer Times',
+    },
+    {
+      id: 'prayer_fajr_wake',
+      label: 'Fajr is the hardest prayer to catch.',
+      hint: 'Early mornings slip away before sunrise.',
+      solutionTitle: 'Gentle dawn Fajr chimes',
+      solutionDetail:
+        'Set an early reminder with our calm Dawn Ney chime built for quiet mornings.',
+      ruhFeature: 'Dawn Chimes',
+    },
+    {
+      id: 'prayer_delay_habit',
+      label: 'I tell myself I will pray in five minutes.',
+      hint: 'Small delays push one prayer into the next.',
+      solutionTitle: 'Clear time-left countdown',
+      solutionDetail:
+        'See how much time remains in the current prayer window at a glance — no guessing.',
+      ruhFeature: 'Live Countdown',
+    },
+    {
+      id: 'prayer_cluttered_apps',
+      label: 'Other prayer apps are cluttered with ads.',
+      hint: 'Pop-ups and noise break my focus before prayer.',
+      solutionTitle: 'Quiet, private, and ad-free',
+      solutionDetail:
+        'No ads, no pop-ups, and no feeds. Just your five prayers and a calm sky.',
+      ruhFeature: 'Clean Design',
+    },
+  ],
+  quran_stillness: [
+    {
+      id: 'quran_hard_understand',
+      label: 'Translations feel heavy or hard to follow.',
+      hint: 'I want clear everyday meaning I can feel right away.',
+      solutionTitle: 'Clear, simple English meaning',
+      solutionDetail:
+        'Read every verse in plain everyday language, with one tap to open short context.',
+      ruhFeature: 'Simple Meaning',
+    },
+    {
+      id: 'quran_rushed_reading',
+      label: 'I rush through verses without reflecting.',
+      hint: 'Scrolling fast makes it hard to pause and absorb.',
+      solutionTitle: 'One calm verse at a time',
+      solutionDetail:
+        'Each verse fills the screen cleanly so you can slow down and write a short personal note.',
+      ruhFeature: 'Daily Reflection',
+    },
+    {
+      id: 'quran_no_time',
+      label: 'My days feel too full for long reading.',
+      hint: 'If I cannot read a full page, I end up skipping.',
+      solutionTitle: 'A 1-minute daily habit',
+      solutionDetail:
+        'Start with a single meaningful verse each day and build a rhythm you can actually keep.',
+      ruhFeature: 'One Verse Daily',
+    },
+    {
+      id: 'quran_forget_saved',
+      label: 'I forget verses that moved me later.',
+      hint: 'They get lost in screenshots or old bookmarks.',
+      solutionTitle: 'Your private verse collection',
+      solutionDetail:
+        'Save favorite verses and reflections in one calm library you can search anytime.',
+      ruhFeature: 'Saved Verses',
+    },
+  ],
+  steady_dhikr: [
+    {
+      id: 'dhikr_forget_after_prayer',
+      label: 'I forget dhikr right after finishing prayer.',
+      hint: 'I stand up and jump straight back into my phone.',
+      solutionTitle: 'Built-in post-prayer Tasbih',
+      solutionDetail:
+        'Open a quiet tactile counter right after logging any prayer — no separate app needed.',
+      ruhFeature: 'Tactile Tasbih',
+    },
+    {
+      id: 'dhikr_lose_count',
+      label: 'I lose count or get distracted midway.',
+      hint: 'It is hard to stay present while checking numbers.',
+      solutionTitle: 'Eyes-free haptic bead rhythm',
+      solutionDetail:
+        'Feel subtle tap feedback on every count and a warm pulse at 33 so you stay focused.',
+      ruhFeature: 'Haptic Counter',
+    },
+    {
+      id: 'dhikr_not_sure_what',
+      label: 'I am not always sure which adhkar to recite.',
+      hint: 'Long morning and evening lists feel overwhelming.',
+      solutionTitle: 'Short morning & evening cards',
+      solutionDetail:
+        'Follow curated, bite-sized Sabah and Masa adhkar with Arabic, sound, and plain meaning.',
+      ruhFeature: 'Daily Adhkar',
+    },
+    {
+      id: 'dhikr_drop_off',
+      label: 'I start strong for two days, then stop.',
+      hint: 'Without a gentle daily cue, the habit fades fast.',
+      solutionTitle: 'Small daily anchors that stick',
+      solutionDetail:
+        'Pair a 3-minute dhikr with your Today checklist so remembering Allah feels effortless.',
+      ruhFeature: 'Daily Anchors',
+    },
+  ],
+  gentle_return: [
+    {
+      id: 'return_guilt_cycle',
+      label: 'Missing one day makes me feel guilty and quit.',
+      hint: 'Broken streaks make me want to stop trying.',
+      solutionTitle: 'Progress without guilt',
+      solutionDetail:
+        'Pause streaks on rest days and log prayers honestly — Ruh celebrates returning, not perfection.',
+      ruhFeature: 'Rest Days & Grace',
+    },
+    {
+      id: 'return_qada_overwhelm',
+      label: 'Missed prayers feel overwhelming to catch up.',
+      hint: 'I do not know where to begin or how to track them.',
+      solutionTitle: 'Private, one-at-a-time Qada log',
+      solutionDetail:
+        'Keep a quiet Qada list and clear missed prayers at your own pace without pressure.',
+      ruhFeature: 'Private Qada Log',
+    },
+    {
+      id: 'return_too_much_once',
+      label: 'Trying to change everything at once burns me out.',
+      hint: 'Big routines fall apart after one busy week.',
+      solutionTitle: 'Start with 2 tiny daily habits',
+      solutionDetail:
+        'Build your comeback around two realistic daily steps you can finish even on hard days.',
+      ruhFeature: 'Gentle Pace',
+    },
+    {
+      id: 'return_disconnected',
+      label: 'I feel disconnected and want a calm place to start.',
+      hint: 'Loud apps and social feeds only add pressure.',
+      solutionTitle: 'A calm, judgment-free space',
+      solutionDetail:
+        'No public leaderboards, no ads, and no noise — just quiet prayers, verses, and steady light.',
+      ruhFeature: 'Private Sanctuary',
+    },
+  ],
+};
+
+export const ONBOARDING_STRUGGLES = Object.values(ONBOARDING_STRUGGLES_BY_GOAL).flat();
+
+export const DEMO_ANCHOR_CATEGORIES = [
+  { id: 'recommended', label: 'For You' },
+  { id: 'prayer', label: 'Prayer' },
+  { id: 'quran', label: 'Qur’an' },
+  { id: 'dhikr', label: 'Dhikr' },
+  { id: 'sunnah', label: 'Sunnah' },
 ];
 
 export const DEMO_ANCHOR_CATALOG = [
   {
     id: 'anchor_fajr_guard',
     label: 'Pray Fajr on time',
-    detail: 'Start the morning inside the Fajr window',
+    detail: 'Catch the dawn window',
+    category: 'prayer',
     goals: ['guard_prayers', 'gentle_return'],
   },
   {
-    id: 'anchor_tasbih_33',
-    label: '33× Tasbih after one prayer',
-    detail: 'SubhanAllah, Alhamdulillah, Allahu Akbar',
-    goals: ['steady_dhikr', 'guard_prayers'],
-  },
-  {
-    id: 'anchor_one_verse_note',
-    label: 'Write a short note on 1 verse',
-    detail: 'Save one thought in your journal',
-    goals: ['quran_stillness'],
-  },
-  {
-    id: 'anchor_morning_adhkar',
-    label: '3-minute morning or evening dhikr',
-    detail: 'Short, focused daily remembrance',
-    goals: ['steady_dhikr', 'quran_stillness', 'gentle_return'],
+    id: 'anchor_early_wudu',
+    label: 'Make wudu before Adhan',
+    detail: 'Be ready when prayer starts',
+    category: 'prayer',
+    goals: ['guard_prayers'],
   },
   {
     id: 'anchor_one_qada',
     label: 'Make up 1 missed prayer',
-    detail: 'Clear your Qada list one step at a time',
+    detail: 'Clear Qada one step at a time',
+    category: 'prayer',
     goals: ['gentle_return', 'guard_prayers'],
+  },
+  {
+    id: 'anchor_isha_on_time',
+    label: 'Pray Isha before midnight',
+    detail: 'Close your day with prayer',
+    category: 'prayer',
+    goals: ['guard_prayers', 'gentle_return'],
+  },
+  {
+    id: 'anchor_one_verse_note',
+    label: 'Reflect on 1 verse',
+    detail: 'Save a short note in your journal',
+    category: 'quran',
+    goals: ['quran_stillness'],
+  },
+  {
+    id: 'anchor_surah_mulk',
+    label: 'Read Surah Al-Mulk',
+    detail: 'Peaceful nightly recitation',
+    category: 'quran',
+    goals: ['quran_stillness', 'gentle_return'],
+  },
+  {
+    id: 'anchor_ayat_kursi',
+    label: 'Recite Ayat al-Kursi',
+    detail: 'After prayer or before sleep',
+    category: 'quran',
+    goals: ['quran_stillness', 'guard_prayers'],
+  },
+  {
+    id: 'anchor_one_page_quran',
+    label: 'Read 1 page of Qur’an',
+    detail: 'Slow, steady daily reading',
+    category: 'quran',
+    goals: ['quran_stillness'],
+  },
+  {
+    id: 'anchor_tasbih_33',
+    label: '33× Tasbih after prayer',
+    detail: 'SubhanAllah, Alhamdulillah, Allahu Akbar',
+    category: 'dhikr',
+    goals: ['steady_dhikr', 'guard_prayers'],
+  },
+  {
+    id: 'anchor_morning_adhkar',
+    label: 'Morning or evening dhikr',
+    detail: '3-minute daily remembrance',
+    category: 'dhikr',
+    goals: ['steady_dhikr', 'quran_stillness', 'gentle_return'],
   },
   {
     id: 'anchor_isha_stillness',
     label: '33× Istighfar before sleep',
     detail: 'End your night on a calm note',
-    goals: ['steady_dhikr', 'gentle_return', 'quran_stillness'],
+    category: 'dhikr',
+    goals: ['steady_dhikr', 'gentle_return'],
+  },
+  {
+    id: 'anchor_salawat_10',
+    label: 'Send 10× Salawat',
+    detail: 'Blessings upon the Prophet ﷺ',
+    category: 'dhikr',
+    goals: ['steady_dhikr', 'gentle_return'],
+  },
+  {
+    id: 'anchor_sunnah_2',
+    label: 'Pray 2 Sunnah raka’at',
+    detail: 'Before Fajr or Duha morning',
+    category: 'sunnah',
+    goals: ['guard_prayers', 'gentle_return'],
+  },
+  {
+    id: 'anchor_witr_night',
+    label: 'Pray Witr before sleep',
+    detail: 'Seal the night in quiet prayer',
+    category: 'sunnah',
+    goals: ['guard_prayers', 'steady_dhikr'],
+  },
+  {
+    id: 'anchor_short_dua',
+    label: 'Make 1 sincere du’a',
+    detail: 'Pause and ask Allah by name',
+    category: 'sunnah',
+    goals: ['gentle_return', 'steady_dhikr', 'quran_stillness'],
+  },
+  {
+    id: 'anchor_daily_sadaqah',
+    label: 'One small act of kindness',
+    detail: 'Charity, smile, or helping hand',
+    category: 'sunnah',
+    goals: ['gentle_return', 'quran_stillness'],
   },
 ];
 
@@ -166,12 +376,34 @@ export function getGoalById(goalId) {
   return ONBOARDING_GOALS.find((g) => g.id === goalId) || ONBOARDING_GOALS[0];
 }
 
+export function getStrugglesForGoal(goalId) {
+  const goal = getGoalById(goalId);
+  return ONBOARDING_STRUGGLES_BY_GOAL[goal.id] || ONBOARDING_STRUGGLES_BY_GOAL.guard_prayers;
+}
+
+export function sanitizeStruggleIdsForGoal(struggleIds = [], goalId = null) {
+  if (!Array.isArray(struggleIds) || struggleIds.length === 0) return [];
+  const validIds = new Set(getStrugglesForGoal(goalId).map((s) => s.id));
+  return struggleIds.filter((id) => typeof id === 'string' && validIds.has(id));
+}
+
 export function getStruggleById(struggleId) {
   return ONBOARDING_STRUGGLES.find((s) => s.id === struggleId) || null;
 }
 
 export function getAnchorById(anchorId) {
   return DEMO_ANCHOR_CATALOG.find((a) => a.id === anchorId) || null;
+}
+
+export function getAnchorsByCategory(categoryId = 'recommended', goalId = 'guard_prayers') {
+  const goal = getGoalById(goalId);
+  if (!categoryId || categoryId === 'recommended') {
+    return [
+      ...DEMO_ANCHOR_CATALOG.filter((a) => a.goals.includes(goal.id)),
+      ...DEMO_ANCHOR_CATALOG.filter((a) => !a.goals.includes(goal.id)),
+    ].slice(0, 8);
+  }
+  return DEMO_ANCHOR_CATALOG.filter((a) => a.category === categoryId);
 }
 
 /**
@@ -266,13 +498,16 @@ export function shouldAutoShowOnboarding({
 }
 
 /**
- * Mirror back up to 3 of the user's selected struggles so the solution screen
- * always fits comfortably on a single non-scrolling screen.
+ * Mirror back up to 3 of the user's selected challenges for the chosen goal
+ * so the solution screen always fits comfortably on a single non-scrolling screen.
  */
 export function buildPersonalizedSolutions(struggleIds = [], goalId = null) {
+  const goalStruggles = getStrugglesForGoal(goalId);
+  const goalStruggleMap = new Map(goalStruggles.map((item) => [item.id, item]));
   const uniqueIds = Array.from(new Set(Array.isArray(struggleIds) ? struggleIds : []));
+
   const matched = uniqueIds
-    .map((id) => getStruggleById(id))
+    .map((id) => goalStruggleMap.get(id) || getStruggleById(id))
     .filter(Boolean)
     .slice(0, 3);
 
@@ -280,14 +515,7 @@ export function buildPersonalizedSolutions(struggleIds = [], goalId = null) {
     return matched;
   }
 
-  const fallbackMap = {
-    guard_prayers: ['lose_track_time', 'noisy_apps', 'lost_momentum'],
-    quran_stillness: ['rushed_reading', 'noisy_apps', 'lose_track_time'],
-    steady_dhikr: ['lose_track_time', 'lost_momentum', 'noisy_apps'],
-    gentle_return: ['lost_momentum', 'noisy_apps', 'lose_track_time'],
-  };
-  const fallbackIds = fallbackMap[goalId] || ['lose_track_time', 'noisy_apps', 'lost_momentum'];
-  return fallbackIds.map((id) => getStruggleById(id)).filter(Boolean).slice(0, 3);
+  return goalStruggles.slice(0, 3);
 }
 
 /**
@@ -322,10 +550,7 @@ export function buildOnboardingDemoContent(goalId, stations = []) {
     }
   }
 
-  const prioritizedAnchors = [
-    ...DEMO_ANCHOR_CATALOG.filter((a) => a.goals.includes(goal.id)),
-    ...DEMO_ANCHOR_CATALOG.filter((a) => !a.goals.includes(goal.id)),
-  ].slice(0, 4);
+  const prioritizedAnchors = getAnchorsByCategory('recommended', goal.id);
 
   return {
     goal,
@@ -344,7 +569,7 @@ export function buildSanctuaryCharter({
   selectedVerse = null,
   selectedAnchorIds = [],
   cityLabel = null,
-  chimeProfileId = 'hijaz_whisper',
+  chimeProfileId = DEFAULT_ADHAN_CHIME_PROFILE,
   leadMinutes = 10,
   isLightMode = false,
 } = {}) {

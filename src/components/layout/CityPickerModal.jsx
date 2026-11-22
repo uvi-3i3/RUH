@@ -3,7 +3,7 @@ import { CITY_PRESETS } from '../../data/cities';
 import { filterCities } from '../../utils/devotionLogic';
 import { MapPinIcon, SearchIcon, XIcon, CheckCircleIcon } from '../icons/Icons';
 import { useOptionalPreferences, useOptionalSanctuary } from '../../context/sanctuaryStore';
-import { hapticDismiss, hapticSuccess } from '../../utils/haptics';
+import { hapticDismiss, hapticSuccess, hapticWarning } from '../../utils/haptics';
 
 export const CityPickerModal = ({
   isOpen,
@@ -25,6 +25,8 @@ export const CityPickerModal = ({
   const tTextSub = isLightMode ? 'text-[#4a453d]' : 'text-[#e4dac8]';
   const accentHex = isLightMode ? '#9c7533' : '#d2a24b';
   const activeCityId = prayerTimes?.location?.cityId;
+  const isGpsActive = prayerTimes?.location?.source === 'gps';
+  const isBusy = Boolean(prayerTimes?.locationLoading || prayerTimes?.localityResolving);
 
   const handleSelectCity = (city) => {
     hapticSuccess();
@@ -33,10 +35,14 @@ export const CityPickerModal = ({
     onClose();
   };
 
-  const handleUseGps = () => {
-    hapticSuccess();
-    prayerTimes?.requestLocation();
-    onClose();
+  const handleUseCurrentLocation = async () => {
+    if (isBusy) return;
+    const res = await prayerTimes?.requestLocation?.();
+    if (res?.ok) {
+      hapticSuccess();
+    } else {
+      hapticWarning();
+    }
   };
 
   return (
@@ -80,7 +86,7 @@ export const CityPickerModal = ({
               Sanctuary Location
             </h2>
             <p className={`font-serif-eng text-[11px] opacity-65 mt-0.5 ${tTextSub}`}>
-              Used for accurate prayer countdowns &amp; Qibla
+              Detects your locality for exact prayer times, method &amp; Qibla
             </p>
           </div>
           <button
@@ -100,29 +106,92 @@ export const CityPickerModal = ({
           </button>
         </div>
 
-        {/* GPS & Search Bar */}
+        {/* Current Location & Search Bar */}
         <div className="px-5 pt-4 pb-3 flex flex-col gap-3 shrink-0">
           <button
             type="button"
-            onClick={handleUseGps}
-            className={`w-full min-h-[46px] px-4 rounded-2xl border flex items-center justify-between cursor-pointer transition-all active:scale-[0.99] ${
+            data-testid="city-picker-gps-btn"
+            disabled={isBusy}
+            onClick={handleUseCurrentLocation}
+            className={`w-full min-h-[48px] px-4 py-2.5 rounded-2xl border flex items-center justify-between gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-70 ${
               isLightMode
-                ? 'bg-[#9c7533]/10 border-[#9c7533]/30 text-[#7c5a1e] hover:bg-[#9c7533]/15'
-                : 'bg-[#d2a24b]/10 border-[#d2a24b]/30 text-[#e5c17b] hover:bg-[#d2a24b]/15'
+                ? 'bg-[#9c7533]/10 border-[#9c7533]/35 text-[#7c5a1e] hover:bg-[#9c7533]/15'
+                : 'bg-[#d2a24b]/10 border-[#d2a24b]/35 text-[#e5c17b] hover:bg-[#d2a24b]/15'
             }`}
           >
-            <span className="flex items-center gap-2.5 font-serif-eng text-xs uppercase tracking-[0.16em]">
-              <MapPinIcon size={15} />
-              <span>
-                {prayerTimes?.locationLoading ? 'Locating GPS...' : 'Use Current GPS'}
+            <span className="flex items-center gap-2.5 font-serif-eng text-xs uppercase tracking-[0.15em] min-w-0">
+              <MapPinIcon size={15} className="shrink-0" />
+              <span className="truncate">
+                {prayerTimes?.locationLoading
+                  ? 'Getting GPS fix…'
+                  : prayerTimes?.localityResolving
+                    ? 'Resolving locality…'
+                    : isGpsActive
+                      ? 'Refresh Current Location'
+                      : 'Use Current Location'}
               </span>
             </span>
-            {prayerTimes?.location?.source === 'gps' && (
-              <span className="font-serif-eng text-[10px] uppercase tracking-[0.14em] opacity-85">
+            {isGpsActive && !isBusy && (
+              <span className="font-serif-eng text-[10px] uppercase tracking-[0.14em] opacity-85 shrink-0">
                 Active
               </span>
             )}
           </button>
+
+          {/* Active Resolved Locality Readout */}
+          {isGpsActive && prayerTimes?.hasLocation && (
+            <div
+              data-testid="city-picker-locality-card"
+              className={`w-full px-4 py-3 rounded-2xl border flex items-center justify-between gap-3 ${
+                isLightMode
+                  ? 'bg-white/75 border-[#9c7533]/25'
+                  : 'bg-white/[0.04] border-[#d2a24b]/25'
+              }`}
+            >
+              <div className="flex flex-col min-w-0">
+                <span className={`font-serif-eng text-[15px] font-medium leading-snug truncate ${tTextMain}`}>
+                  {prayerTimes.localityLabel}
+                </span>
+                {prayerTimes.locationSubtitle && (
+                  <span className={`font-serif-eng text-[11.5px] opacity-70 truncate ${tTextSub}`}>
+                    {prayerTimes.locationSubtitle}
+                  </span>
+                )}
+                {prayerTimes.coordsLabel && (
+                  <span className={`font-serif-eng text-[10.5px] opacity-55 tabular-nums mt-0.5 ${tTextSub}`}>
+                    {prayerTimes.coordsLabel}
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                data-testid="city-picker-use-locality-done"
+                onClick={() => {
+                  hapticSuccess();
+                  onClose?.();
+                }}
+                className="min-h-[34px] px-3 rounded-xl font-serif-eng text-[10.5px] uppercase tracking-[0.14em] font-medium shrink-0 cursor-pointer"
+                style={{
+                  backgroundColor: isLightMode ? '#9c7533' : 'rgba(210,162,75,0.2)',
+                  color: isLightMode ? '#ffffff' : '#f3d9a4',
+                }}
+              >
+                Done
+              </button>
+            </div>
+          )}
+
+          {prayerTimes?.locationError && (
+            <p
+              role="status"
+              data-testid="city-picker-location-error"
+              className={`font-serif-eng text-xs leading-relaxed px-1 ${
+                isLightMode ? 'text-[#8a3a1a]' : 'text-[#f0b28c]'
+              }`}
+            >
+              {prayerTimes.locationError}
+            </p>
+          )}
 
           <div
             className={`w-full min-h-[44px] px-3.5 rounded-2xl border flex items-center gap-2.5 ${
@@ -134,7 +203,7 @@ export const CityPickerModal = ({
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search city or country..."
+              placeholder="Or search a city or country..."
               aria-label="Search cities"
               className={`w-full bg-transparent outline-none font-serif-eng text-sm placeholder:opacity-45 ${tTextMain}`}
             />
@@ -146,7 +215,7 @@ export const CityPickerModal = ({
           {filteredCities.length === 0 ? (
             <div className="py-10 text-center">
               <p className={`font-serif-eng text-sm opacity-60 ${tTextSub}`}>
-                No matching city found. Try a nearby major city or GPS.
+                No matching city found. Tap Use Current Location above for your exact locality.
               </p>
             </div>
           ) : (

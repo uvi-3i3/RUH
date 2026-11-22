@@ -18,9 +18,12 @@ import { getLocalDateStr } from '../utils/devotionLogic';
 import {
   computeSolarReminderSyncPatch,
   getAdhanChimeProfileMeta,
+  isVocalAdhanProfile,
   normalizeAdhanChimeProfile,
+  resolveAdhanAudioTrack,
 } from '../utils/adhanChimeLogic';
 import { playAdhanChime, stopAdhanChime } from '../utils/adhanChimePlayer';
+import { shouldSilenceChimeForAutopilot } from '../utils/autopilotLogic';
 import { hapticDetent, hapticTaskComplete } from '../utils/haptics';
 
 const SENT_STORAGE_KEY = 'ruh_sent_notifications_v1';
@@ -58,6 +61,7 @@ export function useLocalNotifications({ devotionData, prayerTimes }) {
   const [playingChimeProfileId, setPlayingChimeProfileId] = useState(null);
   const sentKeysRef = useRef(readInitialSentKeys());
   const toastTimerRef = useRef(null);
+  const playbackTokenRef = useRef(0);
   const channelCreatedRef = useRef(false);
 
   const effectiveChimeProfile = normalizeAdhanChimeProfile(
@@ -130,21 +134,25 @@ export function useLocalNotifications({ devotionData, prayerTimes }) {
       clearTimeout(toastTimerRef.current);
       toastTimerRef.current = null;
     }
+    playbackTokenRef.current += 1;
     stopAdhanChime();
     setPlayingChimeProfileId(null);
     setActiveToast(null);
   }, []);
 
-  const showSanctuaryToast = useCallback((payload) => {
+  const showSanctuaryToast = useCallback((payload, { autoDismissMs = 12000 } = {}) => {
     if (!payload) return;
     if (toastTimerRef.current) {
       clearTimeout(toastTimerRef.current);
-    }
-    setActiveToast({ ...payload, shownAt: Date.now() });
-    toastTimerRef.current = setTimeout(() => {
-      setActiveToast(null);
       toastTimerRef.current = null;
-    }, 12000);
+    }
+    setActiveToast({ ...payload, shownAt: Date.now(), persistentAudio: autoDismissMs === null });
+    if (typeof autoDismissMs === 'number' && autoDismissMs > 0) {
+      toastTimerRef.current = setTimeout(() => {
+        setActiveToast(null);
+        toastTimerRef.current = null;
+      }, autoDismissMs);
+    }
   }, []);
 
   const dispatchOsNotification = useCallback(
@@ -197,7 +205,7 @@ export function useLocalNotifications({ devotionData, prayerTimes }) {
         badge: '/ruh-mark.svg',
         tag: payload.tag || payload.id,
         renotify: true,
-        silent: false,
+        silent: Boolean(payload.silent),
         data: {
           prayerId: payload.prayerId || null,
           reminderId: payload.reminderId || null,
@@ -242,53 +250,109 @@ export function useLocalNotifications({ devotionData, prayerTimes }) {
   );
 
   const stopAdhanChimePreview = useCallback(() => {
+    playbackTokenRef.current += 1;
     stopAdhanChime();
     setPlayingChimeProfileId(null);
   }, []);
 
   const previewAdhanChime = useCallback(
-    (profileId, preferredPrayerId) => {
+    (profileId, preferredPrayerIdOrOptions) => {
       const safeProfile = normalizeAdhanChimeProfile(profileId ?? effectiveChimeProfile, true);
+      const token = ++playbackTokenRef.current;
       if (safeProfile === 'silent') {
         stopAdhanChime();
         setPlayingChimeProfileId(null);
         hapticDetent();
         return false;
       }
-      const prayerId = preferredPrayerId || prayerTimes?.prayerData?.nextPrayer || 'maghrib';
+      const explicitPrayerId =
+        typeof preferredPrayerIdOrOptions === 'string'
+          ? preferredPrayerIdOrOptions
+          : preferredPrayerIdOrOptions?.prayerId;
+      const prayerId = explicitPrayerId || prayerTimes?.prayerData?.nextPrayer || 'maghrib';
       setPlayingChimeProfileId(safeProfile);
       const res = playAdhanChime(safeProfile, {
         prayerId,
         leadMinutes: 0,
         isPreview: true,
         onEnd: () => {
-          setPlayingChimeProfileId((cur) => (cur === safeProfile ? null : cur));
+          if (playbackTokenRef.current !== token) return;
+          setPlayingChimeProfileId(null);
         },
       });
+      if (!res.played && playbackTokenRef.current === token) {
+        setPlayingChimeProfileId(null);
+      }
       return res.played;
     },
     [effectiveChimeProfile, prayerTimes?.prayerData?.nextPrayer]
   );
 
+  const autopilotConfig = devotionData?.autopilot;
+
   const deliverNotification = useCallback(
     async (payload) => {
+      const prayerId = payload?.prayerId || 'maghrib';
       const chimeMeta = getAdhanChimeProfileMeta(effectiveChimeProfile);
-      showSanctuaryToast({
-        ...payload,
-        chimeProfileId: effectiveChimeProfile,
-        chimeProfileLabel: chimeMeta.label,
+      const silencedByAutopilot = shouldSilenceChimeForAutopilot(
+        autopilotConfig,
+        payload?.prayerId || null,
+        new Date()
+      );
+      const willPlayAudio = effectiveChimeProfile !== 'silent' && !silencedByAutopilot;
+      const isVocalAdhan = willPlayAudio && isVocalAdhanProfile(effectiveChimeProfile);
+      const trackInfo = resolveAdhanAudioTrack(effectiveChimeProfile, {
+        prayerId,
+        leadMinutes: payload?.leadMinutes || 0,
+        isPreview: false,
       });
-      if (effectiveChimeProfile !== 'silent') {
-        playAdhanChime(effectiveChimeProfile, {
-          prayerId: payload?.prayerId || 'maghrib',
+
+      showSanctuaryToast(
+        {
+          ...payload,
+          chimeProfileId: effectiveChimeProfile,
+          chimeProfileLabel: silencedByAutopilot
+            ? 'Quiet Hours'
+            : trackInfo.label || chimeMeta.label,
+          chimeSilencedByAutopilot: silencedByAutopilot,
+          isAdhanAudio: isVocalAdhan,
+        },
+        { autoDismissMs: isVocalAdhan ? null : 12000 }
+      );
+
+      if (willPlayAudio) {
+        const token = ++playbackTokenRef.current;
+        setPlayingChimeProfileId(effectiveChimeProfile);
+        const res = playAdhanChime(effectiveChimeProfile, {
+          prayerId,
           leadMinutes: payload?.leadMinutes || 0,
           isPreview: false,
+          onEnd: () => {
+            if (playbackTokenRef.current !== token) return;
+            setPlayingChimeProfileId(null);
+            if (isVocalAdhan) {
+              if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+              toastTimerRef.current = setTimeout(() => {
+                setActiveToast(null);
+                toastTimerRef.current = null;
+              }, 4500);
+            }
+          },
         });
+        if (!res.played && playbackTokenRef.current === token) {
+          setPlayingChimeProfileId(null);
+        }
       }
-      hapticTaskComplete();
-      return dispatchOsNotification(payload);
+      if (silencedByAutopilot) {
+        hapticDetent();
+      } else {
+        hapticTaskComplete();
+      }
+      return dispatchOsNotification(
+        silencedByAutopilot ? { ...payload, silent: true } : payload
+      );
     },
-    [effectiveChimeProfile, dispatchOsNotification, showSanctuaryToast]
+    [autopilotConfig, effectiveChimeProfile, dispatchOsNotification, showSanctuaryToast]
   );
 
   const requestPermission = useCallback(async () => {
@@ -387,24 +451,38 @@ export function useLocalNotifications({ devotionData, prayerTimes }) {
       );
 
       const chimeMeta = getAdhanChimeProfileMeta(effectiveChimeProfile);
+      const isVocalAdhan = isVocalAdhanProfile(effectiveChimeProfile);
       const enrichedPayload = {
         ...payload,
         chimeProfileId: effectiveChimeProfile,
         chimeProfileLabel: chimeMeta.label,
+        isAdhanAudio: isVocalAdhan,
       };
 
-      // Render Sanctuary alert + gentle Adhan chime immediately so UI feedback is instantaneous
-      showSanctuaryToast(enrichedPayload);
+      // Render Sanctuary alert + actual Adhan / chime immediately so UI feedback is instantaneous
+      showSanctuaryToast(enrichedPayload, { autoDismissMs: isVocalAdhan ? null : 12000 });
       if (effectiveChimeProfile !== 'silent') {
+        const token = ++playbackTokenRef.current;
         setPlayingChimeProfileId(effectiveChimeProfile);
-        playAdhanChime(effectiveChimeProfile, {
+        const res = playAdhanChime(effectiveChimeProfile, {
           prayerId: nextPrayerId,
           leadMinutes: devotionData.notificationLeadMinutes || 0,
           isPreview: true,
           onEnd: () => {
-            setPlayingChimeProfileId((cur) => (cur === effectiveChimeProfile ? null : cur));
+            if (playbackTokenRef.current !== token) return;
+            setPlayingChimeProfileId(null);
+            if (isVocalAdhan) {
+              if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+              toastTimerRef.current = setTimeout(() => {
+                setActiveToast(null);
+                toastTimerRef.current = null;
+              }, 4500);
+            }
           },
         });
+        if (!res.played && playbackTokenRef.current === token) {
+          setPlayingChimeProfileId(null);
+        }
       }
       hapticTaskComplete();
 

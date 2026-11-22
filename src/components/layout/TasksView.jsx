@@ -15,6 +15,7 @@ import { quranMiraclesData } from '../../data/quranMiraclesData';
 import { PRACTICE_SETS } from '../../data/adhkarData';
 import { selectActiveBurhan } from '../../utils/devotionLogic';
 import { resolveRecommendedAdhkarPeriod } from '../../utils/prayerWindowLogic';
+import { resolveAutopilotPracticeTab } from '../../utils/autopilotLogic';
 import { selectActiveMiracle } from '../../utils/miraclesLogic';
 import { isPointerDrag } from '../../utils/smoothInteractionLogic';
 import { HabitEditorSheet } from './HabitEditorSheet';
@@ -31,7 +32,11 @@ import {
   hapticWarning,
 } from '../../utils/haptics';
 import { playTaskTickOffCue } from '../../utils/tactileAudio';
-import { useOptionalHabits, useOptionalPreferences } from '../../context/sanctuaryStore';
+import {
+  useOptionalHabits,
+  useOptionalPreferences,
+  useOptionalSanctuary,
+} from '../../context/sanctuaryStore';
 
 export const TasksView = memo(({
   currentView,
@@ -63,8 +68,10 @@ export const TasksView = memo(({
   onOpenDuas,
   onOpenQada,
 }) => {
+  const sanctuaryCtx = useOptionalSanctuary();
   const prefsCtx = useOptionalPreferences();
   const habitsCtx = useOptionalHabits();
+  const autopilot = sanctuaryCtx?.devotionData?.autopilot;
 
   const isLightMode = isLightModeProp ?? prefsCtx?.isLightMode ?? false;
   const habits = habitsProp ?? habitsCtx?.habits ?? [];
@@ -89,6 +96,7 @@ export const TasksView = memo(({
   const longPressTimer = useRef(null);
   const pressOriginRef = useRef(null);
   const pressDraggedRef = useRef(false);
+  const wasTasksActiveRef = useRef(false);
 
   useEffect(() => {
     setIntentionDraft(dailyIntention || '');
@@ -179,6 +187,21 @@ export const TasksView = memo(({
     currentMiracle && exploredMiracleIds.includes(currentMiracle.id)
   );
   const isTasksActive = currentView === 'tasks';
+
+  useEffect(() => {
+    const wasActive = wasTasksActiveRef.current;
+    wasTasksActiveRef.current = isTasksActive;
+    if (isTasksActive && !wasActive && autopilot?.enabled && autopilot?.autoFocusPractice) {
+      const nextTab = resolveAutopilotPracticeTab({
+        autopilot,
+        recommendedPeriod,
+        dailyTasks,
+        practiceSets: PRACTICE_SETS,
+      });
+      setActiveSetId(nextTab);
+    }
+  }, [isTasksActive, autopilot, recommendedPeriod, dailyTasks]);
+
   const completedDhikrCount = activeItems.filter((t) => (dailyTasks[t.id] || 0) >= t.target).length;
   const completedHabitsCount = habits.filter((h) => (dailyHabitLogs[h.id] || 0) >= h.target).length;
   const completedCount = isHabitsTab ? completedHabitsCount : completedDhikrCount;

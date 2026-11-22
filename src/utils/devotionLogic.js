@@ -4,6 +4,11 @@
  */
 
 import { sanitizeHabitList } from './habitLogic.js';
+import { normalizeAutopilotConfig } from './autopilotLogic.js';
+import {
+  DEFAULT_ADHAN_CHIME_PROFILE,
+  isValidAdhanChimeProfile,
+} from './adhanChimeLogic.js';
 
 export const getLocalDateStr = (d = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -745,11 +750,10 @@ export function sanitizeBackupPayload(raw) {
     }
     const leadNum = Number(raw.settings.notificationLeadMinutes);
     const legacyChime = raw.settings.notificationChime !== false;
-    const validChimeProfiles = ['hijaz_whisper', 'fajr_ney', 'sanctuary_bell', 'silent'];
-    const safeChimeProfile = validChimeProfiles.includes(raw.settings.notificationChimeProfile)
+    const safeChimeProfile = isValidAdhanChimeProfile(raw.settings.notificationChimeProfile)
       ? raw.settings.notificationChimeProfile
       : legacyChime
-        ? 'hijaz_whisper'
+        ? DEFAULT_ADHAN_CHIME_PROFILE
         : 'silent';
     cleanSettings = {
       isSimpleMode: Boolean(raw.settings.isSimpleMode),
@@ -758,6 +762,7 @@ export function sanitizeBackupPayload(raw) {
       notificationChime: safeChimeProfile !== 'silent',
       notificationChimeProfile: safeChimeProfile,
       autoSyncSolarReminders: raw.settings.autoSyncSolarReminders !== false,
+      autopilot: normalizeAutopilotConfig(raw.settings.autopilot),
       prayers: Object.keys(safePrayers).length > 0 ? safePrayers : undefined,
       customReminders: Array.isArray(raw.settings.customReminders)
         ? raw.settings.customReminders

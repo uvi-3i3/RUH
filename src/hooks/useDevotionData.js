@@ -20,6 +20,14 @@ import {
   DEFAULT_ADHAN_CHIME_PROFILE,
   normalizeAdhanChimeProfile,
 } from '../utils/adhanChimeLogic';
+import {
+  DEFAULT_AUTOPILOT_CONFIG,
+  applyFridayAutopilotTodo,
+  buildAutopilotPausedDates,
+  computeMidnightQadaSweep,
+  isAutopilotRestDay,
+  normalizeAutopilotConfig,
+} from '../utils/autopilotLogic';
 
 const STORAGE_KEY = 'ruh_devotion_state';
 
@@ -53,6 +61,7 @@ const getDefaultSettings = () => ({
   notificationChime: true,
   notificationChimeProfile: DEFAULT_ADHAN_CHIME_PROFILE,
   autoSyncSolarReminders: true,
+  autopilot: { ...DEFAULT_AUTOPILOT_CONFIG },
 });
 
 const getInitialState = () => {
@@ -80,6 +89,7 @@ const getInitialState = () => {
       fasts: 0,
       completedTotal: 0,
     },
+    lastQadaSweepDate: null,
     favoriteDuaIds: [],
     streakPausedDates: {},
     dailyIntention: { date: currentDate, text: '' },
@@ -121,6 +131,35 @@ const getInitialState = () => {
       }
 
       if (!parsed.dailyPrayers || typeof parsed.dailyPrayers !== 'object' || parsed.dailyPrayers.date !== currentDate) {
+        const sweep = computeMidnightQadaSweep({
+          autopilot: parsed.settings?.autopilot,
+          prevDailyPrayers: parsed.dailyPrayers,
+          currentDate,
+          lastQadaSweepDate: parsed.lastQadaSweepDate || null,
+        });
+        if (sweep.sweptDate && sweep.missedPrayers.length > 0) {
+          const baseQada =
+            parsed.qada && typeof parsed.qada === 'object'
+              ? parsed.qada
+              : {
+                  prayers: { fajr: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0 },
+                  fasts: 0,
+                  completedTotal: 0,
+                };
+          const nextQadaPrayers = {
+            fajr: 0,
+            dhuhr: 0,
+            asr: 0,
+            maghrib: 0,
+            isha: 0,
+            ...(baseQada.prayers && typeof baseQada.prayers === 'object' ? baseQada.prayers : {}),
+          };
+          for (const pid of sweep.missedPrayers) {
+            nextQadaPrayers[pid] = (Number(nextQadaPrayers[pid]) || 0) + 1;
+          }
+          parsed.qada = { ...baseQada, prayers: nextQadaPrayers };
+          parsed.lastQadaSweepDate = sweep.sweptDate;
+        }
         parsed.dailyPrayers = getDefaultDailyPrayers(currentDate);
       } else {
         const completed = Array.isArray(parsed.dailyPrayers.completed)
@@ -198,6 +237,7 @@ const getInitialState = () => {
         if (typeof parsed.settings.autoSyncSolarReminders !== 'boolean') {
           parsed.settings.autoSyncSolarReminders = true;
         }
+        parsed.settings.autopilot = normalizeAutopilotConfig(parsed.settings.autopilot);
       }
 
       if (!parsed.history || typeof parsed.history !== 'object' || Array.isArray(parsed.history)) {
@@ -252,6 +292,14 @@ const getInitialState = () => {
       ) {
         parsed.dailyTodos = { date: currentDate, items: cloneDefaultDailyTodos(DEFAULT_DAILY_TODOS) };
       }
+      parsed.dailyTodos = {
+        date: currentDate,
+        items: applyFridayAutopilotTodo({
+          autopilot: parsed.settings.autopilot,
+          todos: parsed.dailyTodos.items,
+          date: new Date(),
+        }),
+      };
       return parsed;
     }
   } catch (e) {
@@ -559,6 +607,7 @@ export function useDevotionData() {
         fasts: 0,
         completedTotal: 0,
       },
+      lastQadaSweepDate: null,
       favoriteDuaIds: [],
       streakPausedDates: {},
       dailyIntention: { date: currentDate, text: '' },
@@ -1011,13 +1060,28 @@ export function useDevotionData() {
     }
   }, []);
 
+  const autopilot = useMemo(
+    () => normalizeAutopilotConfig(data.settings?.autopilot),
+    [data.settings?.autopilot]
+  );
+  const effectiveStreakPausedDates = useMemo(
+    () =>
+      buildAutopilotPausedDates({
+        autopilot,
+        streakPausedDates: data.streakPausedDates,
+        history: data.history,
+        referenceDate: new Date(),
+      }),
+    [autopilot, data.streakPausedDates, data.history]
+  );
   const activeDays = Object.keys(data.history).length;
   const { currentStreak, longestStreak } = useMemo(
-    () => computeStreaks(data.history, new Date(), data.streakPausedDates),
-    [data.history, data.streakPausedDates]
+    () => computeStreaks(data.history, new Date(), effectiveStreakPausedDates),
+    [data.history, effectiveStreakPausedDates]
   );
   const todayStr = getLocalDateStr();
-  const isStreakPausedToday = Boolean(data.streakPausedDates?.[todayStr]);
+  const isAutopilotRestDayToday = isAutopilotRestDay(autopilot, new Date());
+  const isStreakPausedToday = Boolean(effectiveStreakPausedDates?.[todayStr]);
 
   const toggleSimpleMode = useCallback(() => {
     setData((prev) => ({
@@ -1264,6 +1328,57 @@ export function useDevotionData() {
     }));
   }, []);
 
+  const toggleAutopilot = useCallback(() => {
+    const dateStr = getLocalDateStr();
+    const now = new Date();
+    setData((prev) => {
+      const current = normalizeAutopilotConfig(prev.settings?.autopilot);
+      const nextAutopilot = { ...current, enabled: !current.enabled };
+      const currentTodos =
+        prev.dailyTodos?.date === dateStr && Array.isArray(prev.dailyTodos.items)
+          ? prev.dailyTodos.items
+          : cloneDefaultDailyTodos(DEFAULT_DAILY_TODOS);
+      return {
+        ...prev,
+        settings: { ...prev.settings, autopilot: nextAutopilot },
+        dailyTodos: {
+          date: dateStr,
+          items: applyFridayAutopilotTodo({
+            autopilot: nextAutopilot,
+            todos: currentTodos,
+            date: now,
+          }),
+        },
+      };
+    });
+  }, []);
+
+  const updateAutopilot = useCallback((patch) => {
+    if (!patch || typeof patch !== 'object') return;
+    const dateStr = getLocalDateStr();
+    const now = new Date();
+    setData((prev) => {
+      const current = normalizeAutopilotConfig(prev.settings?.autopilot);
+      const nextAutopilot = normalizeAutopilotConfig({ ...current, ...patch });
+      const currentTodos =
+        prev.dailyTodos?.date === dateStr && Array.isArray(prev.dailyTodos.items)
+          ? prev.dailyTodos.items
+          : cloneDefaultDailyTodos(DEFAULT_DAILY_TODOS);
+      return {
+        ...prev,
+        settings: { ...prev.settings, autopilot: nextAutopilot },
+        dailyTodos: {
+          date: dateStr,
+          items: applyFridayAutopilotTodo({
+            autopilot: nextAutopilot,
+            todos: currentTodos,
+            date: now,
+          }),
+        },
+      };
+    });
+  }, []);
+
   const setProfile = useCallback((name) => {
     const trimmed = (name || '').trim() || 'Seeker';
     const initials =
@@ -1334,13 +1449,15 @@ export function useDevotionData() {
         data.settings?.notificationChime !== false
       ),
       autoSyncSolarReminders: data.settings?.autoSyncSolarReminders !== false,
+      autopilot,
+      isAutopilotRestDayToday,
       prayers: data.settings?.prayers || {},
       customReminders: data.settings?.customReminders || [],
       profile: data.profile,
       activeDays,
       currentStreak,
       longestStreak,
-      streakPausedDates: data.streakPausedDates || {},
+      streakPausedDates: effectiveStreakPausedDates,
       isStreakPausedToday,
       habits: Array.isArray(data.habits) ? data.habits : DEFAULT_HABITS,
       dailyHabitLogs: data.dailyHabitLogs?.counts || {},
@@ -1389,6 +1506,8 @@ export function useDevotionData() {
       goToStation,
       toggleSimpleMode,
       toggleAmbientMode,
+      toggleAutopilot,
+      updateAutopilot,
       togglePrayerReminder,
       updatePrayerTime,
       setNotificationLeadMinutes,
@@ -1406,6 +1525,9 @@ export function useDevotionData() {
     }),
     [
       data,
+      autopilot,
+      effectiveStreakPausedDates,
+      isAutopilotRestDayToday,
       activeDays,
       currentStreak,
       longestStreak,
@@ -1446,6 +1568,8 @@ export function useDevotionData() {
       goToStation,
       toggleSimpleMode,
       toggleAmbientMode,
+      toggleAutopilot,
+      updateAutopilot,
       togglePrayerReminder,
       updatePrayerTime,
       setNotificationLeadMinutes,

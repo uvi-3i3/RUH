@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CURATED_POPULAR_CITY_IDS,
+  DEMO_ANCHOR_CATALOG,
+  DEMO_ANCHOR_CATEGORIES,
   ONBOARDING_GOALS,
   ONBOARDING_STEPS,
   ONBOARDING_STRUGGLES,
@@ -10,9 +12,12 @@ import {
   buildPersonalizedSolutions,
   buildSanctuaryCharter,
   formatSimpleVerseText,
+  getAnchorsByCategory,
   getOnboardingProgress,
+  getStrugglesForGoal,
   hasExistingUserActivity,
   parseOnboardingState,
+  sanitizeStruggleIdsForGoal,
   serializeOnboardingState,
   shouldAutoShowOnboarding,
 } from './onboardingLogic';
@@ -162,34 +167,75 @@ test('hasExistingUserActivity detects prior progress cleanly while leaving fresh
   assert.equal(hasExistingUserActivity({ profile: { name: 'Layla' } }), true);
 });
 
-test('buildPersonalizedSolutions mirrors selected struggles capped at 3 for single-screen fit', () => {
+test('every Step 1 goal maps to 4 unique goal-specific Step 2 challenges and mirrored solutions', () => {
+  const seenIds = new Set();
+  const seenLabels = new Set();
+
+  for (const goal of ONBOARDING_GOALS) {
+    const struggles = getStrugglesForGoal(goal.id);
+    assert.equal(struggles.length, 4, `Goal "${goal.id}" should have 4 tailored Step 2 challenges`);
+    for (const s of struggles) {
+      assert.equal(seenIds.has(s.id), false, `Duplicate challenge ID "${s.id}" across goals`);
+      assert.equal(seenLabels.has(s.label), false, `Duplicate challenge label "${s.label}" across goals`);
+      assert.ok(s.hint && s.hint.length > 0, `Challenge "${s.id}" should include supporting hint copy`);
+      seenIds.add(s.id);
+      seenLabels.add(s.label);
+    }
+  }
+
+  assert.equal(ONBOARDING_STRUGGLES.length, 16);
+
+  // Selected challenges for guard_prayers mirror in order and cap at 3
   const mirrored = buildPersonalizedSolutions(
-    ['noisy_apps', 'lost_momentum', 'lose_track_time', 'rushed_reading'],
+    ['prayer_fajr_wake', 'prayer_delay_habit', 'prayer_busy_day', 'prayer_cluttered_apps'],
     'guard_prayers'
   );
   assert.equal(mirrored.length, 3);
-  assert.equal(mirrored[0].id, 'noisy_apps');
-  assert.equal(mirrored[1].id, 'lost_momentum');
-  assert.equal(mirrored[2].id, 'lose_track_time');
+  assert.equal(mirrored[0].id, 'prayer_fajr_wake');
+  assert.equal(mirrored[1].id, 'prayer_delay_habit');
+  assert.equal(mirrored[2].id, 'prayer_busy_day');
 
-  const fallback = buildPersonalizedSolutions([], 'gentle_return');
-  assert.equal(fallback.length, 3);
-  assert.equal(fallback[0].id, 'lost_momentum');
-  assert.equal(ONBOARDING_STRUGGLES.length, 4);
+  // Empty selection falls back to the chosen goal's top 3 challenges
+  const quranFallback = buildPersonalizedSolutions([], 'quran_stillness');
+  assert.equal(quranFallback.length, 3);
+  assert.equal(quranFallback[0].id, 'quran_hard_understand');
+
+  const returnFallback = buildPersonalizedSolutions([], 'gentle_return');
+  assert.equal(returnFallback.length, 3);
+  assert.equal(returnFallback[0].id, 'return_guilt_cycle');
+
+  // Switching Step 1 goal strips stale Step 2 selections from the previous goal
+  assert.deepEqual(
+    sanitizeStruggleIdsForGoal(['prayer_fajr_wake', 'quran_no_time'], 'quran_stillness'),
+    ['quran_no_time']
+  );
+  assert.deepEqual(
+    sanitizeStruggleIdsForGoal(['prayer_fajr_wake'], 'steady_dhikr'),
+    []
+  );
 });
 
-test('buildOnboardingDemoContent curates 3 goal-specific simple verses and 4 prioritized habits', () => {
+test('buildOnboardingDemoContent curates 3 goal-specific simple verses and 8 prioritized habits from 16 categorized choices', () => {
   const returnDemo = buildOnboardingDemoContent('gentle_return', MOCK_STATIONS);
   assert.equal(returnDemo.goal.id, 'gentle_return');
   assert.equal(returnDemo.verses.length, 3);
   assert.equal(returnDemo.verses[0].id, 's4v1');
-  assert.equal(returnDemo.anchors.length, 4);
+  assert.equal(returnDemo.anchors.length, 8);
   assert.equal(returnDemo.anchors[0].goals.includes('gentle_return'), true);
 
   const prayerDemo = buildOnboardingDemoContent('guard_prayers', MOCK_STATIONS);
   assert.equal(prayerDemo.verses[0].id, 's1v4');
   assert.equal(prayerDemo.verses[0].simpleText, 'Actions are judged by their intentions.');
   assert.equal(ONBOARDING_GOALS.length, 4);
+
+  assert.equal(DEMO_ANCHOR_CATALOG.length, 16);
+  assert.equal(new Set(DEMO_ANCHOR_CATALOG.map((a) => a.id)).size, 16);
+  assert.equal(DEMO_ANCHOR_CATEGORIES.length, 5);
+  assert.equal(getAnchorsByCategory('prayer', 'guard_prayers').length, 4);
+  assert.equal(getAnchorsByCategory('quran', 'guard_prayers').length, 4);
+  assert.equal(getAnchorsByCategory('dhikr', 'guard_prayers').length, 4);
+  assert.equal(getAnchorsByCategory('sunnah', 'guard_prayers').length, 4);
+  assert.equal(getAnchorsByCategory('recommended', 'quran_stillness').length, 8);
 });
 
 test('buildSanctuaryCharter and buildCharterShareText produce clean plain-English plan output', () => {

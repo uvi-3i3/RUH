@@ -6,6 +6,8 @@ export const SacredNotificationToast = ({
   toast,
   isLightMode = false,
   isAlreadyCompleted = false,
+  isPlayingAdhan = false,
+  onStopAdhan,
   onMarkPrayed,
   onDismiss,
 }) => {
@@ -140,6 +142,24 @@ export const SacredNotificationToast = ({
                   </button>
                 )}
 
+                {toast.isAdhanAudio && isPlayingAdhan && onStopAdhan && (
+                  <button
+                    type="button"
+                    data-testid="toast-stop-adhan-btn"
+                    onClick={() => {
+                      hapticDismiss();
+                      onStopAdhan();
+                    }}
+                    className="min-h-[30px] px-2.5 rounded-xl border font-serif-eng text-[9px] uppercase tracking-[0.14em] cursor-pointer transition-colors"
+                    style={{
+                      borderColor: isLightMode ? 'rgba(156,117,51,0.35)' : 'rgba(210,162,75,0.4)',
+                      color: accentHex,
+                    }}
+                  >
+                    Stop Adhan
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => {
@@ -155,7 +175,7 @@ export const SacredNotificationToast = ({
           </div>
         </div>
 
-        {/* Subtle 12s Shimmer Progress Hairline */}
+        {/* Subtle 12s Shimmer Progress Hairline (pauses while live vocal Adhan is playing) */}
         <div
           aria-hidden="true"
           className="h-[2px] w-full overflow-hidden"
@@ -165,7 +185,7 @@ export const SacredNotificationToast = ({
         >
           <div
             key={toast.shownAt}
-            className="h-full origin-left animate-toast-drain"
+            className={`h-full origin-left ${toast.persistentAudio && isPlayingAdhan ? 'w-full opacity-55' : 'animate-toast-drain'}`}
             style={{ backgroundColor: accentHex, opacity: 0.72 }}
           />
         </div>
