@@ -14,6 +14,7 @@ import {
   getCompendiumPosition,
   planBurhanEditorialFlow,
   resolveAdjacentBurhanId,
+  resolveBurhanStudyExtras,
 } from '../../utils/worldReaderLogic';
 import { useOptionalPreferences } from '../../context/sanctuaryStore';
 import {
@@ -27,6 +28,8 @@ import {
 } from '../../utils/haptics';
 import { FullScreenWorldShell } from './FullScreenWorldShell';
 import { BookColophonDivider, BookInkIllustration } from './BookInkIllustration';
+import { TopicQaSection } from './TopicQaSection';
+import { getTopicQaCount } from '../../utils/topicQaLogic';
 import { resolveBurhanVisual } from '../../data/worldVisualsData';
 import fitraNightImg from '../../assets/images/fitra_wisdom_night_1795156409054.jpg';
 import fitraDayImg from '../../assets/images/fitra_wisdom_day_1795156408567.jpg';
@@ -126,6 +129,11 @@ export const BurhanOverlay = ({
     activeBurhan,
     localSimple
   );
+  const { anchorTranslation, anchorRef } = resolveBurhanStudyExtras(
+    activeBurhan,
+    localSimple
+  );
+  const topicQaCount = getTopicQaCount('burhan', activeBurhan.id);
   const movements = buildBurhanMovements(paragraphs);
   const { leadMovements, closingMovements } = planBurhanEditorialFlow(movements);
   const compendiumPos = getCompendiumPosition(allBurhans, activeBurhan.id);
@@ -146,6 +154,14 @@ export const BurhanOverlay = ({
     if (nextId) {
       hapticDetent();
       setSelectedId(nextId);
+    }
+  };
+
+  const handleJumpToQa = () => {
+    hapticTapLight();
+    const target = document.getElementById('burhan-qa-codex');
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
 
@@ -328,7 +344,7 @@ export const BurhanOverlay = ({
         </div>
 
         {/* ================================================================
-            TOP SANCTUARY BAR (56px, clean 3-zone header matching Study tab)
+            TOP SANCTUARY BAR (56px, calm editorial masthead without corner Back)
         ================================================================ */}
         <header
           className={`relative z-20 shrink-0 px-4 sm:px-7 pb-2.5 border-b ${hairline} flex items-center justify-between gap-3`}
@@ -339,38 +355,29 @@ export const BurhanOverlay = ({
             backgroundColor: isLightMode ? 'rgba(245,243,237,0.74)' : 'rgba(6,14,16,0.72)',
           }}
         >
-          {/* Left: Back Button */}
-          <button
-            type="button"
-            data-testid="burhan-back"
-            aria-label="Back to Sanctuary"
-            onClick={handleRequestClose}
-            className={`min-h-[40px] pl-2.5 pr-3.5 rounded-full border flex items-center gap-1 font-serif-eng text-[12px] tracking-[0.04em] whitespace-nowrap shrink-0 cursor-pointer transition active:scale-95 ${
-              isLightMode
-                ? 'bg-white/80 hover:bg-white border-[#0f766e]/22 text-[#18211f]'
-                : 'bg-white/[0.06] hover:bg-white/[0.11] border-white/[0.12] text-[#eff7f5]'
-            }`}
-          >
-            <ChevronLeftIcon size={15} style={{ color: accentHex }} />
-            <span>Back</span>
-          </button>
+          {/* Left: World Identity */}
+          <div className="min-w-0 flex items-center gap-2.5">
+            <span
+              dir="rtl"
+              className="font-calligraphy text-[20px] leading-none shrink-0"
+              style={{ color: accentHex }}
+            >
+              بُرْهَان
+            </span>
+            <span
+              aria-hidden="true"
+              className={`h-3.5 w-px shrink-0 ${isLightMode ? 'bg-[#0f766e]/20' : 'bg-white/15'}`}
+            />
+            <span className={`font-serif-eng text-[12px] sm:text-[12.5px] truncate ${textSub}`}>
+              <span className="sm:hidden">Burhan</span>
+              <span className="hidden sm:inline">House of Reason &amp; Fitrah</span>
+            </span>
+          </div>
 
-          {/* Center: World Title + Thin Progress Hairline */}
-          <div className="min-w-0 flex-1 max-w-[300px] flex flex-col items-center">
-            <div className="flex items-center gap-2 min-w-0">
-              <span
-                dir="rtl"
-                className="font-calligraphy text-[18px] leading-none shrink-0"
-                style={{ color: accentHex }}
-              >
-                بُرْهَان
-              </span>
-              <span className={`hidden sm:inline font-serif-eng text-[12px] truncate ${textSub}`}>
-                House of Reason &amp; Fitrah
-              </span>
-            </div>
+          {/* Center: Thin Compendium Progress Hairline (md+) */}
+          <div className="hidden md:flex flex-1 max-w-[200px] items-center justify-center">
             <div
-              className={`w-full max-w-[180px] h-[3px] rounded-full overflow-hidden mt-1.5 ${
+              className={`w-full h-[3px] rounded-full overflow-hidden ${
                 isLightMode ? 'bg-[#0f766e]/14' : 'bg-white/[0.11]'
               }`}
             >
@@ -484,7 +491,7 @@ export const BurhanOverlay = ({
           {/* Mobile Compendium View OR Active Illuminated Monograph Folio */}
           {showMobileIndex ? (
             <div
-              className="flex-1 min-h-0 lg:hidden"
+              className="flex-1 min-h-0 lg:hidden pr-9"
               style={{
                 backgroundColor: isLightMode ? 'rgba(248,247,242,0.86)' : 'rgba(6,16,18,0.82)',
               }}
@@ -495,7 +502,7 @@ export const BurhanOverlay = ({
             <main
               ref={folioScrollRef}
               data-testid="burhan-folio-stage"
-              className="flex-1 min-h-0 overflow-y-auto hide-scrollbar px-5 sm:px-10 lg:px-14 py-7 sm:py-10"
+              className="flex-1 min-h-0 overflow-y-auto hide-scrollbar pl-5 pr-11 sm:px-12 lg:px-16 py-7 sm:py-10"
             >
               <article className="w-full max-w-[780px] mx-auto pb-8">
                 {/* Mobile-Only Clean Reading Mode Bar (keeps mobile top header uncluttered) */}
@@ -543,16 +550,28 @@ export const BurhanOverlay = ({
                 {/* 1. UNBOXED MONOGRAPH MASTHEAD */}
                 <div className={`text-center pb-7 mb-8 border-b ${hairline}`}>
                   {activeBurhan.arabicAnchor && (
-                    <p
-                      dir="rtl"
-                      className="font-calligraphy text-[26px] sm:text-[32px] leading-relaxed mb-3"
-                      style={{
-                        color: accentHex,
-                        textShadow: isLightMode ? 'none' : `0 0 32px ${accentHex}30`,
-                      }}
-                    >
-                      {activeBurhan.arabicAnchor}
-                    </p>
+                    <div className="mb-4">
+                      <p
+                        dir="rtl"
+                        className="font-calligraphy text-[26px] sm:text-[32px] leading-relaxed mb-1.5"
+                        style={{
+                          color: accentHex,
+                          textShadow: isLightMode ? 'none' : `0 0 32px ${accentHex}30`,
+                        }}
+                      >
+                        {activeBurhan.arabicAnchor}
+                      </p>
+                      {(anchorTranslation || anchorRef) && (
+                        <p className={`font-serif-eng italic text-[13.5px] sm:text-[14.5px] leading-relaxed max-w-[580px] mx-auto ${textSub}`}>
+                          {anchorTranslation ? `“${anchorTranslation}”` : ''}
+                          {anchorRef ? (
+                            <span className={`not-italic text-[11.5px] ml-2 ${textMuted}`}>
+                              — {anchorRef}
+                            </span>
+                          ) : null}
+                        </p>
+                      )}
+                    </div>
                   )}
 
                   {/* Unboxed Editorial Metadata (Zero Pills) */}
@@ -587,6 +606,23 @@ export const BurhanOverlay = ({
                       ? ` · ${formatReadMinutes(activeBurhan.readMinutes)} contemplation`
                       : ''}
                   </p>
+
+                  {topicQaCount > 0 && (
+                    <div className="mt-4 flex justify-center">
+                      <button
+                        type="button"
+                        data-testid="burhan-jump-qa"
+                        onClick={handleJumpToQa}
+                        className={`min-h-[36px] px-3.5 rounded-full border font-serif-eng text-[12px] font-medium whitespace-nowrap cursor-pointer transition-colors ${
+                          isLightMode
+                            ? 'bg-white/75 hover:bg-white border-[#0f766e]/25 text-[#0f766e]'
+                            : 'bg-[#2dd4bf]/10 hover:bg-[#2dd4bf]/18 border-[#2dd4bf]/30 text-[#5eead4]'
+                        }`}
+                      >
+                        Explore {topicQaCount} questions on this proof ↓
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* 2. OPENING PROSE WITH TRUE-ALPHA INK ENGRAVING WOVEN DIRECTLY IN */}
@@ -752,6 +788,16 @@ export const BurhanOverlay = ({
                     ))}
                   </div>
                 )}
+
+                {/* 4b. TOPIC-SCOPED QUESTIONS & CLARITY CODEX */}
+                <TopicQaSection
+                  key={`burhan-${activeBurhan.id}`}
+                  world="burhan"
+                  activeItem={activeBurhan}
+                  isLightMode={isLightMode}
+                  isSimpleMode={localSimple}
+                  sectionId="burhan-qa-codex"
+                />
 
                 {/* 5. UNBOXED CONTEMPLATION COLOPHON & PERSONAL TAKEAWAY */}
                 {(question || onSaveNote) && (

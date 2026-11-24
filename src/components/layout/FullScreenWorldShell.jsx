@@ -20,6 +20,7 @@ export const FullScreenWorldShell = ({
   origin,
   isClosing = false,
   backgroundColor = '#080c14',
+  zIndexClass = 'z-[90]',
   ariaLabel,
   ariaLabelledBy,
   testId,
@@ -90,7 +91,7 @@ export const FullScreenWorldShell = ({
       aria-labelledby={ariaLabelledBy}
       data-testid={testId}
       data-phase={phase}
-      className="fixed inset-0 z-[90] flex flex-col overflow-hidden pointer-events-auto"
+      className={`fixed inset-0 ${zIndexClass} flex flex-col overflow-hidden pointer-events-auto`}
       style={{
         clipPath: morphStyles.clipPath,
         WebkitClipPath: morphStyles.clipPath,

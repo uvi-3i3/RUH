@@ -111,6 +111,13 @@ export const LearningPathNavIcon = ({ size = 24, className = '', ...props }) => 
   </svg>
 );
 
+export const InsightsNavIcon = ({ size = 24, className = '', ...props }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+    <path d="M12 2.75 14.35 9.65 21.25 12 14.35 14.35 12 21.25 9.65 14.35 2.75 12 9.65 9.65 12 2.75Z" />
+    <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 export const ShareIcon = ({ size = 24, className = '', ...props }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
     <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />

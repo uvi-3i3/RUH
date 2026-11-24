@@ -132,11 +132,14 @@ export function buildMiracleTimeBridge(miracle) {
   const category = String(miracle?.category || '').toLowerCase();
 
   const yearMatch = confirmed.match(/\b(1[5-9]\d{2}|20\d{2})\b/);
+  const earlyFulfillmentMatch = confirmed.match(/\b6[1-9]\d\b/);
   let spanLabel = 'Spanning Centuries';
   if (yearMatch) {
     const confirmedYear = Number(yearMatch[1]);
     const centuries = Math.max(1, Math.round((confirmedYear - 622) / 100));
     spanLabel = `~${centuries} Centuries Later`;
+  } else if (earlyFulfillmentMatch && category === 'history') {
+    spanLabel = 'Fulfilled Within Years';
   } else if (category === 'linguistic') {
     spanLabel = 'Unmatched Across 14 Centuries';
   } else if (category === 'numerology') {
@@ -170,4 +173,80 @@ export function formatReadMinutes(raw) {
   }
   return text;
 }
+
+/**
+ * Splits multi-paragraph study prose cleanly on blank lines (handling both literal "\n\n" and real newlines).
+ */
+export function splitEditorialParagraphs(raw) {
+  if (!raw) return [];
+  return String(raw)
+    .replace(/\\n/g, '\n')
+    .split(/\n\s*\n/)
+    .map((p) => p.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+/**
+ * Resolves enriched study metadata for a Burhan treatise without altering the legacy resolveBurhanCopy shape.
+ */
+export function resolveBurhanStudyExtras(burhan, isSimpleMode = false) {
+  if (!burhan) {
+    return {
+      anchorTranslation: '',
+      anchorRef: '',
+      objection: '',
+      objectionReply: '',
+    };
+  }
+  const objection = String(
+    isSimpleMode && burhan.simpleObjection ? burhan.simpleObjection : burhan.objection || ''
+  ).trim();
+  const objectionReply = String(
+    isSimpleMode && burhan.simpleObjectionReply
+      ? burhan.simpleObjectionReply
+      : burhan.objectionReply || ''
+  ).trim();
+  return {
+    anchorTranslation: String(burhan.anchorTranslation || '').trim(),
+    anchorRef: String(burhan.anchorRef || '').trim(),
+    objection,
+    objectionReply,
+  };
+}
+
+/**
+ * Resolves enriched study metadata for a Qur'anic Miracle without altering the legacy resolveMiracleCopy shape.
+ */
+export function resolveMiracleStudyExtras(miracle, isSimpleMode = false) {
+  if (!miracle) {
+    return {
+      arabicBreakdown: [],
+      scholarlyNote: '',
+      signParagraphs: [],
+      evidenceParagraphs: [],
+    };
+  }
+  const rawSign = isSimpleMode && miracle.simpleQuranicSign ? miracle.simpleQuranicSign : miracle.quranicSign;
+  const rawEvidence = isSimpleMode && miracle.simpleEvidence ? miracle.simpleEvidence : miracle.evidence;
+  const rawNote =
+    isSimpleMode && miracle.simpleScholarlyNote ? miracle.simpleScholarlyNote : miracle.scholarlyNote || '';
+
+  const arabicBreakdown = Array.isArray(miracle.arabicBreakdown)
+    ? miracle.arabicBreakdown
+        .filter((item) => item && item.word && item.meaning)
+        .map((item) => ({
+          word: String(item.word).trim(),
+          transliteration: String(item.transliteration || '').trim(),
+          meaning: String(item.meaning).trim(),
+        }))
+    : [];
+
+  return {
+    arabicBreakdown,
+    scholarlyNote: String(rawNote).trim(),
+    signParagraphs: splitEditorialParagraphs(rawSign),
+    evidenceParagraphs: splitEditorialParagraphs(rawEvidence),
+  };
+}
+
 

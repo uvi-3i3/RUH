@@ -15,6 +15,7 @@ import {
   MainNavIcon,
   ProfileNavIcon,
   TasksNavIcon,
+  InsightsNavIcon,
   LearningPathNavIcon,
   ShareIcon,
   CompassIcon,
@@ -24,6 +25,11 @@ import { TasksView } from './components/layout/TasksView';
 import { ProfileIdCard } from './components/layout/ProfileIdCard';
 import { LearningPathPage } from './components/layout/LearningPathPage';
 import { captureClickOriginFromEvent } from './utils/learningPathLogic';
+import {
+  resolveActiveNavDestination,
+  resolveNavTargetTransition,
+  resolveSanctuaryNavPresentation,
+} from './utils/navInsightsLogic';
 import { isPointerDrag, resolveNextPrayerFocusIndex } from './utils/smoothInteractionLogic';
 import {
   evaluatePrayerWindow,
@@ -37,6 +43,7 @@ import { PropheticLifeArtwork } from './components/layout/PropheticLifeArtwork';
 import { TafakkurOverlay } from './components/layout/TafakkurOverlay';
 import { BurhanOverlay } from './components/layout/BurhanOverlay';
 import { MiraclesOverlay } from './components/layout/MiraclesOverlay';
+import { InsightsGatewayOverlay } from './components/layout/InsightsGatewayOverlay';
 import { SharePassModal } from './components/layout/SharePassModal';
 import { SettingsModal } from './components/layout/SettingsModal';
 import { RemindersModal } from './components/layout/RemindersModal';
@@ -154,6 +161,8 @@ export default function App() {
   const [verseStyle, setVerseStyle] = useState({ opacity: 1, transform: 'translateY(0px)' });
   const [showSaveGlow, setShowSaveGlow] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
+  const [insightsGatewayOrigin, setInsightsGatewayOrigin] = useState(null);
+  const [insightsGatewayClosing, setInsightsGatewayClosing] = useState(false);
   const [burhanOrigin, setBurhanOrigin] = useState(null);
   const [burhanClosing, setBurhanClosing] = useState(false);
   const [miraclesOrigin, setMiraclesOrigin] = useState(null);
@@ -214,24 +223,22 @@ export default function App() {
   const wheelDragResetTimerRef = useRef(null);
 
   const isLearningPathOpen = Boolean(learningPathOrigin);
+  const isInsightsGatewayOpen = Boolean(insightsGatewayOrigin);
   const isBurhanWorldOpen = Boolean(burhanOrigin);
   const isMiraclesWorldOpen = Boolean(miraclesOrigin);
   const isFullScreenWorldOpen = Boolean(
-    isLearningPathOpen || isBurhanWorldOpen || isMiraclesWorldOpen
+    isLearningPathOpen || isInsightsGatewayOpen || isBurhanWorldOpen || isMiraclesWorldOpen
   );
   const isRewardRevealActive = Boolean(
     !isOnboardingOpen && (devotionData.activeCelebrationBadge || inspectedBadge)
   );
   const isBackgroundPaused = isFullScreenWorldOpen || isRewardRevealActive || isOnboardingOpen;
 
-  const isAnyModalOpen = Boolean(
-    isOnboardingOpen ||
-      showTodayList ||
+  const isBlockingModalOpen = Boolean(
+    showTodayList ||
       showLifeArtwork ||
       tafakkurPromptId ||
       showArchive ||
-      isBurhanWorldOpen ||
-      isMiraclesWorldOpen ||
       sharePassLaunch ||
       showSettings ||
       showReminders ||
@@ -239,7 +246,41 @@ export default function App() {
       showCityPicker ||
       showDuas ||
       showQada ||
-      misbahaLaunch ||
+      misbahaLaunch
+  );
+
+  const activeNavDestination = resolveActiveNavDestination({
+    currentView,
+    isInsightsGatewayOpen,
+    isInsightsGatewayClosing: insightsGatewayClosing,
+    isBurhanWorldOpen,
+    isBurhanClosing: burhanClosing,
+    isMiraclesWorldOpen,
+    isMiraclesClosing: miraclesClosing,
+    isLearningPathOpen,
+    isLearningPathClosing: learningPathClosing,
+  });
+
+  const navPresentation = resolveSanctuaryNavPresentation({
+    isOnboardingOpen,
+    isRewardRevealActive,
+    isBlockingModalOpen,
+    isInsightsGatewayOpen,
+    isInsightsGatewayClosing: insightsGatewayClosing,
+    isBurhanWorldOpen,
+    isBurhanClosing: burhanClosing,
+    isMiraclesWorldOpen,
+    isMiraclesClosing: miraclesClosing,
+    isLearningPathOpen,
+    isLearningPathClosing: learningPathClosing,
+  });
+
+  const isAnyModalOpen = Boolean(
+    isOnboardingOpen ||
+      isBlockingModalOpen ||
+      isInsightsGatewayOpen ||
+      isBurhanWorldOpen ||
+      isMiraclesWorldOpen ||
       isLearningPathOpen ||
       inspectedBadge ||
       devotionData.activeCelebrationBadge
@@ -269,6 +310,11 @@ export default function App() {
           hapticDismiss();
           setBurhanClosing(true);
         }
+      } else if (insightsGatewayOrigin) {
+        if (!insightsGatewayClosing) {
+          hapticDismiss();
+          setInsightsGatewayClosing(true);
+        }
       } else if (sharePassLaunch) setSharePassLaunch(null);
       else if (misbahaLaunch) setMisbahaLaunch(null);
       else if (showCityPicker) setShowCityPicker(false);
@@ -296,6 +342,8 @@ export default function App() {
     miraclesClosing,
     burhanOrigin,
     burhanClosing,
+    insightsGatewayOrigin,
+    insightsGatewayClosing,
     sharePassLaunch,
     misbahaLaunch,
     showCityPicker,
@@ -335,6 +383,18 @@ export default function App() {
     }
     if (learningPathOrigin) {
       if (!learningPathClosing) setLearningPathClosing(true);
+      return true;
+    }
+    if (miraclesOrigin) {
+      if (!miraclesClosing) setMiraclesClosing(true);
+      return true;
+    }
+    if (burhanOrigin) {
+      if (!burhanClosing) setBurhanClosing(true);
+      return true;
+    }
+    if (insightsGatewayOrigin) {
+      if (!insightsGatewayClosing) setInsightsGatewayClosing(true);
       return true;
     }
     if (sharePassLaunch) {
@@ -1074,6 +1134,74 @@ export default function App() {
     setMiraclesClosing(false);
     setMiraclesOrigin(origin);
   }, []);
+  const handleSanctuaryNavSelect = useCallback(
+    (target, event) => {
+      const plan = resolveNavTargetTransition({
+        target,
+        currentView,
+        isInsightsGatewayOpen,
+        isBurhanWorldOpen,
+        isMiraclesWorldOpen,
+        isLearningPathOpen,
+      });
+
+      if (plan.action === 'stay') {
+        hapticDetent();
+        return;
+      }
+
+      hapticNavigate();
+
+      if (plan.nextView) {
+        setCurrentView(plan.nextView);
+      }
+
+      if (plan.closeLearning === 'immediate') {
+        setLearningPathOrigin(null);
+        setLearningPathClosing(false);
+      } else if (plan.closeLearning === 'animate') {
+        setLearningPathClosing(true);
+      }
+
+      if (plan.closeBurhan === 'immediate') {
+        setBurhanOrigin(null);
+        setBurhanClosing(false);
+      } else if (plan.closeBurhan === 'animate') {
+        setBurhanClosing(true);
+      }
+
+      if (plan.closeMiracles === 'immediate') {
+        setMiraclesOrigin(null);
+        setMiraclesClosing(false);
+      } else if (plan.closeMiracles === 'animate') {
+        setMiraclesClosing(true);
+      }
+
+      if (plan.closeGateway === 'immediate') {
+        setInsightsGatewayOrigin(null);
+        setInsightsGatewayClosing(false);
+      } else if (plan.closeGateway === 'animate') {
+        setInsightsGatewayClosing(true);
+      }
+
+      if (plan.action === 'open-gateway' || plan.ensureGatewayOpen) {
+        const origin = captureClickOriginFromEvent(event);
+        setInsightsGatewayClosing(false);
+        setInsightsGatewayOrigin(origin);
+      } else if (plan.action === 'open-learning') {
+        const origin = captureClickOriginFromEvent(event);
+        setLearningPathClosing(false);
+        setLearningPathOrigin(origin);
+      }
+    },
+    [
+      currentView,
+      isInsightsGatewayOpen,
+      isBurhanWorldOpen,
+      isMiraclesWorldOpen,
+      isLearningPathOpen,
+    ]
+  );
   const handleMarkMiracleExplored = useCallback((miracleId) => {
     if (!miracleId) return;
     setExploredMiracleIds((prev) => {
@@ -1592,19 +1720,13 @@ export default function App() {
             </div>
           </div>
 
-          {/* === VIEW 2: TASKS (DAILY DEVOTION, BURHAN & MIRACLES) === */}
+          {/* === VIEW 2: TASKS (DAILY DEVOTION & HABITS) === */}
           <TasksView
             currentView={currentView}
             dailyTasks={devotionData.dailyTasks}
             rewardedSets={devotionData.rewardedSets}
-            burhanCompleted={devotionData.burhanCompleted}
-            currentStation={maq.currentStation}
             incrementTask={devotionData.incrementTask}
             markAdhkarSetRewarded={devotionData.markAdhkarSetRewarded}
-            activeDays={devotionData.activeDays}
-            onOpenBurhan={openBurhanModal}
-            onOpenMiracles={openMiraclesModal}
-            exploredMiracleIds={exploredMiracleIds}
             onOpenMisbaha={handleOpenMisbaha}
             sunnahContext={sunnahContext}
             todaySchedule={todaySchedule}
@@ -1653,112 +1775,160 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right Col - The Sleek, Thin Vertical Nav Island */}
-        <div className="w-[44px] md:w-[140px] flex-shrink-0 h-full relative pointer-events-none pr-1 md:pr-10">
-          <nav
-            aria-label="Sanctuary Navigation"
-            className={`absolute right-2 md:right-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 py-2 px-1 w-[38px] rounded-full border pointer-events-auto transition-all duration-300 ${
-              isLightMode
-                ? 'bg-white/30 border-white/40 engraved-light island-light'
-                : 'bg-[#12100d]/35 border-white/[0.06] engraved-dark island-dark'
-            }`}
-          >
-            {/* Main Sanctuary Button */}
-            <button
-              type="button"
-              aria-label="Sanctuary"
-              aria-current={currentView === 'main' ? 'page' : undefined}
-              onClick={() => {
-                if (currentView === 'main') hapticDetent();
-                else hapticNavigate();
-                setCurrentView('main');
-              }}
-              className={`relative w-7 h-7 rounded-full transition-all duration-500 hover:scale-105 flex items-center justify-center cursor-pointer ${
-                currentView === 'main'
-                  ? isLightMode
-                    ? 'text-[#9c7533] shadow-[0_2px_10px_rgba(156,117,51,0.2)] bg-white/65 ring-1 ring-[#9c7533]/30'
-                    : 'text-[#d2a24b] shadow-[0_2px_10px_rgba(210,162,75,0.22)] bg-white/10 ring-1 ring-[#d2a24b]/35'
-                  : isLightMode
-                    ? 'text-[#4a453d] opacity-55 hover:opacity-100'
-                    : 'text-[#e4dac8] opacity-40 hover:opacity-100'
-              }`}
-            >
-              <MainNavIcon size={15} />
-            </button>
-
-            {/* Daily Devotion / Practices Button */}
-            <button
-              type="button"
-              aria-label="Practices"
-              aria-current={currentView === 'tasks' ? 'page' : undefined}
-              onClick={() => {
-                if (currentView === 'tasks') hapticDetent();
-                else hapticNavigate();
-                setCurrentView('tasks');
-              }}
-              className={`relative w-7 h-7 rounded-full transition-all duration-500 hover:scale-105 flex items-center justify-center cursor-pointer ${
-                currentView === 'tasks'
-                  ? isLightMode
-                    ? 'text-[#9c7533] shadow-[0_2px_10px_rgba(156,117,51,0.2)] bg-white/65 ring-1 ring-[#9c7533]/30'
-                    : 'text-[#d2a24b] shadow-[0_2px_10px_rgba(210,162,75,0.22)] bg-white/10 ring-1 ring-[#d2a24b]/35'
-                  : isLightMode
-                    ? 'text-[#4a453d] opacity-55 hover:opacity-100'
-                    : 'text-[#e4dac8] opacity-40 hover:opacity-100'
-              }`}
-            >
-              <TasksNavIcon size={15} />
-            </button>
-
-            {/* Learning Path Window Button — expands directly from clicked point */}
-            <button
-              type="button"
-              data-testid="nav-learning-path"
-              aria-label="Learning Path"
-              aria-expanded={isLearningPathOpen}
-              onClick={(e) => {
-                const origin = captureClickOriginFromEvent(e);
-                hapticNavigate();
-                setLearningPathClosing(false);
-                setLearningPathOrigin(origin);
-              }}
-              className={`relative w-7 h-7 rounded-full transition-all duration-500 hover:scale-105 flex items-center justify-center cursor-pointer ${
-                isLearningPathOpen
-                  ? isLightMode
-                    ? 'text-[#9c7533] shadow-[0_2px_10px_rgba(156,117,51,0.2)] bg-white/65 ring-1 ring-[#9c7533]/30'
-                    : 'text-[#d2a24b] shadow-[0_2px_10px_rgba(210,162,75,0.22)] bg-white/10 ring-1 ring-[#d2a24b]/35'
-                  : isLightMode
-                    ? 'text-[#4a453d] opacity-55 hover:opacity-100'
-                    : 'text-[#e4dac8] opacity-40 hover:opacity-100'
-              }`}
-            >
-              <LearningPathNavIcon size={15} />
-            </button>
-
-            {/* Soul Mirror / Profile Button */}
-            <button
-              type="button"
-              aria-label="Journey"
-              aria-current={currentView === 'profile' ? 'page' : undefined}
-              onClick={() => {
-                if (currentView === 'profile') hapticDetent();
-                else hapticNavigate();
-                setCurrentView('profile');
-              }}
-              className={`relative w-7 h-7 rounded-full transition-all duration-500 hover:scale-105 flex items-center justify-center cursor-pointer ${
-                currentView === 'profile'
-                  ? isLightMode
-                    ? 'text-[#9c7533] shadow-[0_2px_10px_rgba(156,117,51,0.2)] bg-white/65 ring-1 ring-[#9c7533]/30'
-                    : 'text-[#d2a24b] shadow-[0_2px_10px_rgba(210,162,75,0.22)] bg-white/10 ring-1 ring-[#d2a24b]/35'
-                  : isLightMode
-                    ? 'text-[#4a453d] opacity-55 hover:opacity-100'
-                    : 'text-[#e4dac8] opacity-40 hover:opacity-100'
-              }`}
-            >
-              <ProfileNavIcon size={15} />
-            </button>
-          </nav>
-        </div>
+        {/* Right Col - Spatial Margin Spacer (Nav Island is fixed above backdrop at z-40) */}
+        <div className="w-[44px] md:w-[140px] flex-shrink-0 h-full pointer-events-none pr-1 md:pr-10" />
       </div>
+
+      {/* --- RIGHT-EDGE SLIM FLOATING VERTICAL NAV ISLAND (STANDARD IN CORE VIEWS, SUBTLE WHISPER IN FULL-SCREEN WORLDS) --- */}
+      {(() => {
+        const isNavHidden = navPresentation.mode === 'hidden';
+        const isSubtleNav = navPresentation.mode === 'subtle';
+        const isTealTone = navPresentation.tone === 'teal';
+
+        const getNavItemClass = (itemId) => {
+          const isActive = activeNavDestination === itemId;
+          const sizeClass = isSubtleNav ? 'w-[24px] h-[24px]' : 'w-[26px] h-[26px]';
+
+          if (isActive) {
+            if (isSubtleNav && isTealTone) {
+              return `${sizeClass} ${
+                isLightMode
+                  ? 'text-[#0f766e] bg-[#0f766e]/12 ring-1 ring-[#0f766e]/32'
+                  : 'text-[#5eead4] bg-[#2dd4bf]/14 ring-1 ring-[#5eead4]/36'
+              }`;
+            }
+            if (isSubtleNav) {
+              return `${sizeClass} ${
+                isLightMode
+                  ? 'text-[#8c621c] bg-[#8c621c]/12 ring-1 ring-[#8c621c]/30'
+                  : 'text-[#e4be70] bg-[#e4be70]/14 ring-1 ring-[#e4be70]/35'
+              }`;
+            }
+            return `${sizeClass} ${
+              isLightMode
+                ? 'text-[#9c7533] shadow-[0_2px_8px_rgba(156,117,51,0.18)] bg-white/65 ring-1 ring-[#9c7533]/30'
+                : 'text-[#d2a24b] shadow-[0_2px_8px_rgba(210,162,75,0.2)] bg-white/10 ring-1 ring-[#d2a24b]/35'
+            }`;
+          }
+
+          return `${sizeClass} ${
+            isLightMode
+              ? 'text-[#4a453d] opacity-55 hover:opacity-100'
+              : 'text-[#e4dac8] opacity-45 hover:opacity-100'
+          }`;
+        };
+
+        const navShellClass = isSubtleNav
+          ? `flex flex-col items-center gap-1 py-1.5 px-0.5 w-[30px] rounded-full border backdrop-blur-md pointer-events-auto opacity-[0.44] sm:opacity-[0.48] hover:opacity-100 has-[:focus-visible]:opacity-100 active:opacity-100 transition-all duration-300 ease-out ${
+              isLightMode
+                ? isTealTone
+                  ? 'bg-[#f6f5f0]/62 hover:bg-[#fbfaf7]/92 border-[#0f766e]/16 shadow-[0_6px_20px_rgba(15,60,56,0.08)]'
+                  : 'bg-[#fbf7ef]/62 hover:bg-[#fdfaf3]/92 border-[#8c621c]/18 shadow-[0_6px_20px_rgba(68,48,18,0.09)]'
+                : isTealTone
+                  ? 'bg-[#071316]/52 hover:bg-[#09191d]/88 border-[#5eead4]/16 shadow-[0_8px_24px_rgba(0,0,0,0.34)]'
+                  : 'bg-[#0d1018]/52 hover:bg-[#121622]/88 border-white/[0.11] shadow-[0_8px_24px_rgba(0,0,0,0.38)]'
+            }`
+          : `flex flex-col items-center gap-1.5 py-1.5 px-0.5 w-[32px] rounded-full border pointer-events-auto transition-all duration-300 ${
+              isLightMode
+                ? 'bg-white/32 border-white/45 engraved-light island-light'
+                : 'bg-[#12100d]/38 border-white/[0.07] engraved-dark island-dark'
+            }`;
+
+        return (
+          <div
+            aria-hidden={isNavHidden || undefined}
+            inert={isNavHidden}
+            className={`fixed top-1/2 -translate-y-1/2 pointer-events-none transition-[opacity,right] duration-300 ${navPresentation.zIndexClass} ${
+              isSubtleNav ? 'right-1.5 sm:right-3 md:right-4' : 'right-2 md:right-8'
+            } ${isNavHidden ? 'opacity-0 invisible' : 'opacity-100'}`}
+          >
+            <div className="relative flex items-center">
+              <nav
+                aria-label="Sanctuary Navigation"
+                data-testid="sanctuary-nav-bar"
+                data-nav-mode={navPresentation.mode}
+                data-active-destination={activeNavDestination}
+                className={navShellClass}
+              >
+                {/* 1. Main Sanctuary Button */}
+                <button
+                  type="button"
+                  data-testid="nav-sanctuary"
+                  title="Sanctuary"
+                  aria-label="Sanctuary"
+                  aria-current={activeNavDestination === 'main' ? 'page' : undefined}
+                  onClick={(e) => handleSanctuaryNavSelect('main', e)}
+                  className={`relative rounded-full transition-all duration-300 hover:scale-105 flex items-center justify-center cursor-pointer ${getNavItemClass('main')}`}
+                >
+                  <MainNavIcon size={isSubtleNav ? 12.5 : 13} />
+                </button>
+
+                {/* 2. Daily Devotion / Practices Button */}
+                <button
+                  type="button"
+                  data-testid="nav-practices"
+                  title="Practices"
+                  aria-label="Practices"
+                  aria-current={activeNavDestination === 'tasks' ? 'page' : undefined}
+                  onClick={(e) => handleSanctuaryNavSelect('tasks', e)}
+                  className={`relative rounded-full transition-all duration-300 hover:scale-105 flex items-center justify-center cursor-pointer ${getNavItemClass('tasks')}`}
+                >
+                  <TasksNavIcon size={isSubtleNav ? 12.5 : 13} />
+                </button>
+
+                {/* 3. MIDDLE WINDOW: Burhan & Miracles — Expands into Twin-Portal Gateway */}
+                <button
+                  type="button"
+                  data-testid="nav-burhan-miracles"
+                  title={
+                    isBurhanWorldOpen || isMiraclesWorldOpen
+                      ? 'Signs & Proofs Gateway'
+                      : 'Burhan & Miracles'
+                  }
+                  aria-label={
+                    isBurhanWorldOpen || isMiraclesWorldOpen
+                      ? 'Signs and Proofs Gateway'
+                      : 'Burhan and Miracles'
+                  }
+                  aria-current={activeNavDestination === 'insights' ? 'page' : undefined}
+                  aria-expanded={activeNavDestination === 'insights'}
+                  onClick={(e) => handleSanctuaryNavSelect('insights', e)}
+                  className={`relative rounded-full transition-all duration-300 hover:scale-105 flex items-center justify-center cursor-pointer ${getNavItemClass('insights')}`}
+                >
+                  <InsightsNavIcon size={isSubtleNav ? 13 : 13.5} />
+                </button>
+
+                {/* 4. Learning Path / Study Sanctuary Button */}
+                <button
+                  type="button"
+                  data-testid="nav-learning-path"
+                  title="Study Sanctuary"
+                  aria-label="Learning Path"
+                  aria-current={activeNavDestination === 'learning' ? 'page' : undefined}
+                  aria-expanded={activeNavDestination === 'learning'}
+                  onClick={(e) => handleSanctuaryNavSelect('learning', e)}
+                  className={`relative rounded-full transition-all duration-300 hover:scale-105 flex items-center justify-center cursor-pointer ${getNavItemClass('learning')}`}
+                >
+                  <LearningPathNavIcon size={isSubtleNav ? 12.5 : 13} />
+                </button>
+
+                {/* 5. Soul Mirror / Journey Button */}
+                <button
+                  type="button"
+                  data-testid="nav-journey"
+                  title="Journey"
+                  aria-label="Journey"
+                  aria-current={activeNavDestination === 'profile' ? 'page' : undefined}
+                  onClick={(e) => handleSanctuaryNavSelect('profile', e)}
+                  className={`relative rounded-full transition-all duration-300 hover:scale-105 flex items-center justify-center cursor-pointer ${getNavItemClass('profile')}`}
+                >
+                  <ProfileNavIcon size={isSubtleNav ? 12.5 : 13} />
+                </button>
+              </nav>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* --- 5. 3D PRAYER SCROLL WHEEL + ALIGNED QIBLA DOCK (MAIN VIEW ONLY) --- */}
       <div
@@ -2418,6 +2588,29 @@ export default function App() {
             setTafakkurPromptId(id);
           }}
           onRemoveSaved={(id) => toggleSaveVerse(id)}
+        />
+      )}
+
+      {insightsGatewayOrigin && (
+        <InsightsGatewayOverlay
+          origin={insightsGatewayOrigin}
+          isClosing={insightsGatewayClosing}
+          isSubWorldOpen={isBurhanWorldOpen || isMiraclesWorldOpen}
+          isLightMode={isLightMode}
+          activeBurhan={activeBurhan}
+          burhanCompleted={devotionData.burhanCompleted}
+          totalBurhans={burhanData.length}
+          burhanNotes={devotionData.burhanNotes}
+          activeMiracle={activeMiracle}
+          exploredMiracleIds={exploredMiracleIds}
+          totalMiracles={quranMiraclesData.length}
+          onSelectBurhan={openBurhanModal}
+          onSelectMiracles={openMiraclesModal}
+          onRequestClose={() => setInsightsGatewayClosing(true)}
+          onExited={() => {
+            setInsightsGatewayOrigin(null);
+            setInsightsGatewayClosing(false);
+          }}
         />
       )}
 

@@ -160,10 +160,10 @@ export const HabitEditorSheet = ({
           }`}
         >
           <div>
-            <h2 className={`font-serif-eng text-base font-medium uppercase tracking-[0.18em] ${tTextMain}`}>
-              {isEditing ? 'Customize Habit' : 'New Habit'}
+            <h2 className={`font-serif-eng text-[19px] font-semibold leading-tight ${tTextMain}`}>
+              {isEditing ? 'Edit Habit' : 'New Daily Habit'}
             </h2>
-            <span className="font-calligraphy text-sm opacity-80" style={{ color: accentHex }} dir="rtl">
+            <span className="font-calligraphy text-[16px] opacity-85" style={{ color: accentHex }} dir="rtl">
               {isEditing ? editingHabit?.arabic || 'تَخْصِيص' : 'عَادَة جَدِيدَة'}
             </span>
           </div>
@@ -190,26 +190,26 @@ export const HabitEditorSheet = ({
           {/* Quick Presets when creating */}
           {!isEditing && availablePresets.length > 0 && (
             <div className="flex flex-col gap-2">
-              <span className={`font-serif-eng text-[10px] uppercase tracking-[0.16em] opacity-70 ${tTextSub}`}>
-                Quick Sunnah Ideas
+              <span className={`font-serif-eng text-[12.5px] font-medium ${tTextSub} opacity-85`}>
+                Quick Sunnah ideas
               </span>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-2">
                 {availablePresets.map((preset) => (
                   <button
                     key={preset.id}
                     type="button"
                     onClick={() => applyPreset(preset)}
-                    className={`min-h-[34px] px-3 rounded-xl border font-serif-eng text-[11px] flex items-center gap-1.5 cursor-pointer transition-colors ${
+                    className={`min-h-[38px] px-3 rounded-xl border font-serif-eng text-[12.5px] flex items-center gap-1.5 cursor-pointer transition-colors ${
                       title.trim().toLowerCase() === preset.title.toLowerCase()
                         ? isLightMode
-                          ? 'bg-[#9c7533]/12 border-[#9c7533] text-[#7c5a1e]'
-                          : 'bg-[#d2a24b]/16 border-[#d2a24b] text-[#f3d9a4]'
+                          ? 'bg-[#9c7533]/14 border-[#9c7533] text-[#7c5a1e] font-medium'
+                          : 'bg-[#d2a24b]/18 border-[#d2a24b] text-[#f3d9a4] font-medium'
                         : isLightMode
-                          ? 'border-black/10 text-[#2c2720] hover:bg-black/5'
-                          : 'border-white/12 text-[#e4dac8] hover:bg-white/5'
+                          ? 'border-black/12 text-[#2c2720] hover:bg-black/5'
+                          : 'border-white/14 text-[#e4dac8] hover:bg-white/6'
                     }`}
                   >
-                    <PlusIcon size={11} style={{ color: accentHex }} />
+                    <PlusIcon size={12} style={{ color: accentHex }} />
                     <span>{preset.title}</span>
                   </button>
                 ))}
@@ -222,9 +222,9 @@ export const HabitEditorSheet = ({
             <div className="sm:col-span-2 flex flex-col gap-1.5">
               <label
                 htmlFor="habit-title-input"
-                className={`font-serif-eng text-[10px] uppercase tracking-[0.16em] opacity-75 ${tTextSub}`}
+                className={`font-serif-eng text-[12.5px] font-medium ${tTextSub}`}
               >
-                Habit Name
+                Habit name
               </label>
               <input
                 id="habit-title-input"
@@ -236,7 +236,7 @@ export const HabitEditorSheet = ({
                   if (errorMsg) setErrorMsg('');
                 }}
                 placeholder="e.g. Surah Al-Mulk"
-                className={`w-full min-h-[42px] px-3.5 py-2 rounded-xl border bg-transparent font-serif-eng text-sm outline-none transition-colors ${
+                className={`w-full min-h-[44px] px-3.5 py-2 rounded-xl border bg-transparent font-serif-eng text-[14.5px] outline-none transition-colors ${
                   isLightMode
                     ? 'border-black/15 text-[#1a1814] focus:border-[#9c7533]'
                     : 'border-white/15 text-white focus:border-[#d2a24b]'
@@ -247,9 +247,9 @@ export const HabitEditorSheet = ({
             <div className="flex flex-col gap-1.5">
               <label
                 htmlFor="habit-arabic-input"
-                className={`font-serif-eng text-[10px] uppercase tracking-[0.16em] opacity-75 ${tTextSub}`}
+                className={`font-serif-eng text-[12.5px] font-medium ${tTextSub}`}
               >
-                Arabic (Opt.)
+                Arabic (optional)
               </label>
               <input
                 id="habit-arabic-input"
@@ -259,7 +259,7 @@ export const HabitEditorSheet = ({
                 value={arabic}
                 onChange={(e) => setArabic(e.target.value)}
                 placeholder="عَمَل"
-                className={`w-full min-h-[42px] px-3 py-2 rounded-xl border bg-transparent font-arabic text-sm outline-none transition-colors ${
+                className={`w-full min-h-[44px] px-3 py-2 rounded-xl border bg-transparent font-arabic text-[15px] outline-none transition-colors ${
                   isLightMode
                     ? 'border-black/15 text-[#7c5a1e] focus:border-[#9c7533]'
                     : 'border-white/15 text-[#e5c17b] focus:border-[#d2a24b]'
@@ -279,9 +279,9 @@ export const HabitEditorSheet = ({
             <div className="flex flex-col gap-1.5">
               <label
                 htmlFor="habit-target-input"
-                className={`font-serif-eng text-[10px] uppercase tracking-[0.16em] opacity-75 ${tTextSub}`}
+                className={`font-serif-eng text-[12.5px] font-medium ${tTextSub}`}
               >
-                Daily Target
+                Daily target
               </label>
               <div
                 className={`flex items-center rounded-xl border overflow-hidden ${
@@ -292,7 +292,7 @@ export const HabitEditorSheet = ({
                   type="button"
                   aria-label="Decrease target"
                   onClick={() => stepTarget(-1)}
-                  className={`w-11 h-[40px] flex items-center justify-center text-base cursor-pointer transition-colors ${
+                  className={`w-11 h-[42px] flex items-center justify-center text-base cursor-pointer transition-colors ${
                     isLightMode ? 'text-[#1a1814] hover:bg-black/5' : 'text-white hover:bg-white/10'
                   }`}
                 >
@@ -306,13 +306,13 @@ export const HabitEditorSheet = ({
                   value={target}
                   onFocus={(e) => e.target.select()}
                   onChange={(e) => setTarget(e.target.value)}
-                  className={`flex-1 min-w-0 h-[40px] text-center bg-transparent font-serif-eng text-sm tabular-nums outline-none ${tTextMain}`}
+                  className={`flex-1 min-w-0 h-[42px] text-center bg-transparent font-serif-eng text-[14.5px] tabular-nums outline-none ${tTextMain}`}
                 />
                 <button
                   type="button"
                   aria-label="Increase target"
                   onClick={() => stepTarget(1)}
-                  className={`w-11 h-[40px] flex items-center justify-center text-base cursor-pointer transition-colors ${
+                  className={`w-11 h-[42px] flex items-center justify-center text-base cursor-pointer transition-colors ${
                     isLightMode ? 'text-[#1a1814] hover:bg-black/5' : 'text-white hover:bg-white/10'
                   }`}
                 >
@@ -324,7 +324,7 @@ export const HabitEditorSheet = ({
             <div className="flex flex-col gap-1.5">
               <label
                 htmlFor="habit-unit-input"
-                className={`font-serif-eng text-[10px] uppercase tracking-[0.16em] opacity-75 ${tTextSub}`}
+                className={`font-serif-eng text-[12.5px] font-medium ${tTextSub}`}
               >
                 Unit
               </label>
@@ -335,7 +335,7 @@ export const HabitEditorSheet = ({
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
                 placeholder="e.g. pages, mins"
-                className={`w-full min-h-[42px] px-3.5 py-2 rounded-xl border bg-transparent font-serif-eng text-sm outline-none transition-colors ${
+                className={`w-full min-h-[44px] px-3.5 py-2 rounded-xl border bg-transparent font-serif-eng text-[14.5px] outline-none transition-colors ${
                   isLightMode
                     ? 'border-black/15 text-[#1a1814] focus:border-[#9c7533]'
                     : 'border-white/15 text-white focus:border-[#d2a24b]'
@@ -356,14 +356,14 @@ export const HabitEditorSheet = ({
                     hapticDetent();
                     setUnit(u);
                   }}
-                  className={`min-h-[28px] px-2.5 rounded-lg border font-serif-eng text-[10px] cursor-pointer transition-colors ${
+                  className={`min-h-[34px] px-3 rounded-lg border font-serif-eng text-[12px] cursor-pointer transition-colors ${
                     selected
                       ? isLightMode
                         ? 'bg-[#9c7533]/12 border-[#9c7533] text-[#7c5a1e] font-medium'
                         : 'bg-[#d2a24b]/16 border-[#d2a24b] text-[#f3d9a4] font-medium'
                       : isLightMode
-                        ? 'border-black/10 text-[#4a453d]/80 hover:bg-black/5'
-                        : 'border-white/12 text-[#e4dac8]/80 hover:bg-white/5'
+                        ? 'border-black/10 text-[#4a453d]/85 hover:bg-black/5'
+                        : 'border-white/12 text-[#e4dac8]/85 hover:bg-white/5'
                   }`}
                 >
                   {u}
@@ -374,10 +374,10 @@ export const HabitEditorSheet = ({
 
           {/* Cadence Selector */}
           <div className="flex flex-col gap-1.5">
-            <span className={`font-serif-eng text-[10px] uppercase tracking-[0.16em] opacity-75 ${tTextSub}`}>
-              Time of Day / Rhythm
+            <span className={`font-serif-eng text-[12.5px] font-medium ${tTextSub}`}>
+              Time of day
             </span>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-3 gap-2">
               {HABIT_CADENCES.map((item) => {
                 const active = cadence === item;
                 return (
@@ -389,14 +389,14 @@ export const HabitEditorSheet = ({
                       hapticDetent();
                       setCadence(item);
                     }}
-                    className={`min-h-[36px] px-2.5 rounded-xl border font-serif-eng text-[11px] cursor-pointer transition-colors ${
+                    className={`min-h-[40px] px-2.5 rounded-xl border font-serif-eng text-[13px] cursor-pointer transition-colors ${
                       active
                         ? isLightMode
-                          ? 'bg-[#9c7533]/14 border-[#9c7533] text-[#7c5a1e] font-medium'
-                          : 'bg-[#d2a24b]/18 border-[#d2a24b] text-[#f3d9a4] font-medium'
+                          ? 'bg-[#9c7533]/14 border-[#9c7533] text-[#7c5a1e] font-semibold'
+                          : 'bg-[#d2a24b]/18 border-[#d2a24b] text-[#f3d9a4] font-semibold'
                         : isLightMode
-                          ? 'border-black/10 text-[#4a453d] hover:bg-black/5'
-                          : 'border-white/12 text-[#e4dac8]/85 hover:bg-white/5'
+                          ? 'border-black/12 text-[#4a453d] hover:bg-black/5'
+                          : 'border-white/14 text-[#e4dac8]/85 hover:bg-white/5'
                     }`}
                   >
                     {item}
@@ -408,7 +408,7 @@ export const HabitEditorSheet = ({
 
           {/* Footer Actions */}
           <div
-            className={`pt-3 mt-1 border-t flex items-center justify-between gap-2 ${
+            className={`pt-3.5 mt-1 border-t flex items-center justify-between gap-2 ${
               isLightMode ? 'border-black/[0.08]' : 'border-white/[0.08]'
             }`}
           >
@@ -421,7 +421,7 @@ export const HabitEditorSheet = ({
                   onDeleteHabit?.(editingHabit.id);
                   onClose?.();
                 }}
-                className={`min-h-[40px] px-3 rounded-xl flex items-center gap-1.5 font-serif-eng text-[10px] uppercase tracking-[0.12em] cursor-pointer transition-colors ${
+                className={`min-h-[42px] px-3 rounded-xl flex items-center gap-1.5 font-serif-eng text-[13px] cursor-pointer transition-colors ${
                   isLightMode
                     ? 'text-[#8a0000] hover:bg-[#8a0000]/10'
                     : 'text-[#ff8a8a] hover:bg-[#ff8a8a]/10'
@@ -441,17 +441,16 @@ export const HabitEditorSheet = ({
                   hapticDismiss();
                   onClose?.();
                 }}
-                className={`min-h-[40px] px-4 rounded-xl font-serif-eng text-[10px] uppercase tracking-[0.14em] cursor-pointer transition-opacity opacity-75 hover:opacity-100 ${tTextSub}`}
+                className={`min-h-[42px] px-4 rounded-xl font-serif-eng text-[13px] cursor-pointer transition-opacity opacity-80 hover:opacity-100 ${tTextSub}`}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="min-h-[40px] px-5 rounded-xl border font-serif-eng text-[10px] uppercase tracking-[0.14em] font-medium cursor-pointer transition-all active:scale-[0.98]"
+                className="min-h-[42px] px-5 rounded-xl font-serif-eng text-[13.5px] font-semibold cursor-pointer transition-all active:scale-[0.98]"
                 style={{
-                  backgroundColor: isLightMode ? '#9c7533' : 'rgba(210,162,75,0.24)',
-                  borderColor: isLightMode ? '#9c7533' : 'rgba(210,162,75,0.5)',
-                  color: isLightMode ? '#ffffff' : '#f3d9a4',
+                  backgroundColor: isLightMode ? '#463219' : '#d4af6a',
+                  color: isLightMode ? '#faf3e4' : '#17120c',
                 }}
               >
                 {isEditing ? 'Save Changes' : 'Add Habit'}

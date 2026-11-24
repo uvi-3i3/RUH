@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircleIcon,
+  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   ShareIcon,
@@ -16,12 +17,12 @@ import {
   buildMiracleTimeBridge,
   formatRomanNumeral,
   getCompendiumPosition,
+  resolveMiracleStudyExtras,
 } from '../../utils/worldReaderLogic';
 import { useOptionalPreferences } from '../../context/sanctuaryStore';
 import {
   hapticCelebrate,
   hapticDetent,
-  hapticDismiss,
   hapticNavigate,
   hapticSuccess,
   hapticTapLight,
@@ -29,6 +30,8 @@ import {
 } from '../../utils/haptics';
 import { FullScreenWorldShell } from './FullScreenWorldShell';
 import { BookColophonDivider, BookInkIllustration } from './BookInkIllustration';
+import { TopicQaSection } from './TopicQaSection';
+import { getTopicQaCount } from '../../utils/topicQaLogic';
 import { resolveMiracleVisual } from '../../data/worldVisualsData';
 import observatoryNightImg from '../../assets/images/miracles_observatory_night_1795156410932.jpg';
 import observatoryDayImg from '../../assets/images/miracles_observatory_day_1795156411925.jpg';
@@ -48,9 +51,7 @@ export const MiraclesOverlay = ({
   isLightMode: isLightModeProp,
   isSimpleMode: isSimpleModeProp,
   onMarkExplored,
-  onRequestClose,
   onExited,
-  onClose,
 }) => {
   const preferencesCtx = useOptionalPreferences();
   const isLightMode = isLightModeProp ?? preferencesCtx?.isLightMode ?? false;
@@ -62,6 +63,7 @@ export const MiraclesOverlay = ({
   const [selectedId, setSelectedId] = useState(null);
   const [showMobileAtlas, setShowMobileAtlas] = useState(false);
   const [activeCategory, setActiveCategory] = useState('all');
+  const [showScholarlyNote, setShowScholarlyNote] = useState(false);
   const [copiedFeedback, setCopiedFeedback] = useState(false);
 
   const stageScrollRef = useRef(null);
@@ -88,22 +90,13 @@ export const MiraclesOverlay = ({
     allMiracles.find((item) => item.id === selectedId) || featuredMiracle || allMiracles[0] || null;
 
   useEffect(() => {
+    setShowScholarlyNote(false);
     if (activeMiracle && stageScrollRef.current) {
       stageScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, [activeMiracle?.id]);
 
   if (!effectiveOrigin || !activeMiracle) return null;
-
-  const handleRequestClose = () => {
-    if (isClosing) return;
-    hapticDismiss();
-    if (onRequestClose) {
-      onRequestClose();
-    } else {
-      onClose?.();
-    }
-  };
 
   const isExplored = exploredIds.includes(activeMiracle.id);
   const exploredCount = exploredIds.filter((id) => allMiracles.some((m) => m.id === id)).length;
@@ -122,6 +115,10 @@ export const MiraclesOverlay = ({
     activeMiracle,
     localSimple
   );
+  const { arabicBreakdown, scholarlyNote, signParagraphs, evidenceParagraphs } =
+    resolveMiracleStudyExtras(activeMiracle, localSimple);
+
+  const topicQaCount = getTopicQaCount('miracles', activeMiracle.id);
 
   const handleStep = (delta) => {
     const pool = visibleAtlasItems.length > 0 ? visibleAtlasItems : allMiracles;
@@ -129,6 +126,14 @@ export const MiraclesOverlay = ({
     if (nextId) {
       hapticDetent();
       setSelectedId(nextId);
+    }
+  };
+
+  const handleJumpToQa = () => {
+    hapticTapLight();
+    const target = document.getElementById('miracles-qa-codex');
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
 
@@ -296,7 +301,7 @@ export const MiraclesOverlay = ({
         </div>
 
         {/* ================================================================
-            TOP OBSERVATORY BAR (56px, clean 3-zone header matching Study tab)
+            TOP OBSERVATORY BAR (56px, calm editorial masthead without corner Back)
         ================================================================ */}
         <header
           className={`relative z-20 shrink-0 px-4 sm:px-7 pb-2.5 border-b ${hairline} flex items-center justify-between gap-3`}
@@ -307,38 +312,31 @@ export const MiraclesOverlay = ({
             backgroundColor: isLightMode ? 'rgba(246,240,229,0.78)' : 'rgba(7,10,20,0.74)',
           }}
         >
-          {/* Left: Back Button */}
-          <button
-            type="button"
-            data-testid="miracles-back"
-            aria-label="Back to Sanctuary"
-            onClick={handleRequestClose}
-            className={`min-h-[40px] pl-2.5 pr-3.5 rounded-full border flex items-center gap-1 font-serif-eng text-[12px] tracking-[0.04em] whitespace-nowrap shrink-0 cursor-pointer transition active:scale-95 ${
-              isLightMode
-                ? 'bg-white/82 hover:bg-white border-[#8c621c]/24 text-[#1d1810]'
-                : 'bg-white/[0.06] hover:bg-white/[0.11] border-[#e4be70]/22 text-[#f7f2e7]'
-            }`}
-          >
-            <ChevronLeftIcon size={15} style={{ color: accentHex }} />
-            <span>Back</span>
-          </button>
-
-          {/* Center: World Emblem & Reflected Progress Rule */}
-          <div className="min-w-0 flex-1 max-w-[300px] flex flex-col items-center">
-            <div className="flex items-center gap-2 min-w-0">
-              <span
-                dir="rtl"
-                className="font-calligraphy text-[18px] leading-none shrink-0"
-                style={{ color: accentHex }}
-              >
-                إِعْجَاز
-              </span>
-              <span className={`hidden sm:inline font-serif-eng text-[12px] truncate ${textSub}`}>
+          {/* Left: World Identity */}
+          <div className="min-w-0 flex items-center gap-2.5">
+            <span
+              dir="rtl"
+              className="font-calligraphy text-[20px] leading-none shrink-0"
+              style={{ color: accentHex }}
+            >
+              إِعْجَاز
+            </span>
+            <span
+              aria-hidden="true"
+              className={`h-3.5 w-px shrink-0 ${isLightMode ? 'bg-[#8c621c]/22' : 'bg-white/15'}`}
+            />
+            <span className={`font-serif-eng text-[12px] sm:text-[12.5px] truncate ${textSub}`}>
+              <span className="sm:hidden">Miracles</span>
+              <span className="hidden sm:inline">
                 Miracles of the Qur’an · {exploredCount}/{allMiracles.length}
               </span>
-            </div>
+            </span>
+          </div>
+
+          {/* Center: Thin Explored Progress Hairline (md+) */}
+          <div className="hidden md:flex flex-1 max-w-[200px] items-center justify-center">
             <div
-              className={`w-full max-w-[180px] h-[3px] rounded-full overflow-hidden mt-1.5 ${
+              className={`w-full h-[3px] rounded-full overflow-hidden ${
                 isLightMode ? 'bg-[#8c621c]/16' : 'bg-white/[0.11]'
               }`}
             >
@@ -452,7 +450,7 @@ export const MiraclesOverlay = ({
           {/* Mobile Atlas View OR Active Celestial Exhibition Stage */}
           {showMobileAtlas ? (
             <div
-              className="flex-1 min-h-0 lg:hidden"
+              className="flex-1 min-h-0 lg:hidden pr-9"
               style={{
                 backgroundColor: isLightMode ? 'rgba(249,244,234,0.88)' : 'rgba(8,12,22,0.84)',
               }}
@@ -463,7 +461,7 @@ export const MiraclesOverlay = ({
             <main
               ref={stageScrollRef}
               data-testid="miracles-exhibition-stage"
-              className="flex-1 min-h-0 overflow-y-auto hide-scrollbar px-5 sm:px-10 lg:px-14 py-7 sm:py-9"
+              className="flex-1 min-h-0 overflow-y-auto hide-scrollbar pl-5 pr-11 sm:px-12 lg:px-16 py-7 sm:py-9"
             >
               <article className="w-full max-w-[780px] mx-auto pb-8">
                 {/* Mobile-Only Clean Reading Mode Bar (keeps mobile top header uncluttered) */}
@@ -559,6 +557,23 @@ export const MiraclesOverlay = ({
                     >
                       {activeMiracle.title}
                     </h1>
+
+                    {topicQaCount > 0 && (
+                      <div className="mt-4 flex justify-center">
+                        <button
+                          type="button"
+                          data-testid="miracles-jump-qa"
+                          onClick={handleJumpToQa}
+                          className={`min-h-[36px] px-3.5 rounded-full border font-serif-eng text-[12px] font-medium whitespace-nowrap cursor-pointer transition-colors ${
+                            isLightMode
+                              ? 'bg-white/75 hover:bg-white border-[#8c621c]/26 text-[#734f14]'
+                              : 'bg-[#e4be70]/12 hover:bg-[#e4be70]/20 border-[#e4be70]/30 text-[#f1d493]'
+                          }`}
+                        >
+                          Explore {topicQaCount} questions on this sign ↓
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </header>
 
@@ -655,17 +670,26 @@ export const MiraclesOverlay = ({
                         · Scriptural Text
                       </span>
                     </div>
-                    <p
-                      className={`font-serif-eng text-[16.5px] sm:text-[18px] leading-[1.86] ${
-                        isLightMode ? 'text-[#211b12]' : 'text-[rgba(246,241,231,0.93)] tracking-[0.008em]'
-                      } first-letter:text-[3.25rem] first-letter:font-serif-eng first-letter:font-semibold first-letter:float-left first-letter:mr-3 first-letter:mt-1 first-letter:leading-[0.84] ${
-                        isLightMode
-                          ? 'first-letter:text-[#8c621c]'
-                          : 'first-letter:text-[#e4be70]'
-                      }`}
-                    >
-                      {quranicSign}
-                    </p>
+                    {(signParagraphs.length > 0 ? signParagraphs : [quranicSign]).map((para, idx) => (
+                      <p
+                        key={idx}
+                        className={`font-serif-eng text-[16.5px] sm:text-[18px] leading-[1.86] ${
+                          idx > 0 ? 'mt-4' : ''
+                        } ${
+                          isLightMode ? 'text-[#211b12]' : 'text-[rgba(246,241,231,0.93)] tracking-[0.008em]'
+                        } ${
+                          idx === 0
+                            ? `first-letter:text-[3.25rem] first-letter:font-serif-eng first-letter:font-semibold first-letter:float-left first-letter:mr-3 first-letter:mt-1 first-letter:leading-[0.84] ${
+                                isLightMode
+                                  ? 'first-letter:text-[#8c621c]'
+                                  : 'first-letter:text-[#e4be70]'
+                              }`
+                            : ''
+                        }`}
+                      >
+                        {para}
+                      </p>
+                    ))}
                   </div>
 
                   {/* Movement II: The Evidence & Discovery */}
@@ -681,15 +705,126 @@ export const MiraclesOverlay = ({
                         · Corroboration
                       </span>
                     </div>
-                    <p
-                      className={`font-serif-eng text-[16.5px] sm:text-[18px] leading-[1.86] ${
-                        isLightMode ? 'text-[#211b12]' : 'text-[rgba(246,241,231,0.93)] tracking-[0.008em]'
-                      }`}
-                    >
-                      {evidence}
-                    </p>
+                    {(evidenceParagraphs.length > 0 ? evidenceParagraphs : [evidence]).map((para, idx) => (
+                      <p
+                        key={idx}
+                        className={`font-serif-eng text-[16.5px] sm:text-[18px] leading-[1.86] ${
+                          idx > 0 ? 'mt-4' : ''
+                        } ${
+                          isLightMode ? 'text-[#211b12]' : 'text-[rgba(246,241,231,0.93)] tracking-[0.008em]'
+                        }`}
+                      >
+                        {para}
+                      </p>
+                    ))}
                   </div>
                 </section>
+
+                {/* 3b. ARABIC WORD SPOTLIGHT (UNBOXED HAIRLINE ROWS) */}
+                {arabicBreakdown.length > 0 && (
+                  <section
+                    aria-label="Key Arabic Expressions"
+                    className={`border-t ${hairline} pt-6 mb-8`}
+                  >
+                    <div className="flex items-baseline justify-between gap-2 mb-4">
+                      <h2
+                        className="font-serif-eng text-[13px] font-semibold tracking-[0.04em]"
+                        style={{ color: accentHex }}
+                      >
+                        Key Arabic Expressions
+                      </h2>
+                      <span className={`font-serif-eng text-[11px] ${textMuted}`}>
+                        Original Word Precision
+                      </span>
+                    </div>
+
+                    <dl className={`divide-y ${isLightMode ? 'divide-[#8c621c]/12' : 'divide-[#e4be70]/12'}`}>
+                      {arabicBreakdown.map((item, idx) => (
+                        <div
+                          key={`${item.word}-${idx}`}
+                          className="py-3 grid grid-cols-1 sm:grid-cols-[minmax(150px,auto)_1fr] items-baseline gap-x-5 gap-y-1"
+                        >
+                          <dt className="flex items-baseline gap-2.5 flex-wrap">
+                            <span
+                              dir="rtl"
+                              lang="ar"
+                              className="font-arabic text-[21px] sm:text-[23px] leading-snug"
+                              style={{ color: accentHex }}
+                            >
+                              {item.word}
+                            </span>
+                            {item.transliteration && (
+                              <span className={`font-serif-eng italic text-[13px] ${textMuted}`}>
+                                {item.transliteration}
+                              </span>
+                            )}
+                          </dt>
+                          <dd className={`font-serif-eng text-[14.5px] sm:text-[15.5px] leading-relaxed ${textMain}`}>
+                            {item.meaning}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </section>
+                )}
+
+                {/* 3c. BALANCED SCHOLARLY PERSPECTIVE (EXPANDABLE) */}
+                {scholarlyNote && (
+                  <section
+                    aria-label="Balanced Perspective"
+                    className={`border-y ${hairline} py-4 mb-8`}
+                  >
+                    <button
+                      type="button"
+                      data-testid="miracle-note-toggle"
+                      aria-expanded={showScholarlyNote}
+                      onClick={() => {
+                        hapticTapLight();
+                        setShowScholarlyNote((prev) => !prev);
+                      }}
+                      className="w-full text-left flex items-center justify-between gap-3 cursor-pointer"
+                    >
+                      <span className="flex items-baseline gap-2 min-w-0">
+                        <span
+                          className="font-serif-eng text-[12px] font-semibold tracking-[0.04em]"
+                          style={{ color: accentHex }}
+                        >
+                          Balanced Perspective
+                        </span>
+                        <span className={`font-serif-eng text-[12px] truncate ${textMuted}`}>
+                          · Classical &amp; scientific context
+                        </span>
+                      </span>
+                      <ChevronDownIcon
+                        size={15}
+                        className={`shrink-0 transition-transform duration-300 ${textSub} ${
+                          showScholarlyNote ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+
+                    {showScholarlyNote && (
+                      <p
+                        data-testid="miracle-note-body"
+                        className={`mt-3 pt-3 border-t ${hairline} font-serif-eng text-[14.5px] sm:text-[15.5px] leading-[1.78] ${
+                          isLightMode ? 'text-[#352b1d]' : 'text-[rgba(235,226,208,0.84)]'
+                        }`}
+                      >
+                        {scholarlyNote}
+                      </p>
+                    )}
+                  </section>
+                )}
+
+                {/* 3d. TOPIC-SCOPED QUESTIONS ON THIS SIGN CODEX */}
+                <TopicQaSection
+                  key={`miracles-${activeMiracle.id}`}
+                  world="miracles"
+                  activeItem={activeMiracle}
+                  isLightMode={isLightMode}
+                  isSimpleMode={localSimple}
+                  sectionId="miracles-qa-codex"
+                />
 
                 {/* 4. CONTEMPLATION PULL-QUOTE (Ornamental Colophon Framing) */}
                 {reflection && (

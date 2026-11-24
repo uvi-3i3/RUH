@@ -3,20 +3,25 @@ import assert from 'node:assert/strict';
 import {
   LESSON_ONE_STEPS,
   buildOriginMorphStyles,
+  buildStudyIntroSummary,
   captureClickOriginFromEvent,
   computeExpansionRadius,
   computeLessonOneProgress,
   evaluatePillarCheckAnswer,
   evaluateQuizQuestion,
   getAdjacentStepIndex,
+  getLearningSteps,
   getStepProgress,
   groupLessonOnePillars,
   markLandmarkDiscovered,
   normalizeClickOrigin,
   parseDiscoveredLandmarks,
+  resolveFirstUnreadPillarId,
+  resolveResumeStepIndex,
 } from './learningPathLogic';
 import {
   LESSON_ONE_GROUP_QUIZZES,
+  LESSON_ONE_INTRO,
   LESSON_ONE_LANDMARKS,
   LESSON_ONE_VALID_IDS,
   LOCKED_FUTURE_LESSONS,
@@ -139,7 +144,10 @@ test('markLandmarkDiscovered and computeLessonOneProgress track all 11 pillars c
   assert.equal(progress.isComplete, true);
 });
 
-test('Lesson I dataset has exactly 5 Pillars of Islam + 6 Pillars of Iman and grouped quizzes', () => {
+test('Lesson I dataset has intro metadata, 5 Pillars of Islam, 6 Pillars of Iman, and concise copy', () => {
+  assert.ok(LESSON_ONE_INTRO.title.length > 0);
+  assert.ok(LESSON_ONE_INTRO.subtitle.length > 0 && LESSON_ONE_INTRO.subtitle.length <= 130);
+
   const islamCount = LESSON_ONE_LANDMARKS.filter((l) => l.region === 'islam').length;
   const imanCount = LESSON_ONE_LANDMARKS.filter((l) => l.region === 'iman').length;
   assert.equal(islamCount, 5);
@@ -147,6 +155,17 @@ test('Lesson I dataset has exactly 5 Pillars of Islam + 6 Pillars of Iman and gr
   assert.ok(LOCKED_FUTURE_LESSONS.length >= 1);
   assert.equal(LESSON_ONE_GROUP_QUIZZES.islam.length, 2);
   assert.equal(LESSON_ONE_GROUP_QUIZZES.iman.length, 2);
+
+  for (const item of LESSON_ONE_LANDMARKS) {
+    assert.ok(
+      item.shortSummary && item.shortSummary.length > 20 && item.shortSummary.length <= 170,
+      `shortSummary should stay concise for ${item.id}`
+    );
+    assert.ok(
+      Array.isArray(item.shortPractice) && item.shortPractice.length === 2,
+      `Expected 2 concise shortPractice takeaways for ${item.id}`
+    );
+  }
 });
 
 test('groupLessonOnePillars separates 5 Pillars of Islam and 6 Pillars of Faith with artifact metadata', () => {
@@ -189,19 +208,50 @@ test('evaluatePillarCheckAnswer and evaluateQuizQuestion evaluate answers accura
   assert.equal(rightQ.isCorrect, true);
 });
 
-test('getStepProgress and getAdjacentStepIndex step smoothly across the 5-stage lesson', () => {
-  assert.equal(LESSON_ONE_STEPS.length, 5);
-  const first = getStepProgress(0);
-  assert.equal(first.step.id, 'islam-study');
-  assert.equal(first.displayNumber, 1);
-  assert.equal(first.totalLearningSteps, 4);
-  assert.equal(first.ratio, 0.25);
+test('getStepProgress and getAdjacentStepIndex handle intro, 4 learning steps, and completion', () => {
+  assert.equal(LESSON_ONE_STEPS.length, 6);
+  const learningSteps = getLearningSteps(LESSON_ONE_STEPS);
+  assert.equal(learningSteps.length, 4);
 
-  const complete = getStepProgress(4);
+  const intro = getStepProgress(0);
+  assert.equal(intro.step.id, 'intro');
+  assert.equal(intro.isIntroStep, true);
+  assert.equal(intro.displayNumber, 0);
+  assert.equal(intro.totalLearningSteps, 4);
+  assert.equal(intro.ratio, 0);
+
+  const firstStudy = getStepProgress(1);
+  assert.equal(firstStudy.step.id, 'islam-study');
+  assert.equal(firstStudy.isIntroStep, false);
+  assert.equal(firstStudy.displayNumber, 1);
+  assert.equal(firstStudy.ratio, 0.25);
+
+  const complete = getStepProgress(5);
   assert.equal(complete.isCompleteStep, true);
   assert.equal(complete.ratio, 1);
 
   assert.equal(getAdjacentStepIndex(0, -1), 0);
   assert.equal(getAdjacentStepIndex(0, 1), 1);
-  assert.equal(getAdjacentStepIndex(4, 1), 4);
+  assert.equal(getAdjacentStepIndex(5, 1), 5);
+});
+
+test('buildStudyIntroSummary, resolveResumeStepIndex, and resolveFirstUnreadPillarId adapt to learner progress', () => {
+  const fresh = buildStudyIntroSummary(LESSON_ONE_LANDMARKS, []);
+  assert.equal(fresh.ctaLabel, 'Start Lesson');
+  assert.equal(fresh.resumeStepIndex, 1);
+
+  const partialIslam = buildStudyIntroSummary(LESSON_ONE_LANDMARKS, ['shahadah', 'salah']);
+  assert.equal(partialIslam.ctaLabel, 'Continue Lesson');
+  assert.equal(partialIslam.resumeStepIndex, 1);
+
+  const islamDoneIds = LESSON_ONE_LANDMARKS.filter((l) => l.region === 'islam').map((l) => l.id);
+  assert.equal(resolveResumeStepIndex(islamDoneIds, LESSON_ONE_LANDMARKS), 3);
+
+  const allDone = buildStudyIntroSummary(LESSON_ONE_LANDMARKS, LESSON_ONE_VALID_IDS);
+  assert.equal(allDone.ctaLabel, 'Review Lesson');
+  assert.equal(allDone.progress.isComplete, true);
+
+  const islamItems = LESSON_ONE_LANDMARKS.filter((l) => l.region === 'islam');
+  assert.equal(resolveFirstUnreadPillarId(islamItems, ['shahadah']), 'salah');
+  assert.equal(resolveFirstUnreadPillarId(islamItems, islamDoneIds), 'shahadah');
 });

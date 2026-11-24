@@ -279,6 +279,7 @@ export const LessonCompleteStage = ({
   accentHex,
   textSub,
   stageAnimClass,
+  onBackToOverview,
   onRestart,
   onExit,
 }) => {
@@ -289,9 +290,9 @@ export const LessonCompleteStage = ({
   return (
     <div
       data-testid="lesson-complete-stage"
-      className={`w-full max-w-[660px] mx-auto flex flex-col items-center gap-4 sm:gap-5 text-center ${stageAnimClass}`}
+      className={`w-full max-w-[580px] mx-auto flex flex-col items-center gap-5 sm:gap-6 text-center ${stageAnimClass}`}
     >
-      {/* Prominent Heading + Small Context */}
+      {/* Prominent Heading + Calm Context */}
       <div>
         <span
           dir="rtl"
@@ -304,41 +305,41 @@ export const LessonCompleteStage = ({
           id="learning-path-heading"
           className="font-serif-eng text-[26px] sm:text-[34px] font-semibold leading-tight mt-0.5 text-balance"
         >
-          Foundations Anchored
+          Foundations Complete
         </h1>
-        <p className={`font-serif-eng italic text-[13.5px] sm:text-[15px] mt-1 ${textSub}`}>
-          All 5 Pillars of Islam and 6 Pillars of Faith completed · Hadith of Jibril ﷺ
+        <p className={`font-serif-eng text-[14px] sm:text-[15px] mt-1.5 ${textSub}`}>
+          You explored all 5 Pillars of Islam and 6 Pillars of Faith.
         </p>
       </div>
 
       {/* Two-Column Quiet Summary Ledger */}
       <div
-        className={`w-full grid grid-cols-1 sm:grid-cols-2 gap-3 text-left rounded-2xl border p-4 sm:p-5 ${
+        className={`w-full grid grid-cols-1 sm:grid-cols-2 gap-4 text-left rounded-2xl border p-4 sm:p-5 ${
           isLightMode
-            ? 'bg-white/80 border-[#9c7533]/24 island-light'
-            : 'bg-[#12100d]/82 border-[#d4af6a]/22 island-dark'
+            ? 'bg-white/80 border-[#9c7533]/22 island-light'
+            : 'bg-[#12100d]/82 border-[#d4af6a]/20 island-dark'
         }`}
       >
         <div>
           <p
-            className="font-serif-eng text-[12px] font-semibold tracking-[0.06em]"
+            className="font-serif-eng text-[12px] font-semibold tracking-[0.04em]"
             style={{ color: accentHex }}
           >
-            Part I · The 5 Pillars of Islam
+            Part I · Five Pillars of Islam
           </p>
-          <p className={`font-serif-eng text-[13px] leading-relaxed mt-1 ${textSub}`}>
+          <p className={`font-serif-eng text-[13.5px] leading-relaxed mt-1 ${textSub}`}>
             {islamItems.map((i) => i.title).join(' · ')}
           </p>
         </div>
 
         <div className="sm:border-l sm:border-current/10 sm:pl-4">
           <p
-            className="font-serif-eng text-[12px] font-semibold tracking-[0.06em]"
+            className="font-serif-eng text-[12px] font-semibold tracking-[0.04em]"
             style={{ color: accentHex }}
           >
-            Part II · The 6 Pillars of Faith
+            Part II · Six Pillars of Faith
           </p>
-          <p className={`font-serif-eng text-[13px] leading-relaxed mt-1 ${textSub}`}>
+          <p className={`font-serif-eng text-[13.5px] leading-relaxed mt-1 ${textSub}`}>
             {imanItems
               .map((i) => i.title.replace(/^Belief in (His |the )?/i, ''))
               .join(' · ')}
@@ -346,71 +347,55 @@ export const LessonCompleteStage = ({
         </div>
       </div>
 
-      {/* Lesson II Next Unlock Preview */}
+      {/* Quiet Next Lesson Note */}
       {nextLesson && (
-        <div
-          className={`w-full rounded-2xl border p-3.5 sm:p-4 flex items-center gap-3.5 text-left ${
-            isLightMode
-              ? 'bg-[#f6eedd]/85 border-[#7c5a1e]/22'
-              : 'bg-[#191510]/85 border-[#d4af6a]/22'
-          }`}
-        >
-          <div
-            aria-hidden="true"
-            className={`w-12 h-12 shrink-0 rounded-xl border flex items-center justify-center ${
-              isLightMode
-                ? 'bg-[#efe5d0] border-[#7a5420]/35 text-[#7a5420]'
-                : 'bg-[#221c15] border-[#d4af6a]/35 text-[#d4af6a]'
-            }`}
-          >
-            <svg width="24" height="24" viewBox="0 0 36 36" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M8 30V15C8 9.5 18 5 18 5C18 5 28 9.5 28 15V30" />
-              <path d="M12 30V16.5C12 12.5 18 9.5 18 9.5C18 9.5 24 12.5 24 16.5V30" />
-              <line x1="6" y1="30" x2="30" y2="30" />
-            </svg>
-          </div>
-          <div className="min-w-0 flex-1">
-            <p
-              className="font-serif-eng text-[11px] font-semibold tracking-[0.08em]"
-              style={{ color: accentHex }}
-            >
-              Up Next · {nextLesson.lessonNumber}
-            </p>
-            <p className="font-serif-eng text-[15.5px] font-semibold leading-tight mt-0.5 truncate">
-              {nextLesson.title} — {nextLesson.subtitle}
-            </p>
-          </div>
-          <span
-            dir="rtl"
-            className="font-calligraphy text-[18px] shrink-0 hidden sm:inline"
-            style={{ color: accentHex }}
-          >
-            {nextLesson.arabic}
+        <p className={`font-serif-eng text-[13px] ${textSub}`}>
+          <span className="font-semibold" style={{ color: accentHex }}>
+            Up next · {nextLesson.lessonNumber}
           </span>
-        </div>
+          <span aria-hidden="true"> · </span>
+          <span>
+            {nextLesson.title} ({nextLesson.subtitle})
+          </span>
+        </p>
       )}
 
       {/* Calm Action Row */}
-      <div className="flex items-center justify-center gap-3 pt-1">
-        <button
-          type="button"
-          data-testid="lesson-review-btn"
-          onClick={onRestart}
-          className={`min-h-[44px] px-5 rounded-2xl border font-serif-eng text-[13px] font-medium whitespace-nowrap transition cursor-pointer active:scale-95 ${
-            isLightMode
-              ? 'bg-white/75 hover:bg-white/95 border-[#7c5a1e]/25 text-[#2b1f11]'
-              : 'bg-[#191510]/80 hover:bg-[#231d16] border-[#d4af6a]/28 text-[#efe5d4]'
-          }`}
-        >
-          Review Lesson
-        </button>
+      <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+        {onBackToOverview ? (
+          <button
+            type="button"
+            data-testid="lesson-review-btn"
+            onClick={onBackToOverview}
+            className={`min-h-[44px] px-5 rounded-2xl border font-serif-eng text-[13px] font-medium whitespace-nowrap transition cursor-pointer active:scale-95 ${
+              isLightMode
+                ? 'bg-white/75 hover:bg-white/95 border-[#7c5a1e]/25 text-[#2b1f11]'
+                : 'bg-[#191510]/80 hover:bg-[#231d16] border-[#d4af6a]/28 text-[#efe5d4]'
+            }`}
+          >
+            Lesson Overview
+          </button>
+        ) : (
+          <button
+            type="button"
+            data-testid="lesson-review-btn"
+            onClick={onRestart}
+            className={`min-h-[44px] px-5 rounded-2xl border font-serif-eng text-[13px] font-medium whitespace-nowrap transition cursor-pointer active:scale-95 ${
+              isLightMode
+                ? 'bg-white/75 hover:bg-white/95 border-[#7c5a1e]/25 text-[#2b1f11]'
+                : 'bg-[#191510]/80 hover:bg-[#231d16] border-[#d4af6a]/28 text-[#efe5d4]'
+            }`}
+          >
+            Review Lesson
+          </button>
+        )}
 
         {onExit && (
           <button
             type="button"
             data-testid="lesson-return-sanctuary-btn"
             onClick={onExit}
-            className={`min-h-[44px] px-6 rounded-2xl font-serif-eng text-[13px] font-semibold whitespace-nowrap transition cursor-pointer active:scale-95 ${
+            className={`min-h-[44px] px-6 rounded-2xl font-serif-eng text-[13.5px] font-semibold whitespace-nowrap transition cursor-pointer active:scale-95 ${
               isLightMode
                 ? 'bg-[#463219] text-[#faf3e4] hover:bg-[#594020]'
                 : 'bg-[#d4af6a] text-[#17120c] hover:bg-[#e1be7c]'

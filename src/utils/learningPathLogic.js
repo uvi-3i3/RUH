@@ -1,7 +1,7 @@
 /**
  * Pure geometry and state helpers for the Learning Path click-origin expansion
- * and Lesson I Sanctuary Reader state.
- * Decoupled from React/DOM so bounds, radius math, and lesson progress are unit-testable.
+ * and Lesson I Sanctuary Study Window state.
+ * Decoupled from React/DOM so bounds, radius math, intro summaries, and lesson progress are unit-testable.
  */
 
 export const DEFAULT_TRANSITION_MS = 460;
@@ -136,9 +136,10 @@ export function buildOriginMorphStyles(origin, viewport, phase = 'open', reduced
  */
 export function captureClickOriginFromEvent(event, fallbackElement = null) {
   const target = event?.currentTarget || fallbackElement;
-  const rawRect = target && typeof target.getBoundingClientRect === 'function'
-    ? target.getBoundingClientRect()
-    : null;
+  const rawRect =
+    target && typeof target.getBoundingClientRect === 'function'
+      ? target.getBoundingClientRect()
+      : null;
 
   const rect = rawRect
     ? {
@@ -275,6 +276,7 @@ export function evaluatePillarCheckAnswer(landmark, selectedOptionIndex) {
 }
 
 export const LESSON_ONE_STEPS = [
+  { id: 'intro', kind: 'intro', group: 'overview', label: 'Overview' },
   { id: 'islam-study', kind: 'study', group: 'islam', label: 'Pillars of Islam' },
   { id: 'islam-quiz', kind: 'quiz', group: 'islam', label: 'Islam Check' },
   { id: 'iman-study', kind: 'study', group: 'iman', label: 'Pillars of Faith' },
@@ -283,21 +285,47 @@ export const LESSON_ONE_STEPS = [
 ];
 
 /**
- * Computes progress metrics for the Duolingo-style top bar across the 4 learning steps + completion.
+ * Returns the active learning steps (study + quiz) along with their indices in LESSON_ONE_STEPS.
+ */
+export function getLearningSteps(steps = LESSON_ONE_STEPS) {
+  const safeSteps = Array.isArray(steps) && steps.length > 0 ? steps : LESSON_ONE_STEPS;
+  return safeSteps
+    .map((step, stepIndex) => ({ ...step, stepIndex }))
+    .filter((step) => step.kind === 'study' || step.kind === 'quiz');
+}
+
+/**
+ * Computes progress metrics across the intro, 4 active learning steps, and completion seal.
  */
 export function getStepProgress(stepIndex, steps = LESSON_ONE_STEPS) {
   const safeSteps = Array.isArray(steps) && steps.length > 0 ? steps : LESSON_ONE_STEPS;
   const maxIndex = safeSteps.length - 1;
   const clampedIndex = clamp(Math.floor(Number(stepIndex) || 0), 0, maxIndex);
-  const learningStepCount = Math.max(1, maxIndex);
-  const isCompleteStep = safeSteps[clampedIndex]?.kind === 'complete';
-  const ratio = isCompleteStep ? 1 : (clampedIndex + 1) / learningStepCount;
+  const current = safeSteps[clampedIndex];
+  const learningSteps = getLearningSteps(safeSteps);
+  const totalLearningSteps = Math.max(1, learningSteps.length);
+  const isIntroStep = current?.kind === 'intro';
+  const isCompleteStep = current?.kind === 'complete';
+
+  const learningPosition = learningSteps.findIndex((item) => item.stepIndex === clampedIndex);
+  const displayNumber = isIntroStep
+    ? 0
+    : isCompleteStep
+      ? totalLearningSteps
+      : Math.max(1, learningPosition + 1);
+
+  const ratio = isIntroStep
+    ? 0
+    : isCompleteStep
+      ? 1
+      : displayNumber / totalLearningSteps;
 
   return {
     index: clampedIndex,
-    step: safeSteps[clampedIndex],
-    displayNumber: Math.min(clampedIndex + 1, learningStepCount),
-    totalLearningSteps: learningStepCount,
+    step: current,
+    displayNumber,
+    totalLearningSteps,
+    isIntroStep,
     isCompleteStep,
     ratio: clamp(ratio, 0, 1),
   };
@@ -306,10 +334,81 @@ export function getStepProgress(stepIndex, steps = LESSON_ONE_STEPS) {
 /**
  * Steps forward or backward cleanly within the lesson sequence.
  */
-export function getAdjacentStepIndex(currentIndex, direction = 1, totalSteps = LESSON_ONE_STEPS.length) {
+export function getAdjacentStepIndex(
+  currentIndex,
+  direction = 1,
+  totalSteps = LESSON_ONE_STEPS.length
+) {
   const maxIdx = Math.max(0, (Number(totalSteps) || 1) - 1);
   const step = direction < 0 ? -1 : 1;
   return clamp((Number(currentIndex) || 0) + step, 0, maxIdx);
+}
+
+/**
+ * Resolves the best step index when a learner clicks the primary CTA on the Study Intro page.
+ */
+export function resolveResumeStepIndex(
+  discoveredIds = [],
+  landmarks = [],
+  steps = LESSON_ONE_STEPS
+) {
+  const safeSteps = Array.isArray(steps) && steps.length > 0 ? steps : LESSON_ONE_STEPS;
+  const islamStepIdx = Math.max(
+    0,
+    safeSteps.findIndex((s) => s.id === 'islam-study')
+  );
+  const imanStepIdx = Math.max(
+    0,
+    safeSteps.findIndex((s) => s.id === 'iman-study')
+  );
+
+  const grouped = groupLessonOnePillars(landmarks, discoveredIds);
+  if (grouped.islam.isComplete && !grouped.iman.isComplete) {
+    return imanStepIdx;
+  }
+  return islamStepIdx;
+}
+
+/**
+ * Returns the first unread pillar ID in a group, or the first pillar ID if all are read.
+ */
+export function resolveFirstUnreadPillarId(items = [], discoveredIds = []) {
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const discoveredSet = new Set(Array.isArray(discoveredIds) ? discoveredIds : []);
+  const unread = items.find((item) => item?.id && !discoveredSet.has(item.id));
+  return unread?.id || items[0]?.id || null;
+}
+
+/**
+ * Builds clean, deterministic display data for the Study Window Introductory Page.
+ */
+export function buildStudyIntroSummary(
+  landmarks = [],
+  discoveredIds = [],
+  steps = LESSON_ONE_STEPS
+) {
+  const progress = computeLessonOneProgress(discoveredIds, landmarks.length || 11);
+  const grouped = groupLessonOnePillars(landmarks, discoveredIds);
+  const resumeStepIndex = resolveResumeStepIndex(discoveredIds, landmarks, steps);
+
+  let ctaLabel = 'Start Lesson';
+  let statusText = '11 short topics · 2 quick checks · ~5 min';
+
+  if (progress.isComplete) {
+    ctaLabel = 'Review Lesson';
+    statusText = `All ${progress.totalCount} topics explored · Ready to review`;
+  } else if (progress.discoveredCount > 0) {
+    ctaLabel = 'Continue Lesson';
+    statusText = `${progress.discoveredCount} of ${progress.totalCount} topics explored · ~5 min`;
+  }
+
+  return {
+    ctaLabel,
+    statusText,
+    resumeStepIndex,
+    progress,
+    grouped,
+  };
 }
 
 /**
@@ -331,4 +430,3 @@ export function evaluateQuizQuestion(question, selectedIndex) {
     explanation: question.explanation || '',
   };
 }
-

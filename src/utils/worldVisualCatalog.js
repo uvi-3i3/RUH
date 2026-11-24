@@ -1,6 +1,6 @@
 /**
- * Pure metadata catalog mapping every Burhan proof (14 entries) and
- * every Qur'anic Miracle sign (16 entries) to its bespoke hand-drawn
+ * Pure metadata catalog mapping every Burhan proof (18 entries) and
+ * every Qur'anic Miracle sign (22 entries) to its bespoke hand-drawn
  * book-engraving plate key, curatorial figure title, caption, and alt text.
  *
  * Kept free of static binary (.jpg) imports so it can be unit-tested cleanly in node:test.
@@ -121,6 +121,34 @@ export const BURHAN_VISUAL_META = {
       'A steadfast sanctuary lamp in quiet air — Al-Junayd’s teaching that remembrance awakens nearness right where you stand.',
     alt: 'Delicate pen-and-ink drawing of a glowing pierced lantern suspended peacefully above still ripples and an olive sprig.',
   },
+  b15: {
+    plateKey: VISUAL_PLATE_KEYS.BURHAN_COSMOLOGY,
+    figureTitle: 'Fine-Tuned Measure of Creation',
+    caption:
+      'Calibrated astrolabe rings and weighted scales in hairline equilibrium — reflecting the precise constants of cosmic fine-tuning (54:49).',
+    alt: 'Hand-drawn pen-and-ink illustration of a classical Islamic astrolabe and balanced apothecary scales under celestial arcs.',
+  },
+  b16: {
+    plateKey: VISUAL_PLATE_KEYS.BURHAN_FITRAH,
+    figureTitle: 'The Living Lamp of Consciousness',
+    caption:
+      'Radiant inner light reflected upon quiet waters — evoking the irreducible mystery of Al-Ruh beyond blind physical matter.',
+    alt: 'Hand-drawn pen-and-ink vignette of a pierced hanging sanctuary lantern casting fine light rays over calm water ripples.',
+  },
+  b17: {
+    plateKey: VISUAL_PLATE_KEYS.BURHAN_ARCHITECTURE,
+    figureTitle: 'The House of United Hearts',
+    caption:
+      'Harmonized sanctuary arches rising from a single compass center — echoing Arabia’s swift moral transformation within one generation.',
+    alt: 'Hand-drawn architectural ink engraving of a balanced Islamic sanctuary archway and ribbed dome traced by a compass.',
+  },
+  b18: {
+    plateKey: VISUAL_PLATE_KEYS.BURHAN_SCRIPTURE,
+    figureTitle: 'Unbroken Symphony Across 23 Years',
+    caption:
+      'An open manuscript resting in steady lamplight — symbolizing seamless coherence across twenty-three years of oral revelation (4:82).',
+    alt: 'Hand-drawn pen-and-ink illustration of an open classical codex on a carved stand beside a reed qalam and steady candle.',
+  },
 };
 
 export const MIRACLE_VISUAL_META = {
@@ -235,6 +263,48 @@ export const MIRACLE_VISUAL_META = {
     caption:
       'Cumulus banks rising into thinning upper-sky wind streams — echoing hypobaric chest constriction and the sound of “yassa‘‘adu” (6:125).',
     alt: 'Hand-drawn atmospheric ink engraving of layered cumulus clouds sweeping upward into wispy high-altitude wind currents above distant mountains.',
+  },
+  'm-unique-fingertips': {
+    plateKey: VISUAL_PLATE_KEYS.MIRACLE_WATER_CELL,
+    figureTitle: 'Unrepeatable Signature of the Fingertip',
+    caption:
+      'Fine concentric organic ridges etched in delicate detail — echoing “We are able to proportion even his fingertips” (75:4).',
+    alt: 'Hand-drawn naturalist pen-and-ink etching of concentric organic cellular rings inside a clear living droplet.',
+  },
+  'm-pharaoh-preserved-body': {
+    plateKey: VISUAL_PLATE_KEYS.MIRACLE_HISTORY,
+    figureTitle: 'Silent Witness of Ancient Royal Tombs',
+    caption:
+      'Enduring stone colonnades overlooking the Egyptian valley — recalling the preserved New Kingdom royal mummies foretold in Surah Yunus (10:92).',
+    alt: 'Hand-drawn archaeological pen-and-ink etching of weathered ancient temple columns and an archway overlooking a desert valley.',
+  },
+  'm-makkah-victory-prophecy': {
+    plateKey: VISUAL_PLATE_KEYS.MIRACLE_HISTORY,
+    figureTitle: 'Road to the Peaceful Entry',
+    caption:
+      'Standing stone arches bathed in open light — recalling the peaceful return to Makkah foretold on the road from Hudaybiyyah (48:27).',
+    alt: 'Vintage pen-and-ink etching of ancient stone pillars and a wide archway standing above a desert plain.',
+  },
+  'm-surah-alkawthar': {
+    plateKey: VISUAL_PLATE_KEYS.MIRACLE_SYMMETRY,
+    figureTitle: 'Crystalline Symmetry of Ten Words',
+    caption:
+      'Nested geometric facets converging in compact brilliance — mirroring the unmatched rhetorical density of Surah Al-Kawthar (108:1–3).',
+    alt: 'Hand-drawn geometric ink engraving of balanced concentric rings and star facets radiating from a luminous center.',
+  },
+  'm-sun-moon-light': {
+    plateKey: VISUAL_PLATE_KEYS.MIRACLE_COSMOS,
+    figureTitle: 'Radiant Blaze & Borrowed Moonlight',
+    caption:
+      'Blazing solar rays illuminating a serene crescent along its orbit — visualizing the Qur’an’s distinction between “diya’” and “nur” (10:5).',
+    alt: 'Hand-drawn astronomical pen-and-ink engraving of a radiant sun, crescent moon, stars, and dotted elliptical orbits.',
+  },
+  'm-unmatched-rhythm': {
+    plateKey: VISUAL_PLATE_KEYS.MIRACLE_SKY_ASCENT,
+    figureTitle: 'Cadence Above Poetry & Prose',
+    caption:
+      'Sweeping atmospheric currents rising freely beyond rigid frames — echoing the Qur’an’s unmatched acoustic architecture (17:88).',
+    alt: 'Hand-drawn pen-and-ink engraving of sweeping sky currents and layered cloud billows above distant horizons.',
   },
 };
 

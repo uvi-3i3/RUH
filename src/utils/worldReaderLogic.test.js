@@ -9,6 +9,8 @@ import {
   getCompendiumPosition,
   planBurhanEditorialFlow,
   resolveAdjacentBurhanId,
+  resolveBurhanStudyExtras,
+  resolveMiracleStudyExtras,
 } from './worldReaderLogic.js';
 
 test('formatReadMinutes avoids duplicate min suffixes', () => {
@@ -163,4 +165,80 @@ test('every Burhan and Miracle entry resolves to a curated visual plate with tit
   const fallbackMiracle = resolveMiracleVisualMeta({ id: 'unknown', category: 'biology', title: 'Custom' });
   assert.equal(fallbackMiracle.plateKey, VISUAL_PLATE_KEYS.MIRACLE_WATER_CELL);
 });
+
+test('all Burhan treatises have complete anchor translations, multi-movement prose, deductive proofs, and Q&A', async () => {
+  const { burhanData } = await import('../data/burhanData.js');
+  const { resolveBurhanCopy } = await import('./devotionLogic.js');
+
+  assert.ok(burhanData.length >= 18, `Expected at least 18 treatises, got ${burhanData.length}`);
+  const ids = new Set();
+
+  for (const item of burhanData) {
+    assert.ok(!ids.has(item.id), `Duplicate Burhan id: ${item.id}`);
+    ids.add(item.id);
+
+    const classical = resolveBurhanCopy(item, false);
+    const simple = resolveBurhanCopy(item, true);
+    const extrasClassical = resolveBurhanStudyExtras(item, false);
+    const extrasSimple = resolveBurhanStudyExtras(item, true);
+
+    assert.ok(classical.paragraphs.length >= 3, `Expected >= 3 Classical paragraphs for ${item.id}`);
+    assert.ok(simple.paragraphs.length >= 3, `Expected >= 3 Simple paragraphs for ${item.id}`);
+    assert.ok(classical.premises.length >= 3, `Expected >= 3 Classical premises for ${item.id}`);
+    assert.ok(simple.premises.length >= 3, `Expected >= 3 Simple premises for ${item.id}`);
+    assert.ok(classical.conclusion.length > 20, `Missing Classical conclusion for ${item.id}`);
+    assert.ok(simple.conclusion.length > 20, `Missing Simple conclusion for ${item.id}`);
+    assert.ok(extrasClassical.anchorTranslation.length > 5, `Missing anchorTranslation for ${item.id}`);
+    assert.ok(extrasClassical.anchorRef.length > 3, `Missing anchorRef for ${item.id}`);
+    assert.ok(extrasClassical.objection.length > 10, `Missing Classical objection for ${item.id}`);
+    assert.ok(extrasClassical.objectionReply.length > 30, `Missing Classical objectionReply for ${item.id}`);
+    assert.ok(extrasSimple.objection.length > 10, `Missing Simple objection for ${item.id}`);
+    assert.ok(extrasSimple.objectionReply.length > 30, `Missing Simple objectionReply for ${item.id}`);
+  }
+
+  assert.deepEqual(resolveBurhanStudyExtras(null, false), {
+    anchorTranslation: '',
+    anchorRef: '',
+    objection: '',
+    objectionReply: '',
+  });
+});
+
+test('all Qur’anic Miracles have multi-paragraph sign/evidence, Arabic word spotlight, and balanced scholarly note', async () => {
+  const { quranMiraclesData } = await import('../data/quranMiraclesData.js');
+
+  assert.ok(quranMiraclesData.length >= 22, `Expected at least 22 miracles, got ${quranMiraclesData.length}`);
+  const ids = new Set();
+
+  for (const item of quranMiraclesData) {
+    assert.ok(!ids.has(item.id), `Duplicate Miracle id: ${item.id}`);
+    ids.add(item.id);
+
+    const classical = resolveMiracleStudyExtras(item, false);
+    const simple = resolveMiracleStudyExtras(item, true);
+
+    assert.ok(classical.signParagraphs.length >= 2, `Expected >= 2 Classical sign paragraphs for ${item.id}`);
+    assert.ok(classical.evidenceParagraphs.length >= 2, `Expected >= 2 Classical evidence paragraphs for ${item.id}`);
+    assert.ok(simple.signParagraphs.length >= 2, `Expected >= 2 Simple sign paragraphs for ${item.id}`);
+    assert.ok(simple.evidenceParagraphs.length >= 2, `Expected >= 2 Simple evidence paragraphs for ${item.id}`);
+    assert.ok(classical.arabicBreakdown.length >= 2, `Expected >= 2 Arabic terms for ${item.id}`);
+    assert.ok(classical.scholarlyNote.length > 25, `Missing Classical scholarlyNote for ${item.id}`);
+    assert.ok(simple.scholarlyNote.length > 25, `Missing Simple scholarlyNote for ${item.id}`);
+  }
+
+  const makkahBridge = buildMiracleTimeBridge({
+    category: 'history',
+    revealedEra: '628 CE (6 AH)',
+    confirmedEra: '629–630 CE (7–8 AH)',
+  });
+  assert.equal(makkahBridge.spanLabel, 'Fulfilled Within Years');
+
+  assert.deepEqual(resolveMiracleStudyExtras(null, false), {
+    arabicBreakdown: [],
+    scholarlyNote: '',
+    signParagraphs: [],
+    evidenceParagraphs: [],
+  });
+});
+
 
